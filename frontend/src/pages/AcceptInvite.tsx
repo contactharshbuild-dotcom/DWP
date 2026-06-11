@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FiLock, FiUserCheck, FiAlertCircle, FiUser, FiMail } from 'react-icons/fi';
 import type { RootState } from '../store';
-import { setLoading, setError, setCredentials } from '../store/authSlice';
+import { setLoading, setError, setCredentials, logout } from '../store/authSlice';
 import api from '../services/api';
 
 const AcceptInvite: React.FC = () => {
@@ -25,12 +25,12 @@ const AcceptInvite: React.FC = () => {
   const navigate = useNavigate();
   const { token: authSessionToken, loading, error } = useSelector((state: RootState) => state.auth);
 
-  // If already logged in, redirect to dashboard
+  // If already logged in, log out to allow accepting invitation
   useEffect(() => {
     if (authSessionToken) {
-      navigate('/');
+      dispatch(logout());
     }
-  }, [authSessionToken, navigate]);
+  }, [authSessionToken, dispatch]);
 
   // Validate token on mount
   useEffect(() => {
@@ -96,121 +96,127 @@ const AcceptInvite: React.FC = () => {
 
   if (validatingToken) {
     return (
-      <div style={{ padding: '60px', display: 'flex', justifyContent: 'center' }}>
-        <span className="spinner" style={{ width: '40px', height: '40px' }}></span>
+      <div className="auth-page-wrapper">
+        <div style={{ padding: '60px', display: 'flex', justifyContent: 'center' }}>
+          <span className="spinner" style={{ width: '40px', height: '40px' }}></span>
+        </div>
       </div>
     );
   }
 
   if (tokenValidationError) {
     return (
-      <div className="glass-card" style={{ textAlign: 'center' }}>
-        <div style={{ 
-          width: '64px', 
-          height: '64px', 
-          borderRadius: '50%', 
-          background: 'rgba(239, 68, 68, 0.15)', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          color: 'var(--error)',
-          margin: '0 auto 20px'
-        }}>
-          <FiAlertCircle size={32} />
+      <div className="auth-page-wrapper">
+        <div className="glass-card" style={{ textAlign: 'center' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            borderRadius: '50%', 
+            background: 'rgba(239, 68, 68, 0.15)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            color: 'var(--error)',
+            margin: '0 auto 20px'
+          }}>
+            <FiAlertCircle size={32} />
+          </div>
+          <h3 className="form-title" style={{ fontSize: '24px' }}>Invitation Error</h3>
+          <p className="form-subtitle" style={{ marginBottom: '24px' }}>{tokenValidationError}</p>
+          <button className="btn btn-secondary" onClick={() => navigate('/login')}>
+            Go to Login
+          </button>
         </div>
-        <h3 className="form-title" style={{ fontSize: '24px' }}>Invitation Error</h3>
-        <p className="form-subtitle" style={{ marginBottom: '24px' }}>{tokenValidationError}</p>
-        <button className="btn btn-secondary" onClick={() => navigate('/login')}>
-          Go to Login
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="glass-card">
-      <h2 className="form-title">Join {orgName}</h2>
-      <p className="form-subtitle">Create your teacher account password to get started</p>
+    <div className="auth-page-wrapper">
+      <div className="glass-card">
+        <h2 className="form-title">Join {orgName}</h2>
+        <p className="form-subtitle">Create your teacher account password to get started</p>
 
-      {error && (
-        <div className="alert alert-error">
-          <FiAlertCircle size={20} style={{ flexShrink: 0 }} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label className="form-label">Full Name</label>
-          <div className="input-wrapper">
-            <input
-              className="form-input"
-              style={{ background: 'rgba(255, 255, 255, 0.01)', color: 'var(--text-secondary)', cursor: 'not-allowed' }}
-              type="text"
-              readOnly
-              value={teacherName}
-            />
-            <FiUser className="input-icon" />
+        {error && (
+          <div className="alert alert-error">
+            <FiAlertCircle size={20} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
-        </div>
+        )}
 
-        <div className="form-group">
-          <label className="form-label">Email Address</label>
-          <div className="input-wrapper">
-            <input
-              className="form-input"
-              style={{ background: 'rgba(255, 255, 255, 0.01)', color: 'var(--text-secondary)', cursor: 'not-allowed' }}
-              type="email"
-              readOnly
-              value={teacherEmail}
-            />
-            <FiMail className="input-icon" />
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Full Name</label>
+            <div className="input-wrapper">
+              <input
+                className="form-input"
+                style={{ background: 'rgba(255, 255, 255, 0.01)', color: 'var(--text-secondary)', cursor: 'not-allowed' }}
+                type="text"
+                readOnly
+                value={teacherName}
+              />
+              <FiUser className="input-icon" />
+            </div>
           </div>
-        </div>
 
-        <div className="form-group">
-          <label className="form-label" htmlFor="password">Set Password *</label>
-          <div className="input-wrapper">
-            <input
-              className="form-input"
-              type="password"
-              id="password"
-              placeholder="•••••••• (Min 6 chars)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            <FiLock className="input-icon" />
+          <div className="form-group">
+            <label className="form-label">Email Address</label>
+            <div className="input-wrapper">
+              <input
+                className="form-input"
+                style={{ background: 'rgba(255, 255, 255, 0.01)', color: 'var(--text-secondary)', cursor: 'not-allowed' }}
+                type="email"
+                readOnly
+                value={teacherEmail}
+              />
+              <FiMail className="input-icon" />
+            </div>
           </div>
-        </div>
 
-        <div className="form-group" style={{ marginBottom: '32px' }}>
-          <label className="form-label" htmlFor="confirmPassword">Confirm Password *</label>
-          <div className="input-wrapper">
-            <input
-              className="form-input"
-              type="password"
-              id="confirmPassword"
-              placeholder="••••••••"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
-            <FiLock className="input-icon" />
+          <div className="form-group">
+            <label className="form-label" htmlFor="password">Set Password *</label>
+            <div className="input-wrapper">
+              <input
+                className="form-input"
+                type="password"
+                id="password"
+                placeholder="•••••••• (Min 6 chars)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <FiLock className="input-icon" />
+            </div>
           </div>
-        </div>
 
-        <button className="btn" type="submit" disabled={loading}>
-          {loading ? (
-            <span className="spinner"></span>
-          ) : (
-            <>
-              <FiUserCheck size={18} />
-              <span>Complete Setup</span>
-            </>
-          )}
-        </button>
-      </form>
+          <div className="form-group" style={{ marginBottom: '32px' }}>
+            <label className="form-label" htmlFor="confirmPassword">Confirm Password *</label>
+            <div className="input-wrapper">
+              <input
+                className="form-input"
+                type="password"
+                id="confirmPassword"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+              <FiLock className="input-icon" />
+            </div>
+          </div>
+
+          <button className="btn" type="submit" disabled={loading}>
+            {loading ? (
+              <span className="spinner"></span>
+            ) : (
+              <>
+                <FiUserCheck size={18} />
+                <span>Complete Setup</span>
+              </>
+            )}
+          </button>
+        </form>
+      </div>
     </div>
   );
 };

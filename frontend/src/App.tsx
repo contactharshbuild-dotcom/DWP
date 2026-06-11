@@ -7,6 +7,9 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Teachers from './pages/Teachers';
 import AcceptInvite from './pages/AcceptInvite';
+import ClassroomDetails from './pages/ClassroomDetails';
+import JoinClassroom from './pages/JoinClassroom';
+import { ClassroomProvider } from './components/ClassroomContext';
 
 // Protected Route wrapper component
 interface ProtectedRouteProps {
@@ -41,54 +44,64 @@ const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Protected Dashboard Route */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/teachers"
-          element={
-            <ProtectedRoute>
-              <Teachers />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/accept-invite"
-          element={
-            <PublicRoute>
-              <AcceptInvite />
-            </PublicRoute>
-          }
-        />
+      <ClassroomProvider>
+        <Routes>
+          {/* Protected Dashboard Route */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teachers"
+            element={
+              <ProtectedRoute>
+                <Teachers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/classrooms/:id"
+            element={
+              <ProtectedRoute>
+                <ClassroomDetails />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/accept-invite"
+            element={<AcceptInvite />}
+          />
+          <Route
+            path="/join-classroom/:classroomId"
+            element={<JoinClassroom />}
+          />
 
-        {/* Public Login/Signup Routes */}
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/signup"
-          element={
-            <PublicRoute>
-              <Signup />
-            </PublicRoute>
-          }
-        />
+          {/* Public Login/Signup Routes */}
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <PublicRoute>
+                <Signup />
+              </PublicRoute>
+            }
+          />
 
-        {/* Fallback Catch-All */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Fallback Catch-All */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ClassroomProvider>
     </BrowserRouter>
   );
 }

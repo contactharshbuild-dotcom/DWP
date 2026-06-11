@@ -5,6 +5,7 @@ import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
 import teacherRoutes from "./routes/teacher.routes.js";
 import inviteRoutes from "./routes/invite.routes.js";
+import classroomRoutes from "./routes/classroom.routes.js";
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/teachers", teacherRoutes);
 app.use("/api/invitations", inviteRoutes);
+app.use("/api/classrooms", classroomRoutes);
 
 app.get("/", (req, res) =>{
     res.send("LMS Backend is running");

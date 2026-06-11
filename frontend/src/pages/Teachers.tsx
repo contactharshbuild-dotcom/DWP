@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  FiUserPlus,
-  FiMail,
-  FiPhone,
   FiCopy,
   FiCheck,
-  FiArrowLeft,
   FiAlertCircle,
   FiPlus,
   FiUser,
   FiClock
 } from 'react-icons/fi';
 import api from '../services/api';
+import DashboardLayout from '../components/DashboardLayout';
 
 interface Teacher {
   id: number;
@@ -39,8 +35,6 @@ const Teachers: React.FC = () => {
   // Generated Link State
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  const navigate = useNavigate();
 
   const fetchTeachers = async () => {
     setLoading(true);
@@ -111,194 +105,154 @@ const Teachers: React.FC = () => {
   };
 
   return (
-    <div className="dashboard-container" style={{ maxWidth: '900px' }}>
+    <DashboardLayout>
       {/* Header */}
-      <div className="dashboard-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button 
-            className="btn btn-secondary" 
-            style={{ width: 'auto', padding: '10px' }}
-            onClick={() => navigate('/')}
-          >
-            <FiArrowLeft size={18} />
-          </button>
-          <div className="dashboard-title">
+      <div className="ld-header">
+        <div className="ld-header-left">
+          <h2 className="ld-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FiUser style={{ color: 'var(--light-primary)' }} />
             <span>Manage Teachers</span>
-          </div>
+          </h2>
+          <span className="ld-subtitle">Add and configure access for your academic staff.</span>
         </div>
-        <button className="btn" style={{ width: 'auto' }} onClick={handleOpenModal}>
+        <button className="btn-ld btn-ld-primary" onClick={handleOpenModal}>
           <FiPlus size={18} />
           <span>Invite Teacher</span>
         </button>
       </div>
 
       {error && (
-        <div className="alert alert-error">
+        <div className="alert-ld alert-ld-error">
           <FiAlertCircle size={20} />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Teacher List */}
-      {loading ? (
-        <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-          <span className="spinner" style={{ width: '40px', height: '40px' }}></span>
+      {/* Teacher List Container */}
+      <div className="ld-card">
+        <div className="ld-card-header">
+          <h3 className="ld-card-title">Teachers Directory</h3>
+          <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>
+            {teachers.length} staff members
+          </span>
         </div>
-      ) : teachers.length === 0 ? (
-        <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          <FiUser size={48} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
-          <h3>No teachers added yet</h3>
-          <p style={{ fontSize: '14px', marginTop: '8px' }}>Invite your first teacher to start collaborating.</p>
-        </div>
-      ) : (
-        <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255, 255, 255, 0.01)' }}>
-                <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>Name</th>
-                <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>Email</th>
-                <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>Status</th>
-                <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600', textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teachers.map((teacher) => (
-                <tr key={teacher.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
-                  <td style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ 
-                      width: '32px', 
-                      height: '32px', 
-                      borderRadius: '50%', 
-                      background: 'var(--primary-glow)', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      color: 'var(--primary)'
-                    }}>
-                      <FiUser size={16} />
-                    </div>
-                    <span style={{ fontWeight: '500' }}>{teacher.name}</span>
-                  </td>
-                  <td style={{ padding: '16px 24px', color: 'var(--text-secondary)' }}>{teacher.email}</td>
-                  <td style={{ padding: '16px 24px' }}>
-                    {teacher.status === 'active' ? (
-                      <span className="badge badge-success">Active</span>
-                    ) : (
-                      <span className="badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fcd34d', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-                        <FiClock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                        Pending
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                    {teacher.status === 'pending' && teacher.invite_token && (
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ width: 'auto', padding: '6px 12px', fontSize: '13px' }}
-                        onClick={() => copyToClipboard(`http://localhost:5173/accept-invite?token=${teacher.invite_token}`)}
-                      >
-                        <FiCopy size={13} style={{ marginRight: '4px' }} />
-                        Copy Link
-                      </button>
-                    )}
-                  </td>
+
+        {loading ? (
+          <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
+            <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
+          </div>
+        ) : teachers.length === 0 ? (
+          <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--light-text-secondary)' }}>
+            <FiUser size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
+            <h3>No teachers added yet</h3>
+            <p style={{ fontSize: '13px', marginTop: '8px' }}>Invite your first teacher to start collaborating.</p>
+          </div>
+        ) : (
+          <div className="ld-table-container">
+            <table className="ld-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {teachers.map((teacher) => (
+                  <tr key={teacher.id}>
+                    <td style={{ fontWeight: '600' }}>{teacher.name}</td>
+                    <td>{teacher.email}</td>
+                    <td>
+                      {teacher.status === 'active' ? (
+                        <span className="badge-ld badge-ld-success">Active</span>
+                      ) : (
+                        <span className="badge-ld badge-ld-warning">
+                          <FiClock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                          Pending
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                      {teacher.status === 'pending' && teacher.invite_token && (
+                        <button 
+                          className="btn-ld btn-ld-secondary btn-ld-small" 
+                          onClick={() => copyToClipboard(`http://localhost:5173/accept-invite?token=${teacher.invite_token}`)}
+                        >
+                          <FiCopy size={13} />
+                          <span>Copy Link</span>
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Invite Modal Overlay */}
       {showModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.6)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '500px', transform: 'scale(1)' }}>
+        <div className="modal-overlay-ld" onClick={handleCloseModal}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()}>
             {!generatedLink ? (
               <>
-                <h3 className="form-title" style={{ fontSize: '24px' }}>Invite New Teacher</h3>
-                <p className="form-subtitle">They will receive a secure registration link to create their password.</p>
+                <h3 className="modal-title-ld">Invite New Teacher</h3>
+                <p className="modal-subtitle-ld">They will receive a secure registration link to set up their password.</p>
 
                 {inviteError && (
-                  <div className="alert alert-error" style={{ marginBottom: '16px' }}>
-                    <FiAlertCircle size={20} />
+                  <div className="alert-ld alert-ld-error">
+                    <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
                     <span>{inviteError}</span>
                   </div>
                 )}
 
                 <form onSubmit={handleInviteSubmit}>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="name">Teacher Name *</label>
-                    <div className="input-wrapper">
-                      <input
-                        className="form-input"
-                        type="text"
-                        id="name"
-                        placeholder="e.g. Professor Smith"
-                        value={inviteName}
-                        onChange={(e) => setInviteName(e.target.value)}
-                        required
-                      />
-                      <FiUser className="input-icon" />
-                    </div>
+                  <div className="form-group-ld">
+                    <label className="form-label-ld" htmlFor="name">Teacher Name *</label>
+                    <input
+                      className="form-input-ld"
+                      type="text"
+                      id="name"
+                      placeholder="e.g. Professor Smith"
+                      value={inviteName}
+                      onChange={(e) => setInviteName(e.target.value)}
+                      required
+                    />
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="email">Email Address *</label>
-                    <div className="input-wrapper">
-                      <input
-                        className="form-input"
-                        type="email"
-                        id="email"
-                        placeholder="teacher@academy.com"
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        required
-                      />
-                      <FiMail className="input-icon" />
-                    </div>
+                  <div className="form-group-ld">
+                    <label className="form-label-ld" htmlFor="email">Email Address *</label>
+                    <input
+                      className="form-input-ld"
+                      type="email"
+                      id="email"
+                      placeholder="teacher@academy.com"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      required
+                    />
                   </div>
 
-                  <div className="form-group" style={{ marginBottom: '32px' }}>
-                    <label className="form-label" htmlFor="phone">Phone Number</label>
-                    <div className="input-wrapper">
-                      <input
-                        className="form-input"
-                        type="tel"
-                        id="phone"
-                        placeholder="+1 (555) 000-0000"
-                        value={invitePhone}
-                        onChange={(e) => setInvitePhone(e.target.value)}
-                      />
-                      <FiPhone className="input-icon" />
-                    </div>
+                  <div className="form-group-ld" style={{ marginBottom: '28px' }}>
+                    <label className="form-label-ld" htmlFor="phone">Phone Number</label>
+                    <input
+                      className="form-input-ld"
+                      type="tel"
+                      id="phone"
+                      placeholder="+1 (555) 000-0000"
+                      value={invitePhone}
+                      onChange={(e) => setInvitePhone(e.target.value)}
+                    />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <button type="button" className="btn btn-secondary" onClick={handleCloseModal} disabled={submitting}>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-ld btn-ld-secondary" onClick={handleCloseModal} disabled={submitting}>
                       Cancel
                     </button>
-                    <button type="submit" className="btn" disabled={submitting}>
-                      {submitting ? (
-                        <span className="spinner"></span>
-                      ) : (
-                        <>
-                          <FiUserPlus size={18} />
-                          <span>Generate Invite</span>
-                        </>
-                      )}
+                    <button type="submit" className="btn-ld btn-ld-primary" disabled={submitting}>
+                      {submitting ? 'Generating...' : 'Generate Invite'}
                     </button>
                   </div>
                 </form>
@@ -306,25 +260,25 @@ const Teachers: React.FC = () => {
             ) : (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ 
-                  width: '64px', 
-                  height: '64px', 
+                  width: '56px', 
+                  height: '56px', 
                   borderRadius: '50%', 
-                  background: 'rgba(16, 185, 129, 0.15)', 
+                  background: 'rgba(16, 185, 129, 0.12)', 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
-                  color: 'var(--success)',
-                  margin: '0 auto 20px'
+                  color: 'var(--light-success)',
+                  margin: '0 auto 16px'
                 }}>
-                  <FiCheck size={32} />
+                  <FiCheck size={28} />
                 </div>
-                <h3 className="form-title" style={{ fontSize: '24px' }}>Invitation Generated!</h3>
-                <p className="form-subtitle">Share the onboarding registration link below with the teacher.</p>
+                <h3 className="modal-title-ld">Invitation Generated!</h3>
+                <p className="modal-subtitle-ld">Share the onboarding registration link below with the teacher.</p>
 
-                <div className="form-group" style={{ marginBottom: '32px' }}>
-                  <div className="input-wrapper" style={{ cursor: 'pointer' }} onClick={() => copyToClipboard(generatedLink)}>
+                <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                     <input
-                      className="form-input"
+                      className="form-input-ld"
                       style={{ paddingRight: '48px', textOverflow: 'ellipsis' }}
                       type="text"
                       readOnly
@@ -332,28 +286,30 @@ const Teachers: React.FC = () => {
                     />
                     <button 
                       type="button"
+                      onClick={() => copyToClipboard(generatedLink)}
                       style={{
                         position: 'absolute',
-                        right: '12px',
+                        right: '8px',
                         background: 'transparent',
                         border: 'none',
-                        color: copied ? 'var(--success)' : 'var(--text-secondary)',
+                        color: copied ? 'var(--light-success)' : 'var(--light-text-secondary)',
                         cursor: 'pointer',
                         display: 'flex',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        padding: '8px'
                       }}
                     >
                       {copied ? <FiCheck size={18} /> : <FiCopy size={18} />}
                     </button>
                   </div>
                   {copied && (
-                    <span style={{ fontSize: '12px', color: 'var(--success)', marginTop: '6px', display: 'block' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--light-success)', marginTop: '6px', display: 'block', textAlign: 'left' }}>
                       Copied link to clipboard!
                     </span>
                   )}
                 </div>
 
-                <button type="button" className="btn" onClick={handleCloseModal}>
+                <button type="button" className="btn-ld btn-ld-primary" style={{ width: '100%' }} onClick={handleCloseModal}>
                   Close & Refresh
                 </button>
               </div>
@@ -361,7 +317,7 @@ const Teachers: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </DashboardLayout>
   );
 };
 

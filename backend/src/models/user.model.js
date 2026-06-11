@@ -23,11 +23,11 @@ const User = sequelize.define('User', {
   email: {
     type: DataTypes.STRING,
     unique: true,
-    allowNull: false
+    allowNull: true
   },
   password: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   role: {
     type: DataTypes.STRING,
@@ -46,6 +46,24 @@ const User = sequelize.define('User', {
   },
   invite_expires: {
     type: DataTypes.DATE,
+    allowNull: true
+  },
+  phone: {
+    type: DataTypes.STRING,
+    unique: true,
+    allowNull: true
+  },
+  otp_code: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  otp_expires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  username: {
+    type: DataTypes.STRING,
+    unique: true,
     allowNull: true
   }
 }, {
