@@ -10,7 +10,8 @@ import {
   signupStep4Profile,
   getClassroomJoinStatus,
   approveTeacher, 
-  rejectTeacher 
+  rejectTeacher,
+  upgradeTeacherRole
 } from '../controllers/classroom.controller.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.middleware.js';
 
@@ -36,6 +37,7 @@ router.get('/status/:numericId', authorizeRoles('teacher'), getClassroomJoinStat
 // Admin write actions
 router.post('/', authorizeRoles('admin'), createClassroom);
 router.post('/:id/teachers/:teacherId/approve', authorizeRoles('admin'), approveTeacher);
+router.post('/:id/teachers/:teacherId/upgrade', authorizeRoles('admin'), upgradeTeacherRole);
 router.delete('/:id/teachers/:teacherId/reject', authorizeRoles('admin'), rejectTeacher);
 
 export default router;

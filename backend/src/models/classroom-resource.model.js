@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/database.js';
 
-const ClassroomTeacher = sequelize.define('ClassroomTeacher', {
+const ClassroomResource = sequelize.define('ClassroomResource', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -16,30 +16,35 @@ const ClassroomTeacher = sequelize.define('ClassroomTeacher', {
       key: 'id'
     }
   },
-  user_id: {
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  drive_file_id: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  drive_link: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  mime_type: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  uploaded_by: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'users',
       key: 'id'
     }
-  },
-  status: {
-    type: DataTypes.STRING,
-    defaultValue: 'pending',
-    allowNull: false
-  },
-  role: {
-    type: DataTypes.STRING,
-    defaultValue: 'co-teacher',
-    allowNull: false
   }
-
 }, {
-  tableName: 'classroom_teachers',
+  tableName: 'classroom_resources',
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at'
 });
 
-export default ClassroomTeacher;
+export default ClassroomResource;

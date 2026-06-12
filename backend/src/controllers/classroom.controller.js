@@ -59,7 +59,7 @@ export const getClassrooms = async (req, res) => {
         model: User,
         as: 'teachers',
         attributes: ['id', 'name', 'email', 'status'],
-        through: { attributes: ['status'] }
+        through: { attributes: ['status', 'role'] }
       }],
       order: [['created_at', 'DESC']]
     };
@@ -110,7 +110,7 @@ export const getClassroomById = async (req, res) => {
         model: User,
         as: 'teachers',
         attributes: ['id', 'name', 'email', 'status'],
-        through: { attributes: ['status'] } // Include join table status (pending / approved)
+        through: { attributes: ['status', 'role'] } // Include join table status & role
       }]
     });
 
@@ -270,6 +270,59 @@ export const rejectTeacher = async (req, res) => {
     console.error('Error in rejectTeacher:', error);
     return res.status(500).json({
       message: 'Internal server error while rejecting/removing teacher.',
+      error: error.message
+    });
+  }
+};
+
+// Upgrade teacher role from co-teacher to teacher (Admin only)
+export const upgradeTeacherRole = async (req, res) => {
+  try {
+    const { id, teacherId } = req.params; // classroom PK, teacher user ID
+
+    // Verify classroom belongs to admin's organization
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Find classroom-teacher relation
+    const relation = await ClassroomTeacher.findOne({
+      where: {
+        classroom_id: id,
+        user_id: teacherId
+      }
+    });
+
+    if (!relation) {
+      return res.status(404).json({ message: 'Teacher classroom association not found.' });
+    }
+
+    if (relation.status !== 'approved') {
+      return res.status(400).json({ message: 'Teacher must be approved first before upgrading.' });
+    }
+
+    if (relation.role === 'teacher') {
+      return res.status(400).json({ message: 'Teacher is already upgraded to Teacher role.' });
+    }
+
+    // Update role to teacher
+    await relation.update({ role: 'teacher' });
+
+    return res.json({ 
+      message: 'Teacher role upgraded successfully.', 
+      relation 
+    });
+  } catch (error) {
+    console.error('Error in upgradeTeacherRole:', error);
+    return res.status(500).json({
+      message: 'Internal server error while upgrading teacher role.',
       error: error.message
     });
   }

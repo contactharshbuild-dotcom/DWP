@@ -12,7 +12,13 @@ import {
   FiBookOpen, 
   FiUserPlus,
   FiUserCheck,
-  FiX
+  FiX,
+  FiArrowUp,
+  FiFileText,
+  FiImage,
+  FiUploadCloud,
+  FiExternalLink,
+  FiPaperclip
 } from 'react-icons/fi';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -24,7 +30,22 @@ interface Teacher {
   status: string; // user account status (active/pending)
   ClassroomTeacher: {
     status: string; // join status (pending/approved)
+    role: string;   // classroom role (co-teacher/teacher)
   };
+}
+
+interface Resource {
+  id: number;
+  name: string;
+  drive_file_id: string;
+  drive_link: string;
+  mime_type: string;
+  uploader?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  created_at: string;
 }
 
 interface Classroom {
@@ -46,11 +67,17 @@ const ClassroomDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Tabs state
-  const [activeTab, setActiveTab] = useState<'active' | 'pending'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'resources'>('active');
 
   // Share Modal State
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Resources State
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   // Fetch Classroom details
   const fetchClassroomDetails = async () => {
@@ -67,8 +94,21 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  const fetchResources = async () => {
+    setResourcesLoading(true);
+    try {
+      const response = await api.get(`/resources/classroom/${id}`);
+      setResources(response.data.resources);
+    } catch (err) {
+      console.error('Failed to fetch resources:', err);
+    } finally {
+      setResourcesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchClassroomDetails();
+    fetchResources();
   }, [id]);
 
   const handleApproveTeacher = async (teacherId: number) => {
@@ -96,6 +136,81 @@ const ClassroomDetails: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to remove/reject teacher.');
+    }
+  };
+
+  const handleUpgradeTeacher = async (teacherId: number) => {
+    if (!window.confirm('Are you sure you want to upgrade this teacher to the Teacher role?')) {
+      return;
+    }
+
+    try {
+      await api.post(`/classrooms/${id}/teachers/${teacherId}/upgrade`);
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to upgrade teacher role.');
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('classroomId', id || '');
+
+    try {
+      const response = await api.post('/resources/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      setResources(prev => [response.data.resource, ...prev]);
+      alert('File uploaded successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to upload file.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileUpload(e.target.files[0]);
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDeleteResource = async (resourceId: number) => {
+    if (!window.confirm('Are you sure you want to delete this resource?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/resources/${resourceId}`);
+      setResources(prev => prev.filter(r => r.id !== resourceId));
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to delete resource.');
     }
   };
 
@@ -211,6 +326,39 @@ const ClassroomDetails: React.FC = () => {
                 )}
               </button>
             )}
+            <button
+              onClick={() => setActiveTab('resources')}
+              style={{
+                padding: '12px 20px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'resources' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: activeTab === 'resources' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '14px',
+                outline: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FiPaperclip size={16} />
+              <span>Documents & Photos</span>
+              {resources.length > 0 && (
+                <span style={{
+                  backgroundColor: 'var(--light-primary-glow)',
+                  color: 'var(--light-primary)',
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  borderRadius: '99px',
+                  fontWeight: '700',
+                  border: '1px solid rgba(79, 70, 229, 0.2)'
+                }}>
+                  {resources.length}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* Active Teachers Tab */}
@@ -233,6 +381,7 @@ const ClassroomDetails: React.FC = () => {
                       <th>Teacher Name</th>
                       <th>Email Address</th>
                       <th>Account Status</th>
+                      <th>Classroom Role</th>
                       {user?.role === 'admin' && <th style={{ textAlign: 'right' }}>Actions</th>}
                     </tr>
                   </thead>
@@ -248,16 +397,36 @@ const ClassroomDetails: React.FC = () => {
                             <span className="badge-ld badge-ld-warning">Pending Invite</span>
                           )}
                         </td>
+                        <td>
+                          {teacher.ClassroomTeacher?.role === 'teacher' ? (
+                            <span className="badge-ld badge-ld-primary">Teacher</span>
+                          ) : (
+                            <span className="badge-ld badge-ld-secondary">Co-Teacher</span>
+                          )}
+                        </td>
                         {user?.role === 'admin' && (
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              className="btn-ld btn-ld-danger btn-ld-small"
-                              onClick={() => handleRejectTeacher(teacher.id, false)}
-                              title="Remove teacher from classroom"
-                            >
-                              <FiTrash2 size={13} />
-                              <span>Remove</span>
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                              {teacher.ClassroomTeacher?.role !== 'teacher' && (
+                                <button
+                                  className="btn-ld btn-ld-primary btn-ld-small"
+                                  style={{ backgroundColor: 'var(--light-primary)' }}
+                                  onClick={() => handleUpgradeTeacher(teacher.id)}
+                                  title="Upgrade to Teacher role"
+                                >
+                                  <FiArrowUp size={13} />
+                                  <span>Upgrade</span>
+                                </button>
+                              )}
+                              <button
+                                className="btn-ld btn-ld-danger btn-ld-small"
+                                onClick={() => handleRejectTeacher(teacher.id, false)}
+                                title="Remove teacher from classroom"
+                              >
+                                <FiTrash2 size={13} />
+                                <span>Remove</span>
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -324,6 +493,164 @@ const ClassroomDetails: React.FC = () => {
                 </table>
               </div>
             )
+          )}
+
+          {/* Resources Tab */}
+          {activeTab === 'resources' && (
+            <div>
+              {/* File Dropzone/Upload Box */}
+              <div 
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                style={{
+                  border: dragActive ? '2px dashed var(--light-primary)' : '2px dashed var(--light-border)',
+                  backgroundColor: dragActive ? 'var(--light-primary-glow)' : 'var(--light-bg-hover)',
+                  borderRadius: '12px',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  position: 'relative',
+                  marginBottom: '24px'
+                }}
+              >
+                <input 
+                  type="file" 
+                  id="resource-file-upload" 
+                  style={{ display: 'none' }} 
+                  onChange={handleFileChange}
+                />
+                <label 
+                  htmlFor="resource-file-upload" 
+                  style={{ cursor: 'pointer', display: 'block' }}
+                >
+                  {uploading ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                      <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '36px', height: '36px' }}></span>
+                      <h4 style={{ color: 'var(--light-primary)', fontWeight: '600' }}>Uploading file to Google Drive...</h4>
+                      <p style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Please wait while the file is being processed.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                      <FiUploadCloud size={48} style={{ color: 'var(--light-primary)' }} />
+                      <h4 style={{ fontWeight: '600', color: 'var(--light-text)' }}>Drag and drop files here, or <span style={{ color: 'var(--light-primary)', textDecoration: 'underline' }}>browse</span></h4>
+                      <p style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>Supports photos, PDF, Word documents, spreadsheets, etc. (Max 10MB)</p>
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              {/* Uploaded Files Table */}
+              {resourcesLoading ? (
+                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
+                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
+                </div>
+              ) : resources.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+                  <FiFileText size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
+                  <h4>No documents or photos uploaded yet</h4>
+                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Share study materials, guides, class photos, or resources with the classroom.</p>
+                </div>
+              ) : (
+                <div className="ld-table-container">
+                  <table className="ld-table">
+                    <thead>
+                      <tr>
+                        <th>File Name</th>
+                        <th>Type</th>
+                        <th>Uploaded By</th>
+                        <th>Upload Date</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resources.map((res) => {
+                        const isImage = res.mime_type.startsWith('image/');
+                        const uploadDate = new Date(res.created_at).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        });
+
+                        // Resolve full download/view link (handling local mock /uploads correctly)
+                        const fullLink = res.drive_link.startsWith('/uploads/') 
+                          ? `http://localhost:5000${res.drive_link}` 
+                          : res.drive_link;
+
+                        return (
+                          <tr key={res.id}>
+                            <td style={{ fontWeight: '600' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                {isImage ? (
+                                  <FiImage style={{ color: '#10b981', flexShrink: 0 }} size={18} />
+                                ) : (
+                                  <FiFileText style={{ color: 'var(--light-primary)', flexShrink: 0 }} size={18} />
+                                )}
+                                <span style={{ 
+                                  maxWidth: '280px', 
+                                  whiteSpace: 'nowrap', 
+                                  overflow: 'hidden', 
+                                  textOverflow: 'ellipsis' 
+                                }}>
+                                  {res.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>
+                                {res.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '13px', fontWeight: '500' }}>
+                                {res.uploader?.name || 'Unknown User'}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
+                              {uploadDate}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                <a 
+                                  href={fullLink} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="btn-ld btn-ld-secondary btn-ld-small"
+                                  style={{ 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '6px',
+                                    textDecoration: 'none'
+                                  }}
+                                  title="View file"
+                                >
+                                  <FiExternalLink size={13} />
+                                  <span>View</span>
+                                </a>
+                                {(user?.role === 'admin' || res.uploader?.id === user?.id) && (
+                                  <button
+                                    className="btn-ld btn-ld-danger btn-ld-small"
+                                    onClick={() => handleDeleteResource(res.id)}
+                                    title="Delete file"
+                                  >
+                                    <FiTrash2 size={13} />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : null}

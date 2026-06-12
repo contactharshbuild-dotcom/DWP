@@ -3,13 +3,15 @@ import Organization from './organization.model.js';
 import User from './user.model.js';
 import Classroom from './classroom.model.js';
 import ClassroomTeacher from './classroom-teacher.model.js';
+import ClassroomResource from './classroom-resource.model.js';
 
 const db = {
   sequelize,
   Organization,
   User,
   Classroom,
-  ClassroomTeacher
+  ClassroomTeacher,
+  ClassroomResource
 };
 
 // Establish relationships
@@ -33,6 +35,12 @@ User.belongsToMany(Classroom, {
   as: 'classrooms' 
 });
 
+// Resources relationships
+Classroom.hasMany(ClassroomResource, { foreignKey: 'classroom_id', as: 'resources', onDelete: 'CASCADE' });
+ClassroomResource.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+User.hasMany(ClassroomResource, { foreignKey: 'uploaded_by', as: 'resources', onDelete: 'SET NULL' });
+ClassroomResource.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -40,5 +48,5 @@ Object.keys(db).forEach((modelName) => {
   }
 });
 
-export { sequelize, Organization, User, Classroom, ClassroomTeacher };
+export { sequelize, Organization, User, Classroom, ClassroomTeacher, ClassroomResource };
 export default db;

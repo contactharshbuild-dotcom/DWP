@@ -925,6 +925,12 @@ body {
   border: 1px solid rgba(79, 70, 229, 0.2);
 }
 
+.badge-ld-secondary {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+}
+
 /* Light Form Elements */
 .form-group-ld {
   margin-bottom: 20px;
