@@ -1,9 +1,10 @@
-import { ClassroomResource, User, Classroom, ClassroomTeacher } from '../models/index.js';
+import { ClassroomResource, User, Classroom, ClassroomTeacher, ClassroomFolder } from '../models/index.js';
 import { uploadFile, deleteFile } from '../services/storage.service.js';
+import { Op } from 'sequelize';
 
 export const uploadResource = async (req, res) => {
   try {
-    const { classroomId } = req.body;
+    const { classroomId, folderId, moduleSession, visibility, batch } = req.body;
     const file = req.file;
 
     if (!classroomId) {
@@ -39,7 +40,7 @@ export const uploadResource = async (req, res) => {
       }
     }
 
-    // Upload using Google Drive service
+    // Upload using S3/Google Drive / local storage fallback
     const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
 
     // Save metadata in database
@@ -49,7 +50,11 @@ export const uploadResource = async (req, res) => {
       drive_file_id: fileId,
       drive_link: webViewLink,
       mime_type: file.mimetype,
-      uploaded_by: req.user.id
+      uploaded_by: req.user.id,
+      folder_id: folderId ? parseInt(folderId) : null,
+      module_session: moduleSession || null,
+      visibility: visibility || 'all_students',
+      batch: batch || null
     });
 
     // Load uploader relationship for response
@@ -75,9 +80,183 @@ export const uploadResource = async (req, res) => {
   }
 };
 
+export const addLinkResource = async (req, res) => {
+  try {
+    const { classroomId, name, link, folderId, moduleSession, visibility, batch } = req.body;
+
+    if (!classroomId || !name || !link) {
+      return res.status(400).json({ message: 'Classroom ID, name, and link are required.' });
+    }
+
+    // Verify classroom and authorization
+    const classroom = await Classroom.findOne({
+      where: {
+        id: classroomId,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: classroomId,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'You are not authorized to add links to this classroom.' });
+      }
+    }
+
+    // Save link in database (no actual file upload)
+    let mimeType = 'url';
+    if (link.includes('youtube.com') || link.includes('youtu.be')) {
+      mimeType = 'youtube';
+    }
+
+    const resource = await ClassroomResource.create({
+      classroom_id: classroomId,
+      name,
+      drive_file_id: null,
+      drive_link: link,
+      mime_type: mimeType,
+      uploaded_by: req.user.id,
+      folder_id: folderId ? parseInt(folderId) : null,
+      module_session: moduleSession || null,
+      visibility: visibility || 'all_students',
+      batch: batch || null
+    });
+
+    const completeResource = await ClassroomResource.findByPk(resource.id, {
+      include: [{
+        model: User,
+        as: 'uploader',
+        attributes: ['id', 'name', 'email']
+      }]
+    });
+
+    return res.status(201).json({
+      message: 'Link added successfully.',
+      resource: completeResource
+    });
+  } catch (error) {
+    console.error('Error in addLinkResource:', error);
+    return res.status(500).json({
+      message: 'Internal server error while adding link.',
+      error: error.message
+    });
+  }
+};
+
 export const getClassroomResources = async (req, res) => {
   try {
     const { classroomId } = req.params;
+
+    // Verify classroom and authorization
+    const classroom = await Classroom.findOne({
+      where: {
+        id: classroomId,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    if (req.user.role === 'teacher' || req.user.role === 'student') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: classroomId,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    }
+
+    // Fetch and sync default folders
+    let folders = await ClassroomFolder.findAll({
+      where: { classroom_id: classroomId },
+      order: [['created_at', 'ASC']]
+    });
+
+    if (folders.length === 0) {
+      const defaultFolders = ['Notes', 'PPT', 'Recordings', 'Assignments', 'Extras'];
+      folders = await Promise.all(
+        defaultFolders.map(folderName => 
+          ClassroomFolder.create({
+            classroom_id: classroomId,
+            name: folderName
+          })
+        )
+      );
+    }
+
+    let resources = [];
+    if (req.user.role === 'admin' || req.user.role === 'teacher') {
+      resources = await ClassroomResource.findAll({
+        where: { classroom_id: classroomId },
+        include: [{
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }],
+        order: [['created_at', 'DESC']]
+      });
+    } else {
+      // Student: filter based on visibility
+      const student = await User.findByPk(req.user.id);
+      const studentBatch = student ? student.batch : null;
+
+      resources = await ClassroomResource.findAll({
+        where: {
+          classroom_id: classroomId,
+          [Op.or]: [
+            { visibility: 'all_students' },
+            { visibility: null },
+            {
+              [Op.and]: [
+                { visibility: 'specific_batch' },
+                { batch: studentBatch }
+              ]
+            }
+          ]
+        },
+        include: [{
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }],
+        order: [['created_at', 'DESC']]
+      });
+    }
+
+    return res.json({ resources, folders });
+
+  } catch (error) {
+    console.error('Error in getClassroomResources:', error);
+    return res.status(500).json({
+      message: 'Internal server error while fetching resources.',
+      error: error.message
+    });
+  }
+};
+
+export const createFolder = async (req, res) => {
+  try {
+    const { classroomId, name } = req.body;
+
+    if (!classroomId || !name) {
+      return res.status(400).json({ message: 'Classroom ID and folder name are required.' });
+    }
 
     // Verify classroom and authorization
     const classroom = await Classroom.findOne({
@@ -104,22 +283,69 @@ export const getClassroomResources = async (req, res) => {
       }
     }
 
-    const resources = await ClassroomResource.findAll({
-      where: { classroom_id: classroomId },
-      include: [{
-        model: User,
-        as: 'uploader',
-        attributes: ['id', 'name', 'email']
-      }],
-      order: [['created_at', 'DESC']]
+    const folder = await ClassroomFolder.create({
+      classroom_id: classroomId,
+      name
     });
 
-    return res.json({ resources });
-
+    return res.status(201).json({
+      message: 'Folder created successfully.',
+      folder
+    });
   } catch (error) {
-    console.error('Error in getClassroomResources:', error);
+    console.error('Error in createFolder:', error);
     return res.status(500).json({
-      message: 'Internal server error while fetching resources.',
+      message: 'Internal server error while creating folder.',
+      error: error.message
+    });
+  }
+};
+
+export const deleteFolder = async (req, res) => {
+  try {
+    const { folderId } = req.params;
+
+    const folder = await ClassroomFolder.findByPk(folderId);
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found.' });
+    }
+
+    // Verify classroom authorization
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: folder.classroom_id,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Delete all resources in folder from S3/Drive/local uploads
+    const resources = await ClassroomResource.findAll({
+      where: { folder_id: folderId }
+    });
+
+    for (const resrc of resources) {
+      if (resrc.drive_file_id) {
+        await deleteFile(resrc.drive_file_id, resrc.drive_link);
+      }
+    }
+
+    // Delete folder from database
+    await folder.destroy();
+
+    return res.json({ message: 'Folder deleted successfully.' });
+  } catch (error) {
+    console.error('Error in deleteFolder:', error);
+    return res.status(500).json({
+      message: 'Internal server error while deleting folder.',
       error: error.message
     });
   }
@@ -153,8 +379,10 @@ export const deleteResource = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Delete from Google Drive / local filesystem
-    await deleteFile(resource.drive_file_id, resource.drive_link);
+    // Delete from Google Drive / local filesystem if it's a file
+    if (resource.drive_file_id) {
+      await deleteFile(resource.drive_file_id, resource.drive_link);
+    }
 
     // Delete database entry
     await resource.destroy();

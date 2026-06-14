@@ -64,8 +64,8 @@ export const getClassrooms = async (req, res) => {
       order: [['created_at', 'DESC']]
     };
 
-    // If teacher, filter to only return classrooms where they are approved
-    if (req.user.role === 'teacher') {
+    // If teacher or student, filter to only return classrooms where they are approved
+    if (req.user.role === 'teacher' || req.user.role === 'student') {
       queryOptions.include[0].where = { id: req.user.id };
       queryOptions.include[0].through = { where: { status: 'approved' } };
     }
@@ -87,8 +87,8 @@ export const getClassroomById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // If teacher, first check if they have approved access to this classroom
-    if (req.user.role === 'teacher') {
+    // If teacher or student, first check if they have approved access to this classroom
+    if (req.user.role === 'teacher' || req.user.role === 'student') {
       const hasAccess = await ClassroomTeacher.findOne({
         where: { 
           classroom_id: id, 
@@ -97,7 +97,7 @@ export const getClassroomById = async (req, res) => {
         }
       });
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied. You are not an approved teacher of this classroom.' });
+        return res.status(403).json({ message: 'Access denied. You are not an approved member of this classroom.' });
       }
     }
 
@@ -491,7 +491,7 @@ export const signupStep3Password = async (req, res) => {
 // Step 4: Complete Profile (Name, Username, Email, Role) & Join Classroom (Public)
 export const signupStep4Profile = async (req, res) => {
   try {
-    const { phone, role, name, username, email, classroomId } = req.body;
+    const { phone, role, name, username, email, classroomId, batch } = req.body;
 
     if (!phone || !role || !name || !username || !email || !classroomId) {
       return res.status(400).json({ message: 'All profile fields are required.' });
@@ -543,17 +543,18 @@ export const signupStep4Profile = async (req, res) => {
       return res.status(404).json({ message: 'Classroom not found.' });
     }
 
-    // Update user status, profile details, and role
+    // Update user status, profile details, role, and batch
     await user.update({
       name,
       username,
       email,
       role,
-      status: 'active'
+      status: 'active',
+      batch: batch || null
     });
 
-    // If role is teacher, link to classroom with status: 'pending'
-    if (role === 'teacher') {
+    // If role is teacher or student, link to classroom
+    if (role === 'teacher' || role === 'student') {
       const existingRelation = await ClassroomTeacher.findOne({
         where: {
           classroom_id: classroom.id,
@@ -565,7 +566,8 @@ export const signupStep4Profile = async (req, res) => {
         await ClassroomTeacher.create({
           classroom_id: classroom.id,
           user_id: user.id,
-          status: 'pending'
+          status: role === 'student' ? 'approved' : 'pending',
+          role: role
         });
       }
     }
@@ -576,7 +578,8 @@ export const signupStep4Profile = async (req, res) => {
         userId: user.id,
         organizationId: user.organization_id,
         role: user.role,
-        email: user.email
+        email: user.email,
+        batch: user.batch
       },
       process.env.JWT_SECRET || 'lms_super_secret_key_123',
       { expiresIn: '30d' }
@@ -590,7 +593,8 @@ export const signupStep4Profile = async (req, res) => {
         name: user.name,
         email: user.email,
         username: user.username,
-        role: user.role
+        role: user.role,
+        batch: user.batch
       },
       classroom: {
         id: classroom.id,

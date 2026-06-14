@@ -58,6 +58,7 @@ const JoinClassroom: React.FC = () => {
   const [profileName, setProfileName] = useState('');
   const [profileUsername, setProfileUsername] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
+  const [profileBatch, setProfileBatch] = useState('');
 
   // Login states
   const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
@@ -231,7 +232,7 @@ const JoinClassroom: React.FC = () => {
   // Step 5 handler: Profile setup
   const handleStep5ProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileName || !profileUsername || !profileEmail) {
+    if (!profileName || !profileUsername || !profileEmail || (selectedRole === 'student' && !profileBatch)) {
       setError('Please fill in all profile details.');
       return;
     }
@@ -247,7 +248,8 @@ const JoinClassroom: React.FC = () => {
         name: profileName,
         username: profileUsername,
         email: profileEmail,
-        classroomId
+        classroomId,
+        batch: selectedRole === 'student' ? profileBatch : null
       });
 
       setSuccessMsg('Onboarding completed successfully! Your join request has been submitted.');
@@ -737,7 +739,7 @@ const JoinClassroom: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '28px' }}>
+                <div className="form-group" style={{ marginBottom: '20px' }}>
                   <label className="form-label" htmlFor="profEmail">Email (Gmail) *</label>
                   <div className="input-wrapper">
                     <input
@@ -752,6 +754,24 @@ const JoinClassroom: React.FC = () => {
                     <FiMail className="input-icon" />
                   </div>
                 </div>
+
+                {selectedRole === 'student' && (
+                  <div className="form-group" style={{ marginBottom: '28px' }}>
+                    <label className="form-label" htmlFor="profBatch">Batch / Section (e.g. Batch A) *</label>
+                    <div className="input-wrapper">
+                      <input
+                        className="form-input"
+                        type="text"
+                        id="profBatch"
+                        placeholder="e.g. Batch A"
+                        value={profileBatch}
+                        onChange={(e) => setProfileBatch(e.target.value)}
+                        required={selectedRole === 'student'}
+                      />
+                      <FiUsers className="input-icon" />
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setWizardStep(4)} disabled={submitting}>

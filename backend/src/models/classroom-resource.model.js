@@ -22,7 +22,7 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
   },
   drive_file_id: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   drive_link: {
     type: DataTypes.TEXT,
@@ -39,6 +39,27 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
       model: 'users',
       key: 'id'
     }
+  },
+  folder_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'classroom_folders',
+      key: 'id'
+    }
+  },
+  module_session: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  visibility: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'all_students'
+  },
+  batch: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   tableName: 'classroom_resources',

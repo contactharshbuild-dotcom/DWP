@@ -65,6 +65,10 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     unique: true,
     allowNull: true
+  },
+  batch: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   tableName: 'users',

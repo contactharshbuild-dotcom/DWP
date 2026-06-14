@@ -26,9 +26,9 @@ router.post('/join/signup-step4', signupStep4Profile);
 // Guard all other classroom routes for authenticated users
 router.use(authenticate);
 
-// Read actions: Admin and Teacher can access
-router.get('/', authorizeRoles('admin', 'teacher'), getClassrooms);
-router.get('/:id', authorizeRoles('admin', 'teacher'), getClassroomById);
+// Read actions: Admin, Teacher, and Student can access
+router.get('/', authorizeRoles('admin', 'teacher', 'student'), getClassrooms);
+router.get('/:id', authorizeRoles('admin', 'teacher', 'student'), getClassroomById);
 
 // Teacher join request and status checks
 router.post('/join', authorizeRoles('teacher'), joinClassroom);

@@ -4,6 +4,12 @@ import User from './user.model.js';
 import Classroom from './classroom.model.js';
 import ClassroomTeacher from './classroom-teacher.model.js';
 import ClassroomResource from './classroom-resource.model.js';
+import ClassroomFolder from './classroom-folder.model.js';
+import McqTest from './mcq-test.model.js';
+import McqQuestion from './mcq-question.model.js';
+import McqAttempt from './mcq-attempt.model.js';
+import PracticalExam from './practical-exam.model.js';
+import PracticalSubmission from './practical-submission.model.js';
 
 const db = {
   sequelize,
@@ -11,7 +17,13 @@ const db = {
   User,
   Classroom,
   ClassroomTeacher,
-  ClassroomResource
+  ClassroomResource,
+  ClassroomFolder,
+  McqTest,
+  McqQuestion,
+  McqAttempt,
+  PracticalExam,
+  PracticalSubmission
 };
 
 // Establish relationships
@@ -41,6 +53,36 @@ ClassroomResource.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classr
 User.hasMany(ClassroomResource, { foreignKey: 'uploaded_by', as: 'resources', onDelete: 'SET NULL' });
 ClassroomResource.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
 
+// Folders relationships
+Classroom.hasMany(ClassroomFolder, { foreignKey: 'classroom_id', as: 'folders', onDelete: 'CASCADE' });
+ClassroomFolder.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
+ClassroomFolder.hasMany(ClassroomResource, { foreignKey: 'folder_id', as: 'resources', onDelete: 'CASCADE' });
+ClassroomResource.belongsTo(ClassroomFolder, { foreignKey: 'folder_id', as: 'folder' });
+
+// MCQ relationships
+Classroom.hasMany(McqTest, { foreignKey: 'classroom_id', as: 'mcqTests', onDelete: 'CASCADE' });
+McqTest.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
+McqTest.hasMany(McqQuestion, { foreignKey: 'test_id', as: 'questions', onDelete: 'CASCADE' });
+McqQuestion.belongsTo(McqTest, { foreignKey: 'test_id', as: 'test' });
+
+McqTest.hasMany(McqAttempt, { foreignKey: 'test_id', as: 'attempts', onDelete: 'CASCADE' });
+McqAttempt.belongsTo(McqTest, { foreignKey: 'test_id', as: 'test' });
+
+User.hasMany(McqAttempt, { foreignKey: 'user_id', as: 'mcqAttempts', onDelete: 'CASCADE' });
+McqAttempt.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+// Practical relationships
+Classroom.hasMany(PracticalExam, { foreignKey: 'classroom_id', as: 'practicalExams', onDelete: 'CASCADE' });
+PracticalExam.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
+PracticalExam.hasMany(PracticalSubmission, { foreignKey: 'practical_id', as: 'submissions', onDelete: 'CASCADE' });
+PracticalSubmission.belongsTo(PracticalExam, { foreignKey: 'practical_id', as: 'practicalExam' });
+
+User.hasMany(PracticalSubmission, { foreignKey: 'user_id', as: 'practicalSubmissions', onDelete: 'CASCADE' });
+PracticalSubmission.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -48,5 +90,18 @@ Object.keys(db).forEach((modelName) => {
   }
 });
 
-export { sequelize, Organization, User, Classroom, ClassroomTeacher, ClassroomResource };
+export { 
+  sequelize, 
+  Organization, 
+  User, 
+  Classroom, 
+  ClassroomTeacher, 
+  ClassroomResource, 
+  ClassroomFolder,
+  McqTest,
+  McqQuestion,
+  McqAttempt,
+  PracticalExam,
+  PracticalSubmission
+};
 export default db;

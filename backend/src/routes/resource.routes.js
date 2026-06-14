@@ -4,17 +4,20 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { 
   uploadResource, 
   getClassroomResources, 
-  deleteResource 
+  deleteResource,
+  addLinkResource,
+  createFolder,
+  deleteFolder
 } from '../controllers/resource.controller.js';
 
 const router = express.Router();
 
-// Configure multer in-memory storage (we upload file buffers directly to Google Drive or local file system)
+// Configure multer in-memory storage (upload file buffers directly to storage)
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB file limit
+    fileSize: 50 * 1024 * 1024 // 50MB file limit (FR-MAT-04)
   }
 });
 
@@ -24,10 +27,17 @@ router.use(authenticate);
 // Upload resource
 router.post('/upload', upload.single('file'), uploadResource);
 
+// Add link/YouTube resource
+router.post('/link', addLinkResource);
+
 // Get all resources for a classroom
 router.get('/classroom/:classroomId', getClassroomResources);
 
 // Delete a resource
 router.delete('/:resourceId', deleteResource);
+
+// Folders endpoints
+router.post('/folders', createFolder);
+router.delete('/folders/:folderId', deleteFolder);
 
 export default router;
