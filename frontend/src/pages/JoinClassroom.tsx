@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
   FiBookOpen, 
@@ -23,6 +23,10 @@ const JoinClassroom: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { token, user } = useSelector((state: RootState) => state.auth);
+ 
+  // Read search params for role override
+  const [searchParams] = useSearchParams();
+  const queryRole = searchParams.get('role');
 
   // General States
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +56,9 @@ const JoinClassroom: React.FC = () => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
   // Step 4: Role Selection
-  const [selectedRole, setSelectedRole] = useState<'teacher' | 'student' | null>('teacher');
+  const [selectedRole, setSelectedRole] = useState<'teacher' | 'student' | null>(
+    queryRole === 'student' || queryRole === 'teacher' ? queryRole : 'teacher'
+  );
 
   // Step 5: Profile Info
   const [profileName, setProfileName] = useState('');
@@ -79,7 +85,7 @@ const JoinClassroom: React.FC = () => {
   // Status check for authenticated teachers on mount/token change
   useEffect(() => {
     const checkEnrollmentStatus = async () => {
-      if (!token || !classroomId || user?.role !== 'teacher') return;
+      if (!token || !classroomId || (user?.role !== 'teacher' && user?.role !== 'student')) return;
 
       setCheckingStatus(true);
       setError(null);
@@ -108,8 +114,8 @@ const JoinClassroom: React.FC = () => {
   const handleJoinRequest = async () => {
     if (!token) return;
 
-    if (user?.role !== 'teacher') {
-      setError('Only accounts with the "teacher" role are allowed to join classrooms.');
+    if (user?.role !== 'teacher' && user?.role !== 'student') {
+      setError('Only teachers and students are allowed to join classrooms.');
       return;
     }
 
@@ -210,7 +216,13 @@ const JoinClassroom: React.FC = () => {
         phone: regPhone,
         password: regPassword
       });
-      setWizardStep(4);
+      
+      if (queryRole === 'student' || queryRole === 'teacher') {
+        setSelectedRole(queryRole);
+        setWizardStep(5);
+      } else {
+        setWizardStep(4);
+      }
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Password registration failed.';
       setError(msg);
@@ -417,10 +429,10 @@ const JoinClassroom: React.FC = () => {
               <span className="spinner" style={{ width: '32px', height: '32px', borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--primary)' }}></span>
               <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Checking enrollment status...</span>
             </div>
-          ) : user?.role !== 'teacher' ? (
+          ) : (user?.role !== 'teacher' && user?.role !== 'student') ? (
             <div style={{ marginTop: '20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                You are currently logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role})</strong>. Only teachers can join classrooms.
+                You are currently logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role})</strong>. Only teachers and students can join classrooms.
               </p>
               <button className="btn btn-secondary" onClick={() => navigate('/')}>
                 <FiArrowLeft size={18} />
@@ -444,7 +456,7 @@ const JoinClassroom: React.FC = () => {
               </div>
               <h4 style={{ color: 'white', marginBottom: '8px' }}>Request Approved!</h4>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                Your join request has been accepted. You are now an active teacher in this classroom.
+                Your join request has been accepted. You are now an active {user?.role} in this classroom.
               </p>
               <button className="btn" onClick={() => navigate(`/classrooms/${resolvedClassroomDbId}`)}>
                 <span>Go to Classroom</span>
@@ -477,7 +489,7 @@ const JoinClassroom: React.FC = () => {
           ) : (
             <div style={{ marginTop: '20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                Logged in as <strong style={{ color: 'white' }}>{user?.name} (Teacher)</strong>. Click the button below to submit a join request.
+                Logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role === 'teacher' ? 'Teacher' : 'Student'})</strong>. Click the button below to submit a join request.
               </p>
               <button className="btn" onClick={handleJoinRequest} disabled={submitting}>
                 {submitting ? <span className="spinner"></span> : <span>Request to Join Classroom</span>}
@@ -774,7 +786,19 @@ const JoinClassroom: React.FC = () => {
                 )}
 
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setWizardStep(4)} disabled={submitting}>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    style={{ flex: 1 }} 
+                    onClick={() => {
+                      if (queryRole === 'student' || queryRole === 'teacher') {
+                        setWizardStep(3);
+                      } else {
+                        setWizardStep(4);
+                      }
+                    }} 
+                    disabled={submitting}
+                  >
                     Back
                   </button>
                   <button className="btn" type="submit" style={{ flex: 2 }} disabled={submitting}>

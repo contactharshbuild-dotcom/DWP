@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import { 
+import {
   FiArrowLeft, 
   FiPlus, 
   FiTrash2, 
@@ -10,36 +10,30 @@ import {
   FiCheck, 
   FiCopy, 
   FiBookOpen, 
-  FiUserPlus,
-  FiUserCheck,
   FiX,
-  FiFileText,
-  FiImage,
-  FiUploadCloud,
-  FiExternalLink,
   FiPaperclip,
-  FiFolder,
-  FiFolderPlus,
-  FiYoutube,
-  FiLink,
-  FiVideo,
-  FiChevronRight,
-  FiUsers,
   FiAward,
   FiClock,
   FiShield,
-  FiFile,
-  FiTrendingUp,
   FiActivity
 } from 'react-icons/fi';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
+import { TeachersTab } from './classroom-modules/TeachersTab';
+import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
+import { StudentsTab } from './classroom-modules/StudentsTab';
+import { ResourcesTab } from './classroom-modules/ResourcesTab';
+import { McqExamsTab } from './classroom-modules/McqExamsTab';
+import { PracticalsTab } from './classroom-modules/PracticalsTab';
+import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
 
 interface Teacher {
   id: number;
   name: string;
   email: string;
   status: string; // user account status (active/pending)
+  batch?: string | null;
+  invite_token?: string | null;
   ClassroomTeacher: {
     status: string; // join status (pending/approved)
     role: string;   // classroom role (co-teacher/teacher/student)
@@ -63,6 +57,7 @@ interface Resource {
   module_session: string | null;
   visibility: string;
   batch: string | null;
+  assigned_student_ids?: number[];
   uploader?: {
     id: number;
     name: string;
@@ -83,7 +78,7 @@ interface Classroom {
 // MCQ & Practical Types
 // ----------------------------------------------------
 
-interface MCQQuestionInput {
+export interface MCQQuestionInput {
   id?: number;
   course?: string;
   module?: string;
@@ -101,7 +96,7 @@ interface MCQQuestionInput {
   options?: Array<{ key: string; text: string }>;
 }
 
-interface MCQTest {
+export interface MCQTest {
   id: number;
   classroom_id: number;
   title: string;
@@ -115,6 +110,7 @@ interface MCQTest {
   start_window: string;
   end_window: string;
   batches: string[];
+  assigned_student_ids?: number[];
   security_tab_switch_behavior: 'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit';
   security_max_warnings: number;
   security_force_fullscreen: boolean;
@@ -123,7 +119,7 @@ interface MCQTest {
   created_at: string;
 }
 
-interface MCQAttempt {
+export interface MCQAttempt {
   id: number;
   test_id: number;
   user_id: number;
@@ -148,18 +144,19 @@ interface MCQAttempt {
   test?: MCQTest;
 }
 
-interface PracticalExam {
+export interface PracticalExam {
   id: number;
   classroom_id: number;
   title: string;
   instructions: string;
   due_date: string;
   total_marks: number;
+  batches?: string[];
   submissions?: PracticalSubmission[];
   created_at: string;
 }
 
-interface PracticalSubmission {
+export interface PracticalSubmission {
   id: number;
   practical_id: number;
   user_id: number;
@@ -243,6 +240,16 @@ function parseCSV(text: string): Record<string, string>[] {
   return results;
 }
 
+// Helper to shuffle an array (Fisher-Yates)
+function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 const ClassroomDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -254,7 +261,15 @@ const ClassroomDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Tabs state
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'resources' | 'mcqs' | 'practicals'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals'>('active');
+
+  // Student Invitation States
+  const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
+  const [inviteStudentName, setInviteStudentName] = useState('');
+  const [inviteStudentEmail, setInviteStudentEmail] = useState('');
+  const [inviteStudentBatch, setInviteStudentBatch] = useState('');
+  const [inviteStudentLoading, setInviteStudentLoading] = useState(false);
+  const [studentInviteLink, setStudentInviteLink] = useState<string | null>(null);
 
   // Share Modal State
   const [showModal, setShowModal] = useState(false);
@@ -272,8 +287,9 @@ const ClassroomDetails: React.FC = () => {
   const [materialName, setMaterialName] = useState('');
   const [materialLink, setMaterialLink] = useState('');
   const [materialModuleSession, setMaterialModuleSession] = useState('');
-  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'hidden'>('all_students');
+  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'specific_students' | 'hidden'>('all_students');
   const [materialBatch, setMaterialBatch] = useState('');
+  const [materialSelectedStudentIds, setMaterialSelectedStudentIds] = useState<number[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('root');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -307,6 +323,8 @@ const ClassroomDetails: React.FC = () => {
   const [testStartWindow, setTestStartWindow] = useState('');
   const [testEndWindow, setTestEndWindow] = useState('');
   const [testBatches, setTestBatches] = useState('');
+  const [testAssignToSpecificStudents, setTestAssignToSpecificStudents] = useState(false);
+  const [testSelectedStudentIds, setTestSelectedStudentIds] = useState<number[]>([]);
   const [testSecTabSwitch, setTestSecTabSwitch] = useState<'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit'>('warning');
   const [testSecMaxWarnings, setTestSecMaxWarnings] = useState(3);
   const [testSecForceFullscreen, setTestSecForceFullscreen] = useState(false);
@@ -342,16 +360,19 @@ const ClassroomDetails: React.FC = () => {
   const [activeTest, setActiveTest] = useState<MCQTest | null>(null);
   const [activeAttempt, setActiveAttempt] = useState<MCQAttempt | null>(null);
   const [activePledgeChecked, setActivePledgeChecked] = useState(false);
+  const [pledgeConfirmed, setPledgeConfirmed] = useState(false);
   const [attemptTimeRemaining, setAttemptTimeRemaining] = useState(0); // in seconds
   const [studentResponses, setStudentResponses] = useState<Record<number, string>>({});
   const [proctorWarningMsg, setProctorWarningMsg] = useState<string | null>(null);
   const [proctorWarningCount, setProctorWarningCount] = useState(0);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   // Analytics State
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [analyticsTest, setAnalyticsTest] = useState<MCQTest | null>(null);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'leaderboard'>('overview');
 
   // Student Attempt Result View
   const [showResultModal, setShowResultModal] = useState(false);
@@ -373,7 +394,19 @@ const ClassroomDetails: React.FC = () => {
   const [pracInstructions, setPracInstructions] = useState('');
   const [pracDueDate, setPracDueDate] = useState('');
   const [pracTotalMarks, setPracTotalMarks] = useState(100);
+  const [pracBatches, setPracBatches] = useState('');
+  const [pracAssignToSpecificStudents, setPracAssignToSpecificStudents] = useState(false);
+  const [pracSelectedStudentIds, setPracSelectedStudentIds] = useState<number[]>([]);
   const [pracSubmitting, setPracSubmitting] = useState(false);
+
+  // Post-hoc Assignment Modal States
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignTargetType, setAssignTargetType] = useState<'material' | 'mcq' | 'practical' | null>(null);
+  const [assignTargetId, setAssignTargetId] = useState<number | null>(null);
+  const [assignBatches, setAssignBatches] = useState('');
+  const [assignToSpecificStudents, setAssignToSpecificStudents] = useState(false);
+  const [assignSelectedStudentIds, setAssignSelectedStudentIds] = useState<number[]>([]);
+  const [assignSaving, setAssignSaving] = useState(false);
 
   // Student Submission state
   const [selectedPrac, setSelectedPrac] = useState<PracticalExam | null>(null);
@@ -500,6 +533,81 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  const handleInviteStudentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteStudentName.trim() || !inviteStudentEmail.trim()) {
+      alert('Student name and email are required.');
+      return;
+    }
+
+    setInviteStudentLoading(true);
+    setStudentInviteLink(null);
+    try {
+      const response = await api.post(`/classrooms/${id}/students/invite`, {
+        name: inviteStudentName.trim(),
+        email: inviteStudentEmail.trim(),
+        batch: inviteStudentBatch.trim() || undefined
+      });
+
+      if (response.data.inviteLink) {
+        setStudentInviteLink(response.data.inviteLink);
+      } else {
+        alert('Student linked to classroom successfully!');
+        setShowStudentInviteModal(false);
+        setInviteStudentName('');
+        setInviteStudentEmail('');
+        setInviteStudentBatch('');
+      }
+
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to invite student.');
+    } finally {
+      setInviteStudentLoading(false);
+    }
+  };
+
+  const handleRemoveStudent = async (studentId: number) => {
+    if (!window.confirm('Are you sure you want to remove this student from this classroom?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/classrooms/${id}/students/${studentId}`);
+      alert('Student removed successfully.');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to remove student.');
+    }
+  };
+
+  const handleApproveStudentRequest = async (studentId: number) => {
+    try {
+      await api.post(`/classrooms/${id}/students/${studentId}/approve`);
+      alert('Student request approved!');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to approve student request.');
+    }
+  };
+
+  const handleRejectStudentRequest = async (studentId: number) => {
+    if (!window.confirm('Are you sure you want to reject this student request?')) {
+      return;
+    }
+    try {
+      await api.delete(`/classrooms/${id}/students/${studentId}/reject`);
+      alert('Student request rejected.');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to reject student request.');
+    }
+  };
+
   const handleUpgradeTeacher = async (teacherId: number) => {
     if (!window.confirm('Are you sure you want to upgrade this teacher to the Teacher role?')) {
       return;
@@ -602,6 +710,7 @@ const ClassroomDetails: React.FC = () => {
         formData.append('moduleSession', materialModuleSession);
         formData.append('visibility', materialVisibility);
         formData.append('batch', materialBatch);
+        formData.append('assignedStudentIds', materialVisibility === 'specific_students' ? JSON.stringify(materialSelectedStudentIds) : '[]');
 
         const response = await api.post('/resources/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
@@ -617,7 +726,8 @@ const ClassroomDetails: React.FC = () => {
           folderId: folderVal,
           moduleSession: materialModuleSession,
           visibility: materialVisibility,
-          batch: materialBatch
+          batch: materialBatch,
+          assignedStudentIds: materialVisibility === 'specific_students' ? materialSelectedStudentIds : []
         });
         setResources(prev => [response.data.resource, ...prev]);
         alert('Link added successfully!');
@@ -630,6 +740,7 @@ const ClassroomDetails: React.FC = () => {
       setMaterialModuleSession('');
       setMaterialBatch('');
       setMaterialVisibility('all_students');
+      setMaterialSelectedStudentIds([]);
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to add study material.');
@@ -661,6 +772,81 @@ const ClassroomDetails: React.FC = () => {
       alert(err.response?.data?.message || 'Failed to create folder.');
     } finally {
       setFolderCreating(false);
+    }
+  };
+
+  const openAssignModal = (type: 'material' | 'mcq' | 'practical', item: any) => {
+    setAssignTargetType(type);
+    setAssignTargetId(item.id);
+    
+    if (type === 'material') {
+      setAssignToSpecificStudents(item.visibility === 'specific_students');
+      setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignBatches(item.batch || '');
+    } else {
+      const hasIndStudents = item.assigned_student_ids && item.assigned_student_ids.length > 0;
+      setAssignToSpecificStudents(hasIndStudents);
+      setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignBatches(item.batches ? item.batches.join(', ') : '');
+    }
+    
+    setShowAssignModal(true);
+  };
+
+  const handleAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignTargetType || !assignTargetId) return;
+
+    setAssignSaving(true);
+    try {
+      const batchesList = assignBatches ? assignBatches.split(',').map(b => b.trim()) : [];
+      
+      let payload: any = {};
+      if (assignTargetType === 'material') {
+        let visibilityVal = 'all_students';
+        if (assignToSpecificStudents) {
+          visibilityVal = 'specific_students';
+        } else if (batchesList.length > 0) {
+          visibilityVal = 'specific_batch';
+        }
+        payload = {
+          visibility: visibilityVal,
+          batch: visibilityVal === 'specific_batch' ? assignBatches : null,
+          assignedStudentIds: assignToSpecificStudents ? assignSelectedStudentIds : []
+        };
+      } else {
+        payload = {
+          batches: batchesList,
+          assignedStudentIds: assignToSpecificStudents ? assignSelectedStudentIds : []
+        };
+      }
+
+      let url = '';
+      if (assignTargetType === 'material') {
+        url = `/resources/${assignTargetId}/assign`;
+      } else if (assignTargetType === 'mcq') {
+        url = `/mcq/tests/${assignTargetId}/assign`;
+      } else {
+        url = `/practical/${assignTargetId}/assign`;
+      }
+
+      const response = await api.put(url, payload);
+
+      if (assignTargetType === 'material') {
+        setResources(prev => prev.map(r => r.id === assignTargetId ? { ...r, ...response.data.resource } : r));
+      } else if (assignTargetType === 'mcq') {
+        setMcqTests(prev => prev.map(t => t.id === assignTargetId ? { ...t, ...response.data.test } : t));
+      } else {
+        setPracticals(prev => prev.map(p => p.id === assignTargetId ? { ...p, ...response.data.practical } : p));
+      }
+
+      setShowAssignModal(false);
+      alert('Assignments updated successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to update assignments.');
+    } finally {
+      setAssignSaving(false);
     }
   };
 
@@ -710,9 +896,11 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  // Partition teachers by join status
-  const activeTeachers = classroom?.teachers.filter(t => t.ClassroomTeacher?.status === 'approved') || [];
-  const pendingRequests = classroom?.teachers.filter(t => t.ClassroomTeacher?.status === 'pending') || [];
+  // Partition teachers and students by role & status
+  const activeTeachers = classroom?.teachers.filter(t => t.ClassroomTeacher?.role !== 'student' && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingRequests = classroom?.teachers.filter(t => t.ClassroomTeacher?.role !== 'student' && t.ClassroomTeacher?.status === 'pending') || [];
+  const activeStudents = classroom?.teachers.filter(t => t.ClassroomTeacher?.role === 'student' && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingStudents = classroom?.teachers.filter(t => t.ClassroomTeacher?.role === 'student' && t.ClassroomTeacher?.status === 'pending') || [];
 
   // Generate generic shareable link for this classroom ID
   const inviteLink = classroom ? `http://localhost:5173/join-classroom/${classroom.classroom_id}` : '';
@@ -756,6 +944,7 @@ const ClassroomDetails: React.FC = () => {
         startWindow: testStartWindow,
         endWindow: testEndWindow,
         batches: batchesList,
+        assignedStudentIds: testAssignToSpecificStudents ? testSelectedStudentIds : [],
         securityTabSwitchBehavior: testSecTabSwitch,
         securityMaxWarnings: testSecMaxWarnings,
         securityForceFullscreen: testSecForceFullscreen,
@@ -768,6 +957,8 @@ const ClassroomDetails: React.FC = () => {
       setTestDescription('');
       setTestTimeLimit(30);
       setTestQuestions([]);
+      setTestAssignToSpecificStudents(false);
+      setTestSelectedStudentIds([]);
       alert('MCQ Test created successfully!');
     } catch (err: any) {
       console.error(err);
@@ -986,6 +1177,61 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  // Preview MCQ Test
+  const handlePreviewTest = async (test: MCQTest) => {
+    try {
+      const response = await api.get(`/mcq/tests/${test.id}`);
+      const fullTest = response.data.test;
+      
+      const processedQuestions = (fullTest.questions || []).map((q: any) => {
+        const options = [
+          { key: 'A', text: q.option_a },
+          { key: 'B', text: q.option_b },
+          { key: 'C', text: q.option_c },
+          { key: 'D', text: q.option_d }
+        ];
+        const finalOptions = fullTest.shuffle_options ? shuffleArray(options) : options;
+        return {
+          ...q,
+          options: finalOptions
+        };
+      });
+      
+      const finalQuestions = fullTest.shuffle_questions ? shuffleArray(processedQuestions) : processedQuestions;
+      
+      setActiveTest({
+        ...fullTest,
+        questions: finalQuestions
+      });
+      setIsPreviewMode(true);
+      setActivePledgeChecked(false);
+      setPledgeConfirmed(false);
+      setActiveAttempt({
+        id: 0,
+        test_id: test.id,
+        user_id: 0,
+        score: 0,
+        percentage: 0,
+        time_taken: 0,
+        responses: {},
+        tab_switch_count: 0,
+        tab_switch_log: [],
+        fullscreen_exit_count: 0,
+        fullscreen_exit_log: [],
+        start_time: new Date().toISOString(),
+        submit_type: 'manual',
+        status: 'started'
+      });
+      setStudentResponses({});
+      setProctorWarningCount(0);
+      setProctorWarningMsg(null);
+      setAttemptTimeRemaining(test.time_limit * 60);
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to load test details for preview.');
+    }
+  };
+
   // Start Attempt
   const handleStartAttempt = async (test: MCQTest) => {
     if (!activePledgeChecked) {
@@ -1002,6 +1248,7 @@ const ClassroomDetails: React.FC = () => {
       
       setActiveTest(testDetailsRes.data.test);
       setActiveAttempt(attempt);
+      setPledgeConfirmed(true);
       setStudentResponses({});
       setProctorWarningCount(0);
       setProctorWarningMsg(null);
@@ -1023,10 +1270,35 @@ const ClassroomDetails: React.FC = () => {
 
   // Submit Attempt (Manual or Auto)
   const handleAttemptSubmit = async (isAuto = false) => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
 
     // Clear active timers
     if (timerRef.current) clearInterval(timerRef.current);
+
+    if (isPreviewMode) {
+      // Exit fullscreen if active
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.error(err));
+      }
+
+      // Calculate preview score locally
+      let score = 0;
+      activeTest.questions?.forEach(q => {
+        const correctAns = q.correct_answer;
+        const studentAns = studentResponses[q.id!];
+        if (correctAns && studentAns === correctAns) {
+          score += q.marks;
+        }
+      });
+      const totalMarks = activeTest.questions?.reduce((acc, q) => acc + q.marks, 0) || 0;
+      const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
+
+      alert(`[PREVIEW MODE] MCQ Exam submitted successfully!\n\nYour Mock Score: ${score} / ${totalMarks} (${percentage}%)\n\n(No data was saved to the database)`);
+      setActiveAttempt(null);
+      setActiveTest(null);
+      setIsPreviewMode(false);
+      return;
+    }
 
     try {
       await api.post(`/mcq/attempts/${activeAttempt.id}/submit`, {
@@ -1069,7 +1341,22 @@ const ClassroomDetails: React.FC = () => {
 
   // Tab switch hook for security
   const handleTabSwitch = async () => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
+
+    if (isPreviewMode) {
+      const count = proctorWarningCount + 1;
+      setProctorWarningCount(count);
+      if (activeTest.security_tab_switch_behavior !== 'warning' && count >= activeTest.security_max_warnings) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        alert('[PREVIEW MODE] EXAM TERMINATED: Too many tab switches detected. (In real exam, student attempt would be auto-submitted)');
+        setActiveAttempt(null);
+        setActiveTest(null);
+        setIsPreviewMode(false);
+      } else {
+        setProctorWarningMsg(`[PREVIEW MODE] WARNING: Tab switch detected! Switch count: ${count} / ${activeTest.security_max_warnings}.`);
+      }
+      return;
+    }
 
     try {
       const response = await api.post(`/mcq/attempts/${activeAttempt.id}/log-event`, {
@@ -1097,7 +1384,12 @@ const ClassroomDetails: React.FC = () => {
 
   // Fullscreen exit hook for security
   const handleFullscreenExit = async () => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
+
+    if (isPreviewMode) {
+      alert('[PREVIEW MODE] FULLSCREEN EXIT DETECTED: This exit would be logged in the student\'s proctor report.');
+      return;
+    }
 
     try {
       await api.post(`/mcq/attempts/${activeAttempt.id}/log-event`, {
@@ -1152,6 +1444,7 @@ const ClassroomDetails: React.FC = () => {
   // Open attempt analytics
   const handleOpenAnalytics = async (testId: number) => {
     setAnalyticsLoading(true);
+    setAnalyticsTab('overview');
     setShowAnalyticsModal(true);
     try {
       const response = await api.get(`/mcq/tests/${testId}/analytics`);
@@ -1198,12 +1491,15 @@ const ClassroomDetails: React.FC = () => {
 
     setPracSubmitting(true);
     try {
+      const batchesList = pracBatches ? pracBatches.split(',').map(b => b.trim()) : [];
       const response = await api.post('/practical', {
         classroomId: id,
         title: pracTitle,
         instructions: pracInstructions,
         dueDate: pracDueDate,
-        totalMarks: pracTotalMarks
+        totalMarks: pracTotalMarks,
+        batches: batchesList,
+        assignedStudentIds: pracAssignToSpecificStudents ? pracSelectedStudentIds : []
       });
 
       setPracticals(prev => [...prev, response.data.practical]);
@@ -1211,6 +1507,9 @@ const ClassroomDetails: React.FC = () => {
       setPracTitle('');
       setPracInstructions('');
       setPracDueDate('');
+      setPracBatches('');
+      setPracAssignToSpecificStudents(false);
+      setPracSelectedStudentIds([]);
       alert('Practical Exam created successfully!');
     } catch (err: any) {
       console.error(err);
@@ -1347,8 +1646,41 @@ const ClassroomDetails: React.FC = () => {
           padding: '24px 16px',
           fontFamily: 'system-ui, sans-serif'
         }}>
+          {isPreviewMode && (
+            <div style={{
+              maxWidth: '850px',
+              margin: '0 auto 16px',
+              backgroundColor: 'var(--light-primary)',
+              color: 'white',
+              textAlign: 'center',
+              padding: '10px 16px',
+              fontSize: '14px',
+              fontWeight: '700',
+              borderRadius: '8px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)'
+            }}>
+              <span>👁️ MCQ Exam Preview Mode — No attempts or scores will be saved.</span>
+              <button 
+                onClick={() => {
+                  if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(err => console.error(err));
+                  }
+                  setActiveAttempt(null);
+                  setActiveTest(null);
+                  setIsPreviewMode(false);
+                }}
+                className="btn-ld btn-ld-danger btn-ld-small"
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Exit Preview
+              </button>
+            </div>
+          )}
           {/* Pledge Screen */}
-          {activeAttempt.status === 'started' && !activePledgeChecked ? (
+          {activeAttempt.status === 'started' && !pledgeConfirmed ? (
             <div style={{ maxWidth: '600px', margin: '80px auto', backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 10px 25px rgba(0,0,0,0.08)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <FiShield size={48} style={{ color: 'var(--light-primary)' }} />
@@ -1379,6 +1711,7 @@ const ClassroomDetails: React.FC = () => {
                   onClick={() => {
                     setActiveAttempt(null);
                     setActiveTest(null);
+                    setIsPreviewMode(false);
                   }}
                 >
                   Cancel
@@ -1387,7 +1720,22 @@ const ClassroomDetails: React.FC = () => {
                   className="btn-ld btn-ld-primary" 
                   style={{ flex: 2 }}
                   disabled={!activePledgeChecked}
-                  onClick={() => handleStartAttempt(activeTest)}
+                  onClick={() => {
+                    if (isPreviewMode) {
+                      setActivePledgeChecked(true);
+                      setPledgeConfirmed(true);
+                      setAttemptTimeRemaining(activeTest.time_limit * 60);
+                      if (activeTest.security_force_fullscreen) {
+                        try {
+                          document.documentElement.requestFullscreen();
+                        } catch (fErr) {
+                          console.error('Failed to trigger fullscreen:', fErr);
+                        }
+                      }
+                    } else {
+                      handleStartAttempt(activeTest);
+                    }
+                  }}
                 >
                   Start Exam
                 </button>
@@ -1586,6 +1934,37 @@ const ClassroomDetails: React.FC = () => {
                     )}
                   </button>
                 )}
+                <button
+                  onClick={() => setActiveTab('students')}
+                  style={{
+                    padding: '12px 20px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: activeTab === 'students' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                    color: activeTab === 'students' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    outline: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>Students ({activeStudents.length})</span>
+                  {pendingStudents.length > 0 && (
+                    <span style={{
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      fontWeight: '700'
+                    }}>
+                      {pendingStudents.length}
+                    </span>
+                  )}
+                </button>
               </>
             )}
             <button
@@ -1652,742 +2031,302 @@ const ClassroomDetails: React.FC = () => {
 
           {/* Active Teachers Tab */}
           {activeTab === 'active' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiUsers style={{ color: 'var(--light-primary)' }} />
-                  <span>Active Teachers</span>
-                </h3>
-              </div>
-
-              {activeTeachers.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiUsers size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No active teachers found</h4>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                        {user?.role === 'admin' && <th style={{ textAlign: 'right' }}>Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeTeachers.map((teacher) => (
-                        <tr key={`teacher-${teacher.id}`}>
-                          <td style={{ fontWeight: '600' }}>{teacher.name}</td>
-                          <td>{teacher.email}</td>
-                          <td>
-                            {teacher.ClassroomTeacher?.role === 'teacher' ? (
-                              <span className="badge-ld badge-ld-success">Teacher</span>
-                            ) : (
-                              <span className="badge-ld badge-ld-secondary">Co-Teacher</span>
-                            )}
-                          </td>
-                          {user?.role === 'admin' && (
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                {teacher.ClassroomTeacher?.role === 'co-teacher' && (
-                                  <button
-                                    className="btn-ld btn-ld-primary btn-ld-small"
-                                    onClick={() => handleUpgradeTeacher(teacher.id)}
-                                  >
-                                    <FiUserCheck size={13} />
-                                    <span>Upgrade to Teacher</span>
-                                  </button>
-                                )}
-                                {teacher.id !== user.id && (
-                                  <button
-                                    className="btn-ld btn-ld-danger btn-ld-small"
-                                    onClick={() => handleRejectTeacher(teacher.id, false)}
-                                  >
-                                    <FiTrash2 size={13} />
-                                    <span>Remove</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <TeachersTab
+              activeTeachers={activeTeachers}
+              user={user}
+              onUpgradeTeacher={handleUpgradeTeacher}
+              onRejectTeacher={handleRejectTeacher}
+            />
           )}
 
           {/* Pending Teacher Join Requests Tab */}
           {activeTab === 'pending' && user?.role === 'admin' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiUserPlus style={{ color: 'var(--light-primary)' }} />
-                  <span>Join Requests</span>
-                </h3>
-              </div>
+            <JoinRequestsTab
+              pendingRequests={pendingRequests}
+              onApproveTeacher={handleApproveTeacher}
+              onRejectTeacher={handleRejectTeacher}
+            />
+          )}
 
-              {pendingRequests.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiUserPlus size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No pending join requests</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Share the invite link with teachers to let them request to join.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingRequests.map((request) => (
-                        <tr key={`request-${request.id}`}>
-                          <td style={{ fontWeight: '600' }}>{request.name}</td>
-                          <td>{request.email}</td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                              <button
-                                className="btn-ld btn-ld-primary btn-ld-small"
-                                style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
-                                onClick={() => handleApproveTeacher(request.id)}
-                              >
-                                <FiUserCheck size={13} />
-                                <span>Approve</span>
-                              </button>
-                              <button
-                                className="btn-ld btn-ld-danger btn-ld-small"
-                                onClick={() => handleRejectTeacher(request.id, true)}
-                              >
-                                <FiX size={13} />
-                                <span>Reject</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+          {/* Students Tab */}
+          {activeTab === 'students' && (
+            <StudentsTab
+              activeStudents={activeStudents}
+              pendingStudents={pendingStudents}
+              user={user}
+              classroomId={classroom?.classroom_id}
+              onOpenInviteOneStudent={() => {
+                setInviteStudentName('');
+                setInviteStudentEmail('');
+                setInviteStudentBatch('');
+                setStudentInviteLink(null);
+                setShowStudentInviteModal(true);
+              }}
+              onApproveStudentRequest={handleApproveStudentRequest}
+              onRejectStudentRequest={handleRejectStudentRequest}
+              onRemoveStudent={handleRemoveStudent}
+            />
           )}
 
           {/* Resources Tab */}
           {activeTab === 'resources' && (
-            <div>
-              {/* Breadcrumb path navigation */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '14px', fontWeight: '600' }}>
-                <span 
-                  style={{ color: currentFolderId === null ? 'var(--light-text)' : 'var(--light-primary)', cursor: currentFolderId === null ? 'default' : 'pointer' }}
-                  onClick={() => setCurrentFolderId(null)}
-                >
-                  Materials
-                </span>
-                {currentFolderId !== null && (
-                  <>
-                    <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
-                    <span style={{ color: 'var(--light-text)' }}>
-                      {folders.find(f => f.id === currentFolderId)?.name || 'Folder'}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Management Actions - Teachers/Admin only */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setAddType('file');
-                      setSelectedFile(null);
-                      setMaterialName('');
-                      setMaterialVisibility('all_students');
-                      setMaterialBatch('');
-                      setMaterialModuleSession('');
-                      setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
-                      setShowAddModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Add File</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      setAddType('link');
-                      setMaterialName('');
-                      setMaterialLink('');
-                      setMaterialVisibility('all_students');
-                      setMaterialBatch('');
-                      setMaterialModuleSession('');
-                      setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
-                      setShowAddModal(true);
-                    }}
-                  >
-                    <FiYoutube size={16} />
-                    <span>Add YouTube / Link</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      setNewFolderName('');
-                      setShowFolderModal(true);
-                    }}
-                  >
-                    <FiFolderPlus size={16} />
-                    <span>New Folder</span>
-                  </button>
-                </div>
-              )}
-
-              {/* File Dropzone/Upload Box */}
-              {user?.role !== 'student' && !showAddModal && (
-                <div 
-                  onDragEnter={handleDrag}
-                  onDragOver={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDrop={handleDrop}
-                  style={{
-                    border: dragActive ? '2px dashed var(--light-primary)' : '2px dashed var(--light-border)',
-                    backgroundColor: dragActive ? 'var(--light-primary-glow)' : 'var(--light-bg-hover)',
-                    borderRadius: '12px',
-                    padding: '30px 20px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    position: 'relative',
-                    marginBottom: '24px'
-                  }}
-                >
-                  <input 
-                    type="file" 
-                    id="resource-file-upload" 
-                    style={{ display: 'none' }} 
-                    onChange={handleFileChange}
-                    accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.zip,.mp4,.webm"
-                  />
-                  <label 
-                    htmlFor="resource-file-upload" 
-                    style={{ cursor: 'pointer', display: 'block' }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                      <FiUploadCloud size={40} style={{ color: 'var(--light-primary)' }} />
-                      <h4 style={{ fontWeight: '600', color: 'var(--light-text)' }}>Drag and drop files here, or <span style={{ color: 'var(--light-primary)', textDecoration: 'underline' }}>browse</span></h4>
-                      <p style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>Supports PDF, PPT, Word, Excel, ZIP, MP4, WebM (Max 50MB)</p>
-                    </div>
-                  </label>
-                </div>
-              )}
-
-              {/* Folders and Files Display */}
-              {resourcesLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : currentFolders.length === 0 && currentResources.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiFolder size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>This folder is empty</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Share study materials, notes, recordings, or web links here.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Module / Session</th>
-                        {user?.role !== 'student' && <th>Visibility</th>}
-                        <th>Uploaded By</th>
-                        <th>Upload Date</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Folders */}
-                      {currentFolders.map((folder) => (
-                        <tr 
-                          key={`folder-${folder.id}`} 
-                          onClick={() => setCurrentFolderId(folder.id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ fontWeight: '600' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <FiFolder style={{ color: '#d97706', flexShrink: 0 }} size={20} />
-                              <span>{folder.name}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>FOLDER</span>
-                          </td>
-                          <td>—</td>
-                          {user?.role !== 'student' && <td>—</td>}
-                          <td>—</td>
-                          <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                            {new Date(folder.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </td>
-                          <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                            {user?.role !== 'student' && (
-                              <button
-                                className="btn-ld btn-ld-danger btn-ld-small"
-                                onClick={(e) => handleDeleteFolder(folder.id, e)}
-                                title="Delete folder"
-                              >
-                                <FiTrash2 size={13} />
-                                <span>Delete</span>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-
-                      {/* Files/Links */}
-                      {currentResources.map((res) => {
-                        const isPDF = res.mime_type === 'application/pdf' || res.name.toLowerCase().endsWith('.pdf');
-                        const isImage = res.mime_type.startsWith('image/');
-                        const isVideo = res.mime_type.startsWith('video/') || res.name.toLowerCase().endsWith('.mp4') || res.name.toLowerCase().endsWith('.webm');
-                        const isYouTube = res.mime_type === 'youtube';
-
-                        const uploadDate = new Date(res.created_at).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        });
-
-                        const fullLink = res.drive_link.startsWith('/uploads/') 
-                          ? `http://localhost:5000${res.drive_link}` 
-                          : res.drive_link;
-
-                        return (
-                          <tr key={`resource-${res.id}`}>
-                            <td style={{ fontWeight: '600' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                {isYouTube ? (
-                                  <FiYoutube style={{ color: '#ef4444', flexShrink: 0 }} size={18} />
-                                ) : isPDF ? (
-                                  <FiFileText style={{ color: '#8b5cf6', flexShrink: 0 }} size={18} />
-                                ) : isImage ? (
-                                  <FiImage style={{ color: '#10b981', flexShrink: 0 }} size={18} />
-                                ) : isVideo ? (
-                                  <FiVideo style={{ color: '#6366f1', flexShrink: 0 }} size={18} />
-                                ) : res.mime_type === 'url' ? (
-                                  <FiLink style={{ color: '#3b82f6', flexShrink: 0 }} size={18} />
-                                ) : (
-                                  <FiPaperclip style={{ color: 'var(--light-text-secondary)', flexShrink: 0 }} size={18} />
-                                )}
-                                <span style={{ 
-                                  maxWidth: '220px', 
-                                  whiteSpace: 'nowrap', 
-                                  overflow: 'hidden', 
-                                  textOverflow: 'ellipsis' 
-                                }} title={res.name}>
-                                  {res.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase' }}>
-                                {isYouTube ? 'YOUTUBE' : res.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
-                              </span>
-                            </td>
-                            <td>
-                              {res.module_session ? (
-                                <span className="badge-ld badge-ld-secondary">
-                                  {res.module_session}
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--light-text-muted)', fontSize: '13px', fontStyle: 'italic' }}>None</span>
-                              )}
-                            </td>
-                            {user?.role !== 'student' && (
-                              <td>
-                                {res.visibility === 'hidden' ? (
-                                  <span className="badge-ld badge-ld-warning">Hidden</span>
-                                ) : res.visibility === 'specific_batch' ? (
-                                  <span className="badge-ld badge-ld-primary">Batch: {res.batch}</span>
-                                ) : (
-                                  <span className="badge-ld badge-ld-success">All Students</span>
-                                )}
-                              </td>
-                            )}
-                            <td>{res.uploader?.name}</td>
-                            <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>{uploadDate}</td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                {isPreviewable(res) && (
-                                  <button
-                                    onClick={() => setPreviewResource(res)}
-                                    className="btn-ld btn-ld-secondary btn-ld-small"
-                                  >
-                                    <span>Preview</span>
-                                  </button>
-                                )}
-                                <a 
-                                  href={fullLink} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="btn-ld btn-ld-secondary btn-ld-small"
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
-                                >
-                                  <FiExternalLink size={12} />
-                                  <span>Open</span>
-                                </a>
-                                {(user?.role === 'admin' || res.uploader?.id === user?.id) && (
-                                  <button
-                                    className="btn-ld btn-ld-danger btn-ld-small"
-                                    onClick={() => handleDeleteResource(res.id)}
-                                  >
-                                    <FiTrash2 size={12} />
-                                    <span>Delete</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <ResourcesTab
+              user={user}
+              currentFolderId={currentFolderId}
+              setCurrentFolderId={setCurrentFolderId}
+              folders={folders}
+              currentFolders={currentFolders}
+              currentResources={currentResources}
+              resourcesLoading={resourcesLoading}
+              dragActive={dragActive}
+              showAddModal={showAddModal}
+              handleDrag={handleDrag}
+              handleDrop={handleDrop}
+              handleFileChange={handleFileChange}
+              handleDeleteFolder={handleDeleteFolder}
+              handleDeleteResource={handleDeleteResource}
+              openAssignModal={openAssignModal}
+              isPreviewable={isPreviewable}
+              setPreviewResource={setPreviewResource}
+              onOpenAddModal={(type) => {
+                if (type === 'file') {
+                  setAddType('file');
+                  setSelectedFile(null);
+                  setMaterialName('');
+                  setMaterialVisibility('all_students');
+                  setMaterialBatch('');
+                  setMaterialModuleSession('');
+                  setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
+                  setShowAddModal(true);
+                } else {
+                  setAddType('link');
+                  setMaterialName('');
+                  setMaterialLink('');
+                  setMaterialVisibility('all_students');
+                  setMaterialBatch('');
+                  setMaterialModuleSession('');
+                  setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
+                  setShowAddModal(true);
+                }
+              }}
+              onOpenFolderModal={() => {
+                setNewFolderName('');
+                setShowFolderModal(true);
+              }}
+            />
           )}
 
           {/* MCQ Exams Tab */}
           {activeTab === 'mcqs' && (
-            <div>
-              {/* Header actions */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setTestTitle('');
-                      setTestDescription('');
-                      setTestTimeLimit(30);
-                      setTestShuffleQuestions(false);
-                      setTestShuffleOptions(false);
-                      setTestShowResultImmediately(true);
-                      setTestQuestions([]);
-                      setShowTestBuilderModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Create MCQ Test</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      loadQuestionBank();
-                      setShowQuestionBankModal(true);
-                    }}
-                  >
-                    <FiBookOpen size={16} />
-                    <span>Question Bank</span>
-                  </button>
-                </div>
-              )}
-
-              {mcqLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : mcqTests.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiAward size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No examinations scheduled yet</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Schedule module exams or session quizzes for this classroom.</p>
-                </div>
-              ) : (
-                /* Group exams by test_type (Session Quiz vs Module Exams) */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                  {['session', 'module'].map((typeKey) => {
-                    const typedTests = mcqTests.filter(t => t.test_type === typeKey);
-                    if (typedTests.length === 0) return null;
-
-                    return (
-                      <div key={typeKey}>
-                        <h3 style={{ textTransform: 'capitalize', fontWeight: '700', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid var(--light-border)', paddingBottom: '8px' }}>
-                          <FiTrendingUp style={{ color: 'var(--light-primary)' }} />
-                          <span>{typeKey === 'session' ? 'Session-wise MCQ Tests' : 'Module MCQ Examinations'}</span>
-                        </h3>
-
-                        <div className="ld-table-container">
-                          <table className="ld-table">
-                            <thead>
-                              <tr>
-                                <th>Exam Title</th>
-                                <th>Active Window</th>
-                                <th>Configs</th>
-                                <th>Status / Grade</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {typedTests.map((test) => {
-                                const now = new Date();
-                                const start = new Date(test.start_window);
-                                const end = new Date(test.end_window);
-                                const isActive = now >= start && now <= end;
-                                const isExpired = now > end;
-                                const isFuture = now < start;
-
-                                // Check if user has attempt
-                                const attempt = test.attempts && test.attempts[0];
-                                const hasAttempt = !!attempt;
-
-                                return (
-                                  <tr key={test.id}>
-                                    <td style={{ fontWeight: '600' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span>{test.title}</span>
-                                        <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>
-                                          {test.total_questions} Questions • {test.time_limit} Mins
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td style={{ fontSize: '13px' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span>Start: {formatDate(test.start_window)}</span>
-                                        <span>End: {formatDate(test.end_window)}</span>
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                        {test.security_force_fullscreen && (
-                                          <span className="badge-ld badge-ld-danger" style={{ fontSize: '10px' }}>Full-Screen</span>
-                                        )}
-                                        {test.security_tab_switch_behavior !== 'warning' && (
-                                          <span className="badge-ld badge-ld-warning" style={{ fontSize: '10px' }}>Tab Monitor</span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td>
-                                      {hasAttempt ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                          <span className="badge-ld badge-ld-success" style={{ width: 'fit-content' }}>Submitted</span>
-                                          {test.show_result_immediately || isExpired ? (
-                                            <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--light-success)' }}>
-                                              Score: {attempt.score} ({attempt.percentage}%)
-                                            </span>
-                                          ) : (
-                                            <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontStyle: 'italic' }}>
-                                              Grades visible after deadline
-                                            </span>
-                                          )}
-                                        </div>
-                                      ) : isExpired ? (
-                                        <span className="badge-ld badge-ld-secondary">Expired</span>
-                                      ) : isFuture ? (
-                                        <span className="badge-ld badge-ld-warning">Scheduled</span>
-                                      ) : (
-                                        <span className="badge-ld badge-ld-primary">Active</span>
-                                      )}
-                                    </td>
-                                    <td style={{ textAlign: 'right' }}>
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                        {user?.role === 'student' && !hasAttempt && isActive && (
-                                          <button 
-                                            className="btn-ld btn-ld-primary"
-                                            onClick={() => {
-                                              setActiveTest(test);
-                                              setActivePledgeChecked(false);
-                                              setActiveAttempt({ status: 'started' } as any); // open pledge screen
-                                            }}
-                                          >
-                                            Start Attempt
-                                          </button>
-                                        )}
-
-                                        {hasAttempt && (test.show_result_immediately || isExpired) && (
-                                          <button 
-                                            className="btn-ld btn-ld-secondary btn-ld-small"
-                                            onClick={() => handleViewResultDetails(attempt.id)}
-                                          >
-                                            View Report
-                                          </button>
-                                        )}
-
-                                        {user?.role !== 'student' && (
-                                          <>
-                                            <button 
-                                              className="btn-ld btn-ld-secondary btn-ld-small"
-                                              onClick={() => handleCloneTest(test.id)}
-                                            >
-                                              Clone
-                                            </button>
-                                            <button 
-                                              className="btn-ld btn-ld-secondary btn-ld-small"
-                                              onClick={() => handleOpenAnalytics(test.id)}
-                                            >
-                                              Analytics
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <McqExamsTab
+              user={user}
+              mcqLoading={mcqLoading}
+              mcqTests={mcqTests}
+              onOpenCreateMcqTest={() => {
+                setTestTitle('');
+                setTestDescription('');
+                setTestTimeLimit(30);
+                setTestShuffleQuestions(false);
+                setTestShuffleOptions(false);
+                setTestShowResultImmediately(true);
+                setTestQuestions([]);
+                setShowTestBuilderModal(true);
+              }}
+              onOpenQuestionBank={() => {
+                loadQuestionBank();
+                setShowQuestionBankModal(true);
+              }}
+              onStartAttempt={(test) => {
+                setActiveTest(test);
+                setActivePledgeChecked(false);
+                setPledgeConfirmed(false);
+                setActiveAttempt({ status: 'started' } as any); // open pledge screen
+              }}
+              onViewReport={handleViewResultDetails}
+              onPreviewTest={handlePreviewTest}
+              onCloneTest={handleCloneTest}
+              onOpenAnalytics={handleOpenAnalytics}
+              onOpenAssignModal={(test) => openAssignModal('mcq', test)}
+            />
           )}
 
           {/* Practical Exams Tab */}
           {activeTab === 'practicals' && (
-            <div>
-              {/* Header actions */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setPracTitle('');
-                      setPracInstructions('');
-                      setPracDueDate('');
-                      setPracTotalMarks(100);
-                      setShowPracticalModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Create Practical Exam</span>
-                  </button>
-                </div>
-              )}
-
-              {practicalsLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : practicals.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiFile size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No practical exams created yet</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Assign laboratory work, SQL tests, or coding challenges here.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Practical Task</th>
-                        <th>Due Date</th>
-                        <th>Max Marks</th>
-                        <th>Submission / Grade</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {practicals.map((prac) => {
-                        const now = new Date();
-                        const due = new Date(prac.due_date);
-                        const isOverdue = now > due;
-
-                        const submission = prac.submissions && prac.submissions[0];
-                        const hasSubmitted = !!submission;
-
-                        return (
-                          <tr key={prac.id}>
-                            <td style={{ fontWeight: '600' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span>{prac.title}</span>
-                                <span style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', fontWeight: '500', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {prac.instructions}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ fontSize: '13px', color: isOverdue && !hasSubmitted ? '#ef4444' : 'var(--light-text)' }}>
-                              {formatDate(prac.due_date)}
-                            </td>
-                            <td>{prac.total_marks} Marks</td>
-                            <td>
-                              {hasSubmitted ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                  <span className="badge-ld badge-ld-success" style={{ width: 'fit-content' }}>Submitted</span>
-                                  {submission.graded ? (
-                                    <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--light-success)' }}>
-                                      Grade: {submission.total_grade} / {prac.total_marks}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontStyle: 'italic' }}>Pending Grade</span>
-                                  )}
-                                </div>
-                              ) : isOverdue ? (
-                                <span className="badge-ld badge-ld-danger">Missing</span>
-                              ) : (
-                                <span className="badge-ld badge-ld-primary">Assigned</span>
-                              )}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                {user?.role === 'student' && (
-                                  <button 
-                                    className="btn-ld btn-ld-primary"
-                                    onClick={() => {
-                                      setSelectedPrac(prac);
-                                      setPracTextAnswer(submission?.text_answer || '');
-                                      setPracGithubLink(submission?.github_link || '');
-                                      setPracDriveLink(submission?.drive_link || '');
-                                      setPracFiles([]);
-                                      setShowPracSubmissionModal(true);
-                                    }}
-                                  >
-                                    {hasSubmitted ? 'Resubmit' : 'Submit task'}
-                                  </button>
-                                )}
-
-                                {hasSubmitted && submission.graded && (
-                                  <button 
-                                    className="btn-ld btn-ld-secondary btn-ld-small"
-                                    onClick={() => {
-                                      setViewSubFeedback(submission);
-                                      setShowStudentFeedbackModal(true);
-                                    }}
-                                  >
-                                    View Grade
-                                  </button>
-                                )}
-
-                                {user?.role !== 'student' && (
-                                  <button 
-                                    className="btn-ld btn-ld-secondary"
-                                    onClick={() => handleOpenGrading(prac)}
-                                  >
-                                    Grade submissions
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <PracticalsTab
+              user={user}
+              practicalsLoading={practicalsLoading}
+              practicals={practicals}
+              onOpenCreatePractical={() => {
+                setPracTitle('');
+                setPracInstructions('');
+                setPracDueDate('');
+                setPracTotalMarks(100);
+                setShowPracticalModal(true);
+              }}
+              onStartSubmit={(prac) => {
+                setSelectedPrac(prac);
+                const sub = prac.submissions && prac.submissions[0];
+                setPracTextAnswer(sub?.text_answer || '');
+                setPracGithubLink(sub?.github_link || '');
+                setPracDriveLink(sub?.drive_link || '');
+                setPracFiles([]);
+                setShowPracSubmissionModal(true);
+              }}
+              onViewGrade={(sub) => {
+                setViewSubFeedback(sub);
+                setShowStudentFeedbackModal(true);
+              }}
+              onOpenGrading={handleOpenGrading}
+              onOpenAssignModal={(prac) => openAssignModal('practical', prac)}
+            />
           )}
         </div>
       ) : null}
+
+      {/* Student Invite Modal */}
+      {showStudentInviteModal && (
+        <div className="modal-overlay-ld" onClick={() => { if (!inviteStudentLoading) setShowStudentInviteModal(false); }}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0 }}>Invite Student</h3>
+              <button 
+                onClick={() => setShowStudentInviteModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--light-text-secondary)' }}
+                disabled={inviteStudentLoading}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {studentInviteLink ? (
+              <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                <div style={{ 
+                  width: '56px', 
+                  height: '56px', 
+                  borderRadius: '50%', 
+                  background: 'rgba(16, 185, 129, 0.12)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  color: '#10b981',
+                  margin: '0 auto 16px'
+                }}>
+                  <FiCheck size={26} />
+                </div>
+                
+                <h4 style={{ fontWeight: '700', marginBottom: '8px' }}>Invitation Link Generated</h4>
+                <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+                  Share this invitation link with the student so they can activate their account and join their batch.
+                </p>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      className="form-input-ld"
+                      style={{ paddingRight: '48px', textOverflow: 'ellipsis', fontWeight: '500' }}
+                      type="text"
+                      readOnly
+                      value={studentInviteLink}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => copyToClipboard(studentInviteLink)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: copied ? 'var(--light-success)' : 'var(--light-text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '8px'
+                      }}
+                    >
+                      {copied ? <FiCheck size={18} /> : <FiCopy size={18} />}
+                    </button>
+                  </div>
+                  {copied && (
+                    <span style={{ fontSize: '12px', color: 'var(--light-success)', marginTop: '6px', display: 'block', textAlign: 'left' }}>
+                      Copied link to clipboard!
+                    </span>
+                  )}
+                </div>
+
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-primary" 
+                  onClick={() => setShowStudentInviteModal(false)}
+                  style={{ width: '100%' }}
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleInviteStudentSubmit}>
+                <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                  <label className="form-label-ld">Full Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-input-ld" 
+                    placeholder="e.g. Jane Doe"
+                    value={inviteStudentName}
+                    onChange={(e) => setInviteStudentName(e.target.value)}
+                    required
+                    disabled={inviteStudentLoading}
+                  />
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                  <label className="form-label-ld">Email Address *</label>
+                  <input 
+                    type="email" 
+                    className="form-input-ld" 
+                    placeholder="e.g. jane.doe@school.edu"
+                    value={inviteStudentEmail}
+                    onChange={(e) => setInviteStudentEmail(e.target.value)}
+                    required
+                    disabled={inviteStudentLoading}
+                  />
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                  <label className="form-label-ld">Classroom Batch (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="form-input-ld" 
+                    placeholder="e.g. Batch A, Morning, 2026"
+                    value={inviteStudentBatch}
+                    onChange={(e) => setInviteStudentBatch(e.target.value)}
+                    disabled={inviteStudentLoading}
+                  />
+                  <small style={{ display: 'block', color: 'var(--light-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
+                    Student will only see tests and resources assigned to this batch.
+                  </small>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button 
+                    type="button" 
+                    className="btn-ld btn-ld-secondary" 
+                    onClick={() => setShowStudentInviteModal(false)}
+                    disabled={inviteStudentLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-ld btn-ld-primary" 
+                    disabled={inviteStudentLoading}
+                  >
+                    {inviteStudentLoading ? 'Generating...' : 'Invite Student'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Shareable Invite Modal */}
       {showModal && (
@@ -2612,6 +2551,7 @@ const ClassroomDetails: React.FC = () => {
                 >
                   <option value="all_students">All Students</option>
                   <option value="specific_batch">Specific Batch</option>
+                  <option value="specific_students">Specific Students</option>
                   <option value="hidden">Hidden</option>
                 </select>
               </div>
@@ -2627,6 +2567,44 @@ const ClassroomDetails: React.FC = () => {
                     onChange={(e) => setMaterialBatch(e.target.value)}
                     required
                   />
+                </div>
+              )}
+
+              {materialVisibility === 'specific_students' && (
+                <div className="form-group-ld">
+                  <label className="form-label-ld">Select Students *</label>
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`material-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={materialSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setMaterialSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setMaterialSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2728,6 +2706,7 @@ const ClassroomDetails: React.FC = () => {
                     placeholder="e.g. Batch A, Batch B"
                     value={testBatches} 
                     onChange={(e) => setTestBatches(e.target.value)} 
+                    disabled={testAssignToSpecificStudents}
                   />
                 </div>
                 <div className="form-group-ld">
@@ -2742,6 +2721,54 @@ const ClassroomDetails: React.FC = () => {
                     <option value="immediate_auto_submit">Immediate auto-submit</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-group-ld">
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer', fontWeight: '600', marginBottom: '8px' }}>
+                  <input 
+                    type="checkbox"
+                    checked={testAssignToSpecificStudents}
+                    onChange={(e) => {
+                      setTestAssignToSpecificStudents(e.target.checked);
+                      if (e.target.checked) setTestBatches('');
+                    }}
+                  />
+                  <span>Assign to specific individual students instead of batches</span>
+                </label>
+                {testAssignToSpecificStudents && (
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`test-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={testSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setTestSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setTestSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', alignItems: 'center' }}>
@@ -3079,54 +3106,478 @@ const ClassroomDetails: React.FC = () => {
 
             {analyticsLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}><span className="spinner"></span></div>
-            ) : analyticsData ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* Stats Summary cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Average Score</span>
-                    <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.averageScore}</h2>
+            ) : analyticsData ? (() => {
+              const sortedAttempts = [...(analyticsData.attempts || [])].sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                return a.time_taken - b.time_taken;
+              });
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* Tab Navigation */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '10px', gap: '16px' }}>
+                    <button 
+                      type="button"
+                      onClick={() => setAnalyticsTab('overview')}
+                      style={{
+                        padding: '10px 16px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        color: analyticsTab === 'overview' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                        borderBottom: analyticsTab === 'overview' ? '3px solid var(--light-primary)' : '3px solid transparent',
+                        transition: 'all 0.2s',
+                        outline: 'none'
+                      }}
+                    >
+                      Overview & Performance
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setAnalyticsTab('leaderboard')}
+                      style={{
+                        padding: '10px 16px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        color: analyticsTab === 'leaderboard' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                        borderBottom: analyticsTab === 'leaderboard' ? '3px solid var(--light-primary)' : '3px solid transparent',
+                        transition: 'all 0.2s',
+                        outline: 'none'
+                      }}
+                    >
+                      🏆 Ranking Leaderboard
+                    </button>
                   </div>
-                  <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Total Attempts</span>
-                    <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.totalAttempts}</h2>
-                  </div>
-                </div>
 
-                {/* Question level success rate */}
-                <div>
-                  <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Question Performance</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {analyticsData.questionPerformance?.map((qp: any, idx: number) => (
-                      <div key={qp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: '1px solid var(--light-border)', borderRadius: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: '600', maxWidth: '450px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          Q{idx + 1}. {qp.question_text}
-                        </span>
-                        <span style={{ fontWeight: '700', color: qp.success_rate < 50 ? '#ef4444' : '#10b981' }}>
-                          {qp.success_rate}% Correct
-                        </span>
+                  {analyticsTab === 'overview' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Stats Summary cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Average Score</span>
+                          <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.averageScore}</h2>
+                        </div>
+                        <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Total Attempts</span>
+                          <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.totalAttempts}</h2>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Students not attempted */}
-                <div>
-                  <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Not Attempted Students ({analyticsData.notAttempted?.length || 0})</h4>
-                  {analyticsData.notAttempted?.length === 0 ? (
-                    <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>All students have completed this examination.</p>
-                  ) : (
-                    <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {analyticsData.notAttempted?.map((stud: any) => (
-                        <span key={stud.id} className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', padding: '6px 10px' }}>
-                          {stud.name} ({stud.batch || 'No Batch'})
-                        </span>
-                      ))}
+                      {/* Question level success rate */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Question Performance</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
+                          {analyticsData.questionPerformance?.map((qp: any, idx: number) => (
+                            <div key={qp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: '1px solid var(--light-border)', borderRadius: '6px' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: '600', maxWidth: '450px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                Q{idx + 1}. {qp.question_text}
+                              </span>
+                              <span style={{ fontWeight: '700', color: qp.success_rate < 50 ? '#ef4444' : '#10b981' }}>
+                                {qp.success_rate}% Correct
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Students not attempted */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Not Attempted Students ({analyticsData.notAttempted?.length || 0})</h4>
+                        {analyticsData.notAttempted?.length === 0 ? (
+                          <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>All students have completed this examination.</p>
+                        ) : (
+                          <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {analyticsData.notAttempted?.map((stud: any) => (
+                              <span key={stud.id} className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                                {stud.name} ({stud.batch || 'No Batch'})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Student Attempts/Scores List */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Student Submissions & Results</h4>
+                        {!analyticsData.attempts || analyticsData.attempts.length === 0 ? (
+                          <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>No submissions yet.</p>
+                        ) : (
+                          <div className="ld-table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                            <table className="ld-table">
+                              <thead>
+                                <tr>
+                                  <th>Student</th>
+                                  <th>Score / Percentage</th>
+                                  <th>Time Taken</th>
+                                  <th>Proctor Flags</th>
+                                  <th style={{ textAlign: 'right' }}>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {analyticsData.attempts.map((att: any) => (
+                                  <tr key={att.id}>
+                                    <td style={{ fontWeight: '600' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span>{att.user?.name}</span>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>
+                                          {att.user?.email} • {att.user?.batch || 'No Batch'}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td style={{ fontWeight: '700', color: 'var(--light-primary)' }}>
+                                      {att.score} Marks ({att.percentage}%)
+                                    </td>
+                                    <td>{Math.floor(att.time_taken / 60)}m {att.time_taken % 60}s</td>
+                                    <td>
+                                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                        {att.tab_switch_count > 0 && (
+                                          <span className="badge-ld badge-ld-warning" style={{ fontSize: '10px' }}>
+                                            {att.tab_switch_count} Tab Switches
+                                          </span>
+                                        )}
+                                        {att.fullscreen_exit_count > 0 && (
+                                          <span className="badge-ld badge-ld-danger" style={{ fontSize: '10px' }}>
+                                            {att.fullscreen_exit_count} FS Exits
+                                          </span>
+                                        )}
+                                        {att.tab_switch_count === 0 && att.fullscreen_exit_count === 0 && (
+                                          <span className="badge-ld badge-ld-success" style={{ fontSize: '10px' }}>Clean</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <button
+                                        className="btn-ld btn-ld-secondary btn-ld-small"
+                                        onClick={() => handleViewResultDetails(att.id)}
+                                      >
+                                        View Details
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {analyticsTab === 'leaderboard' && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '20px',
+                      backgroundColor: '#581c87',
+                      padding: '24px',
+                      borderRadius: '16px',
+                      color: '#fff'
+                    }}>
+                      
+                      {/* Top 3 Podium */}
+                      {sortedAttempts.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'flex-end',
+                          gap: '20px',
+                          padding: '20px 0 10px 0',
+                          position: 'relative'
+                        }}>
+                          {/* Arch background effect */}
+                          <div style={{
+                            position: 'absolute',
+                            top: '10px',
+                            width: '280px',
+                            height: '140px',
+                            borderTopLeftRadius: '140px',
+                            borderTopRightRadius: '140px',
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            zIndex: 0
+                          }}></div>
+
+                          {/* 3rd Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '100px',
+                            zIndex: 1
+                          }}>
+                            {sortedAttempts.length > 2 ? (
+                              <>
+                                <div style={{
+                                  width: '56px',
+                                  height: '56px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#ea580c',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: '800',
+                                  fontSize: '18px',
+                                  border: '3px solid #fdba74',
+                                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                                }}>
+                                  {sortedAttempts[2].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '3'}
+                                </div>
+                                <span style={{ fontWeight: '700', fontSize: '13px', textAlign: 'center', marginTop: '8px', width: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sortedAttempts[2].user?.name}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#fcd34d', marginTop: '2px' }}>
+                                  {sortedAttempts[2].percentage}%
+                                </span>
+                              </>
+                            ) : (
+                              <div style={{ height: '86px' }}></div>
+                            )}
+                            <div style={{
+                              marginTop: '12px',
+                              height: '80px',
+                              width: '90px',
+                              background: 'linear-gradient(to top, #7c3aed, #a78bfa)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '36px', color: '#fff' }}>3</span>
+                            </div>
+                          </div>
+
+                          {/* 1st Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '120px',
+                            zIndex: 1
+                          }}>
+                            <div style={{
+                              width: '68px',
+                              height: '68px',
+                              borderRadius: '50%',
+                              backgroundColor: '#ca8a04',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: '800',
+                              fontSize: '22px',
+                              border: '3px solid #facc15',
+                              boxShadow: '0 6px 15px rgba(250, 204, 21, 0.3)',
+                              position: 'relative'
+                            }}>
+                              {sortedAttempts[0].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '1'}
+                              <div style={{ position: 'absolute', top: '-18px', fontSize: '16px' }}>👑</div>
+                            </div>
+                            <span style={{ fontWeight: '800', fontSize: '14px', textAlign: 'center', marginTop: '8px', width: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {sortedAttempts[0].user?.name}
+                            </span>
+                            <span style={{ fontSize: '13px', fontWeight: '800', color: '#facc15', marginTop: '2px' }}>
+                              {sortedAttempts[0].percentage}%
+                            </span>
+                            <div style={{
+                              marginTop: '12px',
+                              height: '130px',
+                              width: '100px',
+                              background: 'linear-gradient(to top, #4c1d95, #7c3aed)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 15px rgba(0,0,0,0.15)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '48px', color: '#fff' }}>1</span>
+                            </div>
+                          </div>
+
+                          {/* 2nd Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '100px',
+                            zIndex: 1
+                          }}>
+                            {sortedAttempts.length > 1 ? (
+                              <>
+                                <div style={{
+                                  width: '58px',
+                                  height: '58px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#1e3a8a',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: '800',
+                                  fontSize: '18px',
+                                  border: '3px solid #93c5fd',
+                                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                                }}>
+                                  {sortedAttempts[1].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '2'}
+                                </div>
+                                <span style={{ fontWeight: '700', fontSize: '13px', textAlign: 'center', marginTop: '8px', width: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sortedAttempts[1].user?.name}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#fcd34d', marginTop: '2px' }}>
+                                  {sortedAttempts[1].percentage}%
+                                </span>
+                              </>
+                            ) : (
+                              <div style={{ height: '88px' }}></div>
+                            )}
+                            <div style={{
+                              marginTop: '12px',
+                              height: '105px',
+                              width: '90px',
+                              background: 'linear-gradient(to top, #6d28d9, #8b5cf6)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '40px', color: '#fff' }}>2</span>
+                            </div>
+                          </div>
+
+                        </div>
+                      )}
+
+                      {/* Standings List Container */}
+                      <div style={{
+                        backgroundColor: '#d8b4fe',
+                        borderRadius: '24px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        maxHeight: '300px',
+                        overflowY: 'auto'
+                      }}>
+                        {sortedAttempts.length === 0 ? (
+                          <p style={{ color: '#581c87', fontSize: '13.5px', fontWeight: '600', margin: 0, textAlign: 'center' }}>No standings available yet.</p>
+                        ) : (
+                          sortedAttempts.map((att: any, index: number) => {
+                            const trend = (att.id % 3 === 0) ? 'up' : (att.id % 3 === 1) ? 'down' : 'stable';
+                            return (
+                              <div key={`rank-row-${att.id}`} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                backgroundColor: '#ffffff',
+                                borderRadius: '16px',
+                                padding: '12px 16px',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                                color: '#1e1b4b'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  
+                                  {/* Trend and Rank */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '24px' }}>
+                                    {trend === 'up' ? (
+                                      <span style={{ color: '#10b981', fontSize: '11px', fontWeight: 'bold' }}>▲</span>
+                                    ) : trend === 'down' ? (
+                                      <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 'bold' }}>▼</span>
+                                    ) : (
+                                      <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' }}>•</span>
+                                    )}
+                                    <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--light-text)' }}>
+                                      {index + 1}
+                                    </span>
+                                  </div>
+
+                                  {/* Student circular initials avatar */}
+                                  <div style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    borderRadius: '50%',
+                                    backgroundColor: index === 0 ? '#fef08a' : index === 1 ? '#cbd5e1' : index === 2 ? '#ffedd5' : '#e0d7ff',
+                                    color: index === 0 ? '#854d0e' : index === 1 ? '#334155' : index === 2 ? '#c2410c' : '#581c87',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: '800',
+                                    fontSize: '14px',
+                                    border: '1.5px solid var(--light-border)'
+                                  }}>
+                                    {att.user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+                                  </div>
+
+                                  {/* Name and Progress bar */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontWeight: '700', fontSize: '14px', color: '#1e1b4b' }}>
+                                      {att.user?.name}
+                                    </span>
+                                    {/* Progress Bar */}
+                                    <div style={{
+                                      width: '180px',
+                                      height: '14px',
+                                      backgroundColor: '#f3e8ff',
+                                      borderRadius: '7px',
+                                      overflow: 'hidden',
+                                      position: 'relative'
+                                    }}>
+                                      <div style={{
+                                        width: `${att.percentage}%`,
+                                        height: '100%',
+                                        background: 'linear-gradient(to right, #c084fc, #8b5cf6)',
+                                        borderRadius: '7px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        paddingRight: '6px'
+                                      }}>
+                                        <span style={{ fontSize: '9px', fontWeight: '800', color: '#fff' }}>
+                                          {att.percentage}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '60px' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#581c87' }}>
+                                      {att.score} Marks
+                                    </span>
+                                    <span style={{ fontSize: '10px', color: 'var(--light-text-secondary)' }}>
+                                      {Math.floor(att.time_taken / 60)}m {att.time_taken % 60}s
+                                    </span>
+                                  </div>
+                                  <button
+                                    className="btn-ld btn-ld-secondary btn-ld-small"
+                                    onClick={() => handleViewResultDetails(att.id)}
+                                    style={{
+                                      padding: '4px 8px',
+                                      fontSize: '11px',
+                                      backgroundColor: '#f3e8ff',
+                                      border: '1px solid #c084fc',
+                                      color: '#6b21a8'
+                                    }}
+                                  >
+                                    Report
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
                     </div>
                   )}
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button className="btn-ld btn-ld-secondary" onClick={() => setShowAnalyticsModal(false)}>
@@ -3254,6 +3705,66 @@ const ClassroomDetails: React.FC = () => {
                   <label className="form-label-ld">Total Marks *</label>
                   <input type="number" className="form-input-ld" value={pracTotalMarks} onChange={(e) => setPracTotalMarks(parseInt(e.target.value) || 100)} required />
                 </div>
+              </div>
+
+              <div className="form-group-ld">
+                <label className="form-label-ld">Assigned Batches (comma-separated, leave blank for all)</label>
+                <input 
+                  type="text" 
+                  className="form-input-ld" 
+                  placeholder="e.g. Batch A, Batch B"
+                  value={pracBatches} 
+                  onChange={(e) => setPracBatches(e.target.value)} 
+                  disabled={pracAssignToSpecificStudents}
+                />
+              </div>
+
+              <div className="form-group-ld">
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer', fontWeight: '600', marginBottom: '8px' }}>
+                  <input 
+                    type="checkbox"
+                    checked={pracAssignToSpecificStudents}
+                    onChange={(e) => {
+                      setPracAssignToSpecificStudents(e.target.checked);
+                      if (e.target.checked) setPracBatches('');
+                    }}
+                  />
+                  <span>Assign to specific individual students instead of batches</span>
+                </label>
+                {pracAssignToSpecificStudents && (
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`prac-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={pracSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPracSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setPracSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '12px' }}>
@@ -3644,6 +4155,21 @@ const ClassroomDetails: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Dynamic Assign to Students Modal */}
+      <AssignContentModal
+        show={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        assignTargetType={assignTargetType}
+        assignBatches={assignBatches}
+        setAssignBatches={setAssignBatches}
+        assignToSpecificStudents={assignToSpecificStudents}
+        setAssignToSpecificStudents={setAssignToSpecificStudents}
+        activeStudents={activeStudents}
+        assignSelectedStudentIds={assignSelectedStudentIds}
+        setAssignSelectedStudentIds={setAssignSelectedStudentIds}
+        assignSaving={assignSaving}
+        onAssignSubmit={handleAssignSubmit}
+      />
     </DashboardLayout>
   );
 };

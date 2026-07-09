@@ -6,7 +6,8 @@ import {
   getClassroomPracticalExams, 
   submitPracticalExam, 
   getPracticalSubmissions, 
-  gradePracticalSubmission 
+  gradePracticalSubmission,
+  assignPracticalExam 
 } from '../controllers/practical.controller.js';
 
 const router = express.Router();
@@ -25,6 +26,7 @@ router.use(authenticate);
 router.post('/', authorizeRoles('admin', 'teacher'), createPracticalExam);
 router.get('/:practicalId/submissions', authorizeRoles('admin', 'teacher'), getPracticalSubmissions);
 router.post('/submissions/:submissionId/grade', authorizeRoles('admin', 'teacher'), gradePracticalSubmission);
+router.put('/:practicalId/assign', authorizeRoles('admin', 'teacher'), assignPracticalExam);
 
 // Classroom retrieval (All roles)
 router.get('/classroom/:classroomId', getClassroomPracticalExams);

@@ -66,6 +66,10 @@ const McqTest = sequelize.define('McqTest', {
     type: DataTypes.JSON,
     allowNull: true
   },
+  assigned_student_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
   security_tab_switch_behavior: {
     type: DataTypes.STRING,
     allowNull: false,

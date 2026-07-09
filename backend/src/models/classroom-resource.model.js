@@ -60,6 +60,10 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
   batch: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  assigned_student_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
   }
 }, {
   tableName: 'classroom_resources',

@@ -47,6 +47,9 @@ User.belongsToMany(Classroom, {
   as: 'classrooms' 
 });
 
+ClassroomTeacher.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+ClassroomTeacher.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
 // Resources relationships
 Classroom.hasMany(ClassroomResource, { foreignKey: 'classroom_id', as: 'resources', onDelete: 'CASCADE' });
 ClassroomResource.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });

@@ -17,7 +17,7 @@ export const createMcqTest = async (req, res) => {
     const { 
       classroomId, title, description, timeLimit, shuffleQuestions, 
       shuffleOptions, showResultImmediately, testType, startWindow, 
-      endWindow, batches, securityTabSwitchBehavior, securityMaxWarnings, 
+      endWindow, batches, assignedStudentIds, securityTabSwitchBehavior, securityMaxWarnings, 
       securityForceFullscreen, questions 
     } = req.body;
 
@@ -38,6 +38,7 @@ export const createMcqTest = async (req, res) => {
       start_window: new Date(startWindow),
       end_window: new Date(endWindow),
       batches: batches || [],
+      assigned_student_ids: assignedStudentIds || [],
       security_tab_switch_behavior: securityTabSwitchBehavior || 'warning',
       security_max_warnings: parseInt(securityMaxWarnings) || 3,
       security_force_fullscreen: !!securityForceFullscreen
@@ -157,8 +158,13 @@ export const getClassroomMcqTests = async (req, res) => {
       const student = await User.findByPk(req.user.id);
       const studentBatch = student ? student.batch : null;
 
-      // Filter tests visible to student's batch or all students
+      // Filter tests visible to student's batch, all students, or assigned individually
       const filteredTests = tests.filter(test => {
+        const assignedIds = test.assigned_student_ids || [];
+        if (assignedIds.length > 0) {
+          return assignedIds.includes(req.user.id);
+        }
+
         const testBatches = test.batches || [];
         return testBatches.length === 0 || testBatches.includes(studentBatch);
       });
@@ -499,7 +505,19 @@ export const getMcqTestAnalytics = async (req, res) => {
         averageScore,
         totalAttempts,
         questionPerformance,
-        notAttempted
+        notAttempted,
+        attempts: attempts.map(att => ({
+          id: att.id,
+          score: att.score,
+          percentage: att.percentage,
+          time_taken: att.time_taken,
+          tab_switch_count: att.tab_switch_count,
+          fullscreen_exit_count: att.fullscreen_exit_count,
+          status: att.status,
+          start_time: att.start_time,
+          created_at: att.created_at,
+          user: att.user
+        }))
       }
     });
   } catch (error) {
@@ -559,3 +577,25 @@ export const addQuestionToBank = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error while saving to bank.', error: error.message });
   }
 };
+
+export const assignMcqTest = async (req, res) => {
+  try {
+    const { testId } = req.params;
+    const { batches, assignedStudentIds } = req.body;
+
+    const test = await McqTest.findByPk(testId);
+    if (!test) {
+      return res.status(404).json({ message: 'MCQ Test not found.' });
+    }
+
+    test.batches = batches || [];
+    test.assigned_student_ids = assignedStudentIds || [];
+    await test.save();
+
+    return res.json({ message: 'MCQ Test assignments updated successfully.', test });
+  } catch (error) {
+    console.error('Error in assignMcqTest:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+

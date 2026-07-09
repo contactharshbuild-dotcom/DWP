@@ -7,7 +7,8 @@ import {
   deleteResource,
   addLinkResource,
   createFolder,
-  deleteFolder
+  deleteFolder,
+  assignResource
 } from '../controllers/resource.controller.js';
 
 const router = express.Router();
@@ -35,6 +36,9 @@ router.get('/classroom/:classroomId', getClassroomResources);
 
 // Delete a resource
 router.delete('/:resourceId', deleteResource);
+
+// Assign resource
+router.put('/:resourceId/assign', assignResource);
 
 // Folders endpoints
 router.post('/folders', createFolder);

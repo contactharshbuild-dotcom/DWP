@@ -4,7 +4,7 @@ import { uploadFile } from '../services/storage.service.js';
 // 1. Create Practical Exam (Teacher/Admin only)
 export const createPracticalExam = async (req, res) => {
   try {
-    const { classroomId, title, instructions, dueDate, totalMarks } = req.body;
+    const { classroomId, title, instructions, dueDate, totalMarks, batches, assignedStudentIds } = req.body;
 
     if (!classroomId || !title || !instructions || !dueDate) {
       return res.status(400).json({ message: 'Missing required practical exam details.' });
@@ -24,7 +24,9 @@ export const createPracticalExam = async (req, res) => {
       title,
       instructions,
       due_date: new Date(dueDate),
-      total_marks: parseInt(totalMarks) || 100
+      total_marks: parseInt(totalMarks) || 100,
+      batches: batches || null,
+      assigned_student_ids: assignedStudentIds || null
     });
 
     return res.status(201).json({ message: 'Practical exam created successfully.', practical });
@@ -58,6 +60,25 @@ export const getClassroomPracticalExams = async (req, res) => {
       }],
       order: [['due_date', 'ASC']]
     });
+
+    const userRole = req.user.role;
+    if (userRole === 'student') {
+      const student = await User.findByPk(req.user.id);
+      const studentBatch = student ? student.batch : null;
+
+      // Filter practicals visible to student's batch, all students, or assigned individually
+      const filteredPracticals = practicals.filter(prac => {
+        const assignedIds = prac.assigned_student_ids || [];
+        if (assignedIds.length > 0) {
+          return assignedIds.includes(req.user.id);
+        }
+
+        const pracBatches = prac.batches || [];
+        return pracBatches.length === 0 || pracBatches.includes(studentBatch);
+      });
+
+      return res.json({ practicals: filteredPracticals });
+    }
 
     return res.json({ practicals });
   } catch (error) {
@@ -217,3 +238,25 @@ export const gradePracticalSubmission = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };
+
+export const assignPracticalExam = async (req, res) => {
+  try {
+    const { practicalId } = req.params;
+    const { batches, assignedStudentIds } = req.body;
+
+    const practical = await PracticalExam.findByPk(practicalId);
+    if (!practical) {
+      return res.status(404).json({ message: 'Practical exam not found.' });
+    }
+
+    practical.batches = batches || null;
+    practical.assigned_student_ids = assignedStudentIds || null;
+    await practical.save();
+
+    return res.json({ message: 'Practical exam assignments updated successfully.', practical });
+  } catch (error) {
+    console.error('Error in assignPracticalExam:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+

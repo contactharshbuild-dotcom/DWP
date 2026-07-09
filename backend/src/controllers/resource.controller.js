@@ -44,6 +44,7 @@ export const uploadResource = async (req, res) => {
     const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
 
     // Save metadata in database
+    const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
       name: file.originalname,
@@ -54,7 +55,8 @@ export const uploadResource = async (req, res) => {
       folder_id: folderId ? parseInt(folderId) : null,
       module_session: moduleSession || null,
       visibility: visibility || 'all_students',
-      batch: batch || null
+      batch: batch || null,
+      assigned_student_ids: assignedStudentIds ? (typeof assignedStudentIds === 'string' ? JSON.parse(assignedStudentIds) : assignedStudentIds) : null
     });
 
     // Load uploader relationship for response
@@ -119,6 +121,7 @@ export const addLinkResource = async (req, res) => {
       mimeType = 'youtube';
     }
 
+    const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
       name,
@@ -129,7 +132,8 @@ export const addLinkResource = async (req, res) => {
       folder_id: folderId ? parseInt(folderId) : null,
       module_session: moduleSession || null,
       visibility: visibility || 'all_students',
-      batch: batch || null
+      batch: batch || null,
+      assigned_student_ids: assignedStudentIds || null
     });
 
     const completeResource = await ClassroomResource.findByPk(resource.id, {
@@ -212,30 +216,35 @@ export const getClassroomResources = async (req, res) => {
         order: [['created_at', 'DESC']]
       });
     } else {
-      // Student: filter based on visibility
-      const student = await User.findByPk(req.user.id);
-      const studentBatch = student ? student.batch : null;
-
-      resources = await ClassroomResource.findAll({
-        where: {
-          classroom_id: classroomId,
-          [Op.or]: [
-            { visibility: 'all_students' },
-            { visibility: null },
-            {
-              [Op.and]: [
-                { visibility: 'specific_batch' },
-                { batch: studentBatch }
-              ]
-            }
-          ]
-        },
+      // Student: filter based on visibility & assigned_student_ids
+      const allResources = await ClassroomResource.findAll({
+        where: { classroom_id: classroomId },
         include: [{
           model: User,
           as: 'uploader',
           attributes: ['id', 'name', 'email']
         }],
         order: [['created_at', 'DESC']]
+      });
+
+      const student = await User.findByPk(req.user.id);
+      const studentBatch = student ? student.batch : null;
+
+      resources = allResources.filter(resrc => {
+        // If assigned to specific students individually
+        const assignedIds = resrc.assigned_student_ids || [];
+        if (assignedIds.length > 0) {
+          return assignedIds.includes(req.user.id);
+        }
+
+        // Otherwise fallback to batch/visibility filters
+        if (resrc.visibility === 'specific_batch') {
+          return resrc.batch === studentBatch;
+        }
+        if (resrc.visibility === 'hidden') {
+          return false;
+        }
+        return true;
       });
     }
 
@@ -397,3 +406,26 @@ export const deleteResource = async (req, res) => {
     });
   }
 };
+
+export const assignResource = async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { visibility, batch, assignedStudentIds } = req.body;
+
+    const resource = await ClassroomResource.findByPk(resourceId);
+    if (!resource) {
+      return res.status(404).json({ message: 'Resource not found.' });
+    }
+
+    resource.visibility = visibility || 'all_students';
+    resource.batch = batch || null;
+    resource.assigned_student_ids = assignedStudentIds || null;
+    await resource.save();
+
+    return res.json({ message: 'Resource assignments updated successfully.', resource });
+  } catch (error) {
+    console.error('Error in assignResource:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+

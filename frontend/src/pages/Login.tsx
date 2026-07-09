@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
-import { FiMail, FiLock, FiLogIn, FiAlertCircle, FiPhone, FiKey } from 'react-icons/fi';
+import { FiMail, FiLock, FiLogIn, FiAlertCircle, FiPhone, FiKey, FiBookOpen, FiAward, FiArrowLeft } from 'react-icons/fi';
 import type { RootState } from '../store';
 import { setLoading, setError, setCredentials } from '../store/authSlice';
 import api from '../services/api';
 
 const Login: React.FC = () => {
-  // Login tabs: 'otp' for teachers, 'password' for admins
+  // Selected login role
+  const [selectedRole, setSelectedRole] = useState<'student' | 'teacher' | 'admin' | null>(null);
+
+  // Login tabs: 'otp' for teachers, 'password' for admins/students
   const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
 
   // Traditional password login state
@@ -123,11 +126,203 @@ const Login: React.FC = () => {
     }
   };
 
+  if (!selectedRole) {
+    return (
+      <div className="auth-page-wrapper">
+        <style>{`
+          .role-card-hover:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+          }
+        `}</style>
+        <div className="glass-card" style={{ maxWidth: '640px', padding: '40px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h2 className="form-title" style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+              Welcome to DWP LMS
+            </h2>
+            <p className="form-subtitle" style={{ fontSize: '15px' }}>
+              Select your role to log in to your dashboard
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+            {/* Student Card */}
+            <div 
+              onClick={() => {
+                setSelectedRole('student');
+                setLoginMethod('password');
+                dispatch(setError(null));
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '16px',
+                padding: '30px 20px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(5px)'
+              }}
+              className="role-card-hover"
+            >
+              <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '12px',
+                background: 'rgba(79, 70, 229, 0.15)',
+                color: 'var(--primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px'
+              }}>
+                <FiBookOpen size={30} />
+              </div>
+              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Student</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+                Access courses, tests, and study materials.
+              </p>
+            </div>
+
+            {/* Teacher Card */}
+            <div 
+              onClick={() => {
+                setSelectedRole('teacher');
+                setLoginMethod('password');
+                dispatch(setError(null));
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '16px',
+                padding: '30px 20px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(5px)'
+              }}
+              className="role-card-hover"
+            >
+              <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '12px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px'
+              }}>
+                <FiAward size={30} />
+              </div>
+              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Teacher</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+                Manage classes, grade tests, and review students.
+              </p>
+            </div>
+
+            {/* Admin Card */}
+            <div 
+              onClick={() => {
+                setSelectedRole('admin');
+                setLoginMethod('password');
+                dispatch(setError(null));
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '16px',
+                padding: '30px 20px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(5px)'
+              }}
+              className="role-card-hover"
+            >
+              <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '12px',
+                background: 'rgba(245, 158, 11, 0.15)',
+                color: '#f59e0b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px'
+              }}>
+                <FiKey size={30} />
+              </div>
+              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Admin</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+                Configure organization details, approvals, and settings.
+              </p>
+            </div>
+          </div>
+
+          <div className="form-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px', margin: '0' }}>
+            Don't have an organization?{' '}
+            <Link className="form-link" to="/signup">
+              Register Organization
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-page-wrapper">
       <div className="glass-card">
-        <h2 className="form-title">Welcome Back</h2>
-        <p className="form-subtitle">Sign in to access your LMS organization portal</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedRole(null);
+              dispatch(setError(null));
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              padding: '0',
+              outline: 'none'
+            }}
+          >
+            <FiArrowLeft size={16} />
+            <span>Change Role</span>
+          </button>
+        </div>
+
+        <h2 className="form-title" style={{ textTransform: 'capitalize' }}>
+          {selectedRole} Login
+        </h2>
+        <p className="form-subtitle">
+          {selectedRole === 'student' && 'Sign in to access classrooms and study materials'}
+          {selectedRole === 'teacher' && 'Sign in to manage classes and grade assessments'}
+          {selectedRole === 'admin' && 'Sign in using credentials to access administrator portal'}
+        </p>
 
         {error && (
           <div className="alert alert-error">
@@ -135,44 +330,6 @@ const Login: React.FC = () => {
             <span>{error}</span>
           </div>
         )}
-
-        {/* Segmented Login Control */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px', backgroundColor: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '8px' }}>
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              background: loginMethod === 'otp' ? 'var(--primary)' : 'transparent',
-              border: 'none',
-              color: 'white',
-              borderRadius: '6px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '13px'
-            }}
-            onClick={() => { dispatch(setError(null)); setLoginMethod('otp'); }}
-          >
-            Teacher OTP Login
-          </button>
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              background: loginMethod === 'password' ? 'var(--primary)' : 'transparent',
-              border: 'none',
-              color: 'white',
-              borderRadius: '6px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '13px'
-            }}
-            onClick={() => { dispatch(setError(null)); setLoginMethod('password'); }}
-          >
-            Admin Password Login
-          </button>
-        </div>
 
         {/* OTP Login Form */}
         {loginMethod === 'otp' && (

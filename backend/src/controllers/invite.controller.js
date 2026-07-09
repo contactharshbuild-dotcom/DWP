@@ -10,7 +10,8 @@ const generateToken = (user) => {
       userId: user.id,
       organizationId: user.organization_id,
       role: user.role,
-      email: user.email
+      email: user.email,
+      batch: user.batch
     },
     process.env.JWT_SECRET || 'lms_super_secret_key_123',
     { expiresIn: '30d' }
@@ -50,6 +51,7 @@ export const getInviteDetails = async (req, res) => {
     return res.json({
       name: user.name,
       email: user.email,
+      role: user.role,
       organizationName: user.organization?.name || 'Organization'
     });
 
@@ -64,7 +66,7 @@ export const getInviteDetails = async (req, res) => {
 
 export const acceptInvite = async (req, res) => {
   try {
-    const { token, password } = req.body;
+    const { token, password, phone } = req.body;
 
     if (!token || !password) {
       return res.status(400).json({ message: 'Token and password are required.' });
@@ -96,13 +98,46 @@ export const acceptInvite = async (req, res) => {
       });
     }
 
+    // Validate phone number for student role
+    if (user.role === 'student') {
+      if (!phone) {
+        return res.status(400).json({ message: 'Phone number is required.' });
+      }
+      const existingPhone = await User.findOne({
+        where: {
+          phone,
+          id: { [Op.ne]: user.id }
+        }
+      });
+      if (existingPhone) {
+        return res.status(400).json({ message: 'This phone number is already registered.' });
+      }
+    }
+
+    // Generate unique username from email prefix if not set
+    let username = user.username;
+    if (!username) {
+      const emailPrefix = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      let uniqueUsername = emailPrefix;
+      let counter = 1;
+      let exists = await User.findOne({ where: { username: uniqueUsername } });
+      while (exists) {
+        uniqueUsername = `${emailPrefix}${counter}`;
+        exists = await User.findOne({ where: { username: uniqueUsername } });
+        counter++;
+      }
+      username = uniqueUsername;
+    }
+
     // Hash the new password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Update user status and clear invite token
+    // Update user status, password, phone, and clear invite token
     await user.update({
       password: hashedPassword,
+      phone: user.role === 'student' ? phone : user.phone,
+      username,
       status: 'active',
       invite_token: null,
       invite_expires: null
@@ -118,7 +153,9 @@ export const acceptInvite = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        username: user.username,
+        role: user.role,
+        batch: user.batch
       },
       organization: user.organization
     });
