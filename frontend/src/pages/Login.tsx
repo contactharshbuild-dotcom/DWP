@@ -58,6 +58,12 @@ const Login: React.FC = () => {
       const response = await api.post('/auth/login', { email, password });
       const { token: userToken, user: loggedUser, organization } = response.data;
       
+      if (loggedUser.role === 'masteradmin') {
+        dispatch(setError('Master administrators must sign in through the Master Portal (/master-login).'));
+        dispatch(setLoading(false));
+        return;
+      }
+      
       dispatch(setCredentials({ token: userToken, user: loggedUser, organization }));
       
       const pendingClassroomId = localStorage.getItem('pending_join_classroom_id');

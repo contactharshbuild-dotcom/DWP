@@ -9,6 +9,9 @@ import classroomRoutes from "./routes/classroom.routes.js";
 import resourceRoutes from "./routes/resource.routes.js";
 import mcqRoutes from "./routes/mcq.routes.js";
 import practicalRoutes from "./routes/practical.routes.js";
+import masteradminRoutes from "./routes/masteradmin.routes.js";
+import sessionRoutes from "./routes/session.routes.js";
+import quizBuilderRoutes from "./quiz-builder/quiz-builder.routes.js";
 
 const app = express();
 
@@ -25,6 +28,9 @@ app.use("/api/classrooms", classroomRoutes);
 app.use("/api/resources", resourceRoutes);
 app.use("/api/mcq", mcqRoutes);
 app.use("/api/practical", practicalRoutes);
+app.use("/api/masteradmin", masteradminRoutes);
+app.use("/api/sessions", sessionRoutes);
+app.use("/api/quiz-builder", quizBuilderRoutes);
 
 app.get("/", (req, res) =>{
     res.send("LMS Backend is running");

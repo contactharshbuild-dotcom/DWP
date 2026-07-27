@@ -7,7 +7,8 @@ import {
   FiPlus, 
   FiLogOut, 
   FiBookOpen, 
-  FiAlertCircle
+  FiAlertCircle,
+  FiHelpCircle
 } from 'react-icons/fi';
 import type { RootState } from '../store';
 import { logout } from '../store/authSlice';
@@ -116,6 +117,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                 <FiUsers size={18} />
                 <span>Teachers</span>
               </Link>
+
+              {user?.role !== 'student' && (
+                <Link 
+                  to="/quiz-builder" 
+                  className={`ld-nav-item ${location.pathname === '/quiz-builder' ? 'active' : ''}`}
+                >
+                  <FiHelpCircle size={18} />
+                  <span>Quiz Builder</span>
+                </Link>
+              )}
 
               {/* Classrooms Section */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>

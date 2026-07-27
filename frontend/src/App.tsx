@@ -9,6 +9,9 @@ import Teachers from './pages/Teachers';
 import AcceptInvite from './pages/AcceptInvite';
 import ClassroomDetails from './pages/ClassroomDetails';
 import JoinClassroom from './pages/JoinClassroom';
+import MasterAdminLogin from './pages/MasterAdminLogin';
+import MasterAdminDashboard from './pages/MasterAdminDashboard';
+import { QuizBuilderPage } from './quiz-builder/QuizBuilderPage';
 import { ClassroomProvider } from './components/ClassroomContext';
 
 // Protected Route wrapper component
@@ -17,10 +20,14 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useSelector((state: RootState) => state.auth);
+  const { token, user } = useSelector((state: RootState) => state.auth);
   
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === 'masteradmin') {
+    return <Navigate to="/master-admin" replace />;
   }
   
   return children;
@@ -32,10 +39,35 @@ interface PublicRouteProps {
 }
 
 const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
-  const { token } = useSelector((state: RootState) => state.auth);
+  const { token, user } = useSelector((state: RootState) => state.auth);
   
   if (token) {
+    if (user?.role === 'masteradmin') {
+      return <Navigate to="/master-admin" replace />;
+    }
     return <Navigate to="/" replace />;
+  }
+  
+  return children;
+};
+
+// Master Protected Route wrapper component
+const MasterProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { token, user } = useSelector((state: RootState) => state.auth);
+  
+  if (!token || user?.role !== 'masteradmin') {
+    return <Navigate to="/master-login" replace />;
+  }
+  
+  return children;
+};
+
+// Master Public Route wrapper component
+const MasterPublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
+  const { token, user } = useSelector((state: RootState) => state.auth);
+  
+  if (token && user?.role === 'masteradmin') {
+    return <Navigate to="/master-admin" replace />;
   }
   
   return children;
@@ -46,6 +78,24 @@ function App() {
     <BrowserRouter>
       <ClassroomProvider>
         <Routes>
+          {/* Master Admin Routes */}
+          <Route
+            path="/master-login"
+            element={
+              <MasterPublicRoute>
+                <MasterAdminLogin />
+              </MasterPublicRoute>
+            }
+          />
+          <Route
+            path="/master-admin"
+            element={
+              <MasterProtectedRoute>
+                <MasterAdminDashboard />
+              </MasterProtectedRoute>
+            }
+          />
+
           {/* Protected Dashboard Route */}
           <Route
             path="/"
@@ -60,6 +110,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Teachers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quiz-builder"
+            element={
+              <ProtectedRoute>
+                <QuizBuilderPage />
               </ProtectedRoute>
             }
           />

@@ -15,7 +15,8 @@ import {
   FiAward,
   FiClock,
   FiShield,
-  FiActivity
+  FiActivity,
+  FiCalendar
 } from 'react-icons/fi';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -25,6 +26,8 @@ import { StudentsTab } from './classroom-modules/StudentsTab';
 import { ResourcesTab } from './classroom-modules/ResourcesTab';
 import { McqExamsTab } from './classroom-modules/McqExamsTab';
 import { PracticalsTab } from './classroom-modules/PracticalsTab';
+import { SessionsTab } from './classroom-modules/SessionsTab';
+import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
 import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
 
 interface Teacher {
@@ -261,7 +264,7 @@ const ClassroomDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Tabs state
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions'>('active');
 
   // Student Invitation States
   const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
@@ -366,6 +369,9 @@ const ClassroomDetails: React.FC = () => {
   const [proctorWarningMsg, setProctorWarningMsg] = useState<string | null>(null);
   const [proctorWarningCount, setProctorWarningCount] = useState(0);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [visitedQuestionIndexes, setVisitedQuestionIndexes] = useState<number[]>([0]);
+  const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
 
   // Analytics State
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
@@ -1253,6 +1259,8 @@ const ClassroomDetails: React.FC = () => {
       setProctorWarningCount(0);
       setProctorWarningMsg(null);
       setAttemptTimeRemaining(test.time_limit * 60);
+      setCurrentQuestionIndex(0);
+      setVisitedQuestionIndexes([0]);
 
       // Force Fullscreen if configured
       if (test.security_force_fullscreen) {
@@ -1386,8 +1394,9 @@ const ClassroomDetails: React.FC = () => {
   const handleFullscreenExit = async () => {
     if (!activeAttempt || !activeAttempt.id || !activeTest) return;
 
+    setShowFullscreenWarning(true);
+
     if (isPreviewMode) {
-      alert('[PREVIEW MODE] FULLSCREEN EXIT DETECTED: This exit would be logged in the student\'s proctor report.');
       return;
     }
 
@@ -1395,8 +1404,6 @@ const ClassroomDetails: React.FC = () => {
       await api.post(`/mcq/attempts/${activeAttempt.id}/log-event`, {
         eventType: 'fullscreen_exit'
       });
-
-      alert('FULLSCREEN EXIT DETECTED: This exit has been logged in your proctor report.');
     } catch (err) {
       console.error('Failed to log proctor fullscreen event:', err);
     }
@@ -1432,6 +1439,8 @@ const ClassroomDetails: React.FC = () => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
         handleFullscreenExit();
+      } else {
+        setShowFullscreenWarning(false);
       }
     };
 
@@ -1440,6 +1449,15 @@ const ClassroomDetails: React.FC = () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [activeAttempt, activeTest]);
+
+  // Track visited question indexes for question palette
+  useEffect(() => {
+    if (activeAttempt && activeTest) {
+      if (!visitedQuestionIndexes.includes(currentQuestionIndex)) {
+        setVisitedQuestionIndexes(prev => [...prev, currentQuestionIndex]);
+      }
+    }
+  }, [currentQuestionIndex, activeAttempt, activeTest]);
 
   // Open attempt analytics
   const handleOpenAnalytics = async (testId: number) => {
@@ -1646,6 +1664,71 @@ const ClassroomDetails: React.FC = () => {
           padding: '24px 16px',
           fontFamily: 'system-ui, sans-serif'
         }}>
+          {/* Fullscreen Required Warning Modal Overlay */}
+          {showFullscreenWarning && activeTest.security_force_fullscreen && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 20000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px'
+            }}>
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                padding: '36px',
+                maxWidth: '520px',
+                width: '100%',
+                textAlign: 'center',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+              }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fef2f2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 20px'
+                }}>
+                  <FiShield size={34} />
+                </div>
+
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>
+                  Full-Screen Mode Required
+                </h3>
+
+                <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '24px' }}>
+                  You have exited full-screen mode. To maintain academic integrity, this examination requires active full-screen mode. Your exit has been logged in your proctor report.
+                </p>
+
+                <button
+                  type="button"
+                  className="btn-ld btn-ld-primary"
+                  style={{ width: '100%', padding: '14px 20px', fontSize: '15px', fontWeight: '700', justifyContent: 'center' }}
+                  onClick={async () => {
+                    try {
+                      await document.documentElement.requestFullscreen();
+                      setShowFullscreenWarning(false);
+                    } catch (err) {
+                      console.error('Failed to re-enter fullscreen:', err);
+                    }
+                  }}
+                >
+                  Re-enter Full Screen to Resume Exam
+                </button>
+              </div>
+            </div>
+          )}
           {isPreviewMode && (
             <div style={{
               maxWidth: '850px',
@@ -1743,22 +1826,34 @@ const ClassroomDetails: React.FC = () => {
             </div>
           ) : (
             /* Active questions panel */
-            <div style={{ maxWidth: '850px', margin: '0 auto' }}>
-              {/* Header bar */}
+            <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+              {/* Sticky Header Bar with Live Clock Timer */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px', position: 'sticky', top: 0, zIndex: 10 }}>
                 <div>
-                  <h3 style={{ margin: 0, fontWeight: 700 }}>{activeTest.title}</h3>
+                  <h3 style={{ margin: '0 0 4px 0', fontWeight: 700, fontSize: '18px', color: '#0f172a' }}>{activeTest.title}</h3>
                   <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                    Total Questions: {activeTest.total_questions} • Time Limit: {activeTest.time_limit} mins
+                    Total Questions: {activeTest.questions?.length || activeTest.total_questions}
                     {proctorWarningCount > 0 && ` • Warnings: ${proctorWarningCount}/${activeTest.security_max_warnings}`}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: attemptTimeRemaining < 60 ? '#ef4444' : 'var(--light-primary)', fontWeight: 700, fontSize: '18px' }}>
-                    <FiClock />
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: attemptTimeRemaining < 180 ? '#dc2626' : 'var(--light-primary)',
+                    backgroundColor: attemptTimeRemaining < 180 ? '#fef2f2' : '#eef2ff',
+                    border: attemptTimeRemaining < 180 ? '1px solid #fca5a5' : '1px solid #c7d2fe',
+                    padding: '8px 16px',
+                    borderRadius: '30px',
+                    fontWeight: 800,
+                    fontSize: '18px'
+                  }}>
+                    <FiClock size={20} />
                     <span>
-                      {Math.floor(attemptTimeRemaining / 60)}:
+                      {Math.floor(attemptTimeRemaining / 3600) > 0 && `${Math.floor(attemptTimeRemaining / 3600)}:`}
+                      {Math.floor((attemptTimeRemaining % 3600) / 60).toString().padStart(2, '0')}:
                       {String(attemptTimeRemaining % 60).padStart(2, '0')}
                     </span>
                   </div>
@@ -1785,54 +1880,252 @@ const ClassroomDetails: React.FC = () => {
                 </div>
               )}
 
-              {/* Questions list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
-                {activeTest.questions?.map((q, idx) => (
-                  <div key={q.id} style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <span style={{ fontWeight: '700', color: 'var(--light-primary)' }}>Question {idx + 1}</span>
-                      <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)', fontWeight: '600' }}>{q.marks} Marks</span>
+              {/* Main 2-Column Grid Layout */}
+              {(() => {
+                const questions = activeTest.questions || [];
+                const safeIndex = Math.min(Math.max(0, currentQuestionIndex), Math.max(0, questions.length - 1));
+                const currentQuestion = questions[safeIndex];
+
+                if (!currentQuestion) {
+                  return (
+                    <div style={{ padding: '40px', backgroundColor: '#fff', borderRadius: '12px', textAlign: 'center' }}>
+                      No questions found in this examination.
+                    </div>
+                  );
+                }
+
+                const isSubjective = currentQuestion.question_type === 'subjective';
+                const options = (currentQuestion.options && currentQuestion.options.length > 0)
+                  ? currentQuestion.options
+                  : [
+                      { key: 'A', text: (currentQuestion as any).option_a },
+                      { key: 'B', text: (currentQuestion as any).option_b },
+                      { key: 'C', text: (currentQuestion as any).option_c },
+                      { key: 'D', text: (currentQuestion as any).option_d }
+                    ].filter(opt => opt.text);
+
+                // Palette status counts
+                const answeredCount = questions.filter(q => studentResponses[q.id!] !== undefined && studentResponses[q.id!] !== '').length;
+                const visitedCount = visitedQuestionIndexes.length;
+                const skippedCount = visitedQuestionIndexes.filter(idx => {
+                  const q = questions[idx];
+                  return q && (!studentResponses[q.id!] || studentResponses[q.id!] === '');
+                }).length;
+                const notVisitedCount = Math.max(0, questions.length - visitedCount);
+
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 310px', gap: '24px', alignItems: 'start', marginBottom: '40px' }}>
+                    {/* Left Column: Current Question Card */}
+                    <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Question Top Meta */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+                        <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--light-primary)' }}>
+                          Question {safeIndex + 1} of {questions.length} ({isSubjective ? 'Subjective / Essay' : 'MCQ'})
+                        </span>
+                        <span className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', fontWeight: '600' }}>
+                          {currentQuestion.marks} Marks
+                        </span>
+                      </div>
+
+                      {/* Question Text */}
+                      <p style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>
+                        {currentQuestion.question_text}
+                      </p>
+
+                      {/* Question Answers Panel */}
+                      {isSubjective ? (
+                        <div>
+                          <label className="form-label-ld" style={{ marginBottom: '8px', fontSize: '13px', color: '#475569' }}>
+                            Type your detailed response below:
+                          </label>
+                          <textarea
+                            className="input-ld"
+                            rows={6}
+                            placeholder="Write your answer clearly here..."
+                            value={studentResponses[currentQuestion.id!] || ''}
+                            onChange={(e) => {
+                              setStudentResponses(prev => ({ ...prev, [currentQuestion.id!]: e.target.value }));
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '14px',
+                              fontSize: '14px',
+                              lineHeight: '1.6',
+                              borderRadius: '10px',
+                              backgroundColor: '#fff',
+                              border: '1.5px solid #cbd5e1'
+                            }}
+                          />
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', textAlign: 'right' }}>
+                            Word count: {(studentResponses[currentQuestion.id!] || '').trim().split(/\s+/).filter(Boolean).length} words
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {options.map((opt: any) => {
+                            const isSelected = studentResponses[currentQuestion.id!] === opt.key;
+
+                            return (
+                              <label 
+                                key={opt.key}
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '12px', 
+                                  padding: '14px 18px', 
+                                  borderRadius: '10px', 
+                                  border: isSelected ? '2px solid var(--light-primary)' : '1px solid #cbd5e1',
+                                  backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  boxShadow: isSelected ? '0 2px 4px rgba(99, 102, 241, 0.1)' : 'none'
+                                }}
+                              >
+                                <input 
+                                  type="radio" 
+                                  name={`q-${currentQuestion.id}`} 
+                                  value={opt.key}
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    setStudentResponses(prev => ({ ...prev, [currentQuestion.id!]: opt.key }));
+                                  }}
+                                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                />
+                                <span style={{ fontWeight: '700', minWidth: '22px', fontSize: '15px', color: isSelected ? 'var(--light-primary)' : '#475569' }}>
+                                  {opt.key}.
+                                </span>
+                                <span style={{ fontSize: '14.5px', color: '#0f172a', fontWeight: isSelected ? '600' : 'normal' }}>
+                                  {opt.text}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Question Navigation Controls */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '18px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          className="btn-ld btn-ld-secondary"
+                          disabled={safeIndex === 0}
+                          onClick={() => setCurrentQuestionIndex(safeIndex - 1)}
+                        >
+                          Previous
+                        </button>
+
+                        {studentResponses[currentQuestion.id!] && (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-secondary btn-ld-small"
+                            onClick={() => {
+                              setStudentResponses(prev => {
+                                const copy = { ...prev };
+                                delete copy[currentQuestion.id!];
+                                return copy;
+                              });
+                            }}
+                            style={{ color: '#ef4444' }}
+                          >
+                            Clear Response
+                          </button>
+                        )}
+
+                        {safeIndex < questions.length - 1 ? (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-primary"
+                            onClick={() => setCurrentQuestionIndex(safeIndex + 1)}
+                          >
+                            Next Question
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-primary"
+                            onClick={() => handleAttemptSubmit(false)}
+                          >
+                            Finish & Submit Exam
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px', whiteSpace: 'pre-wrap' }}>{q.question_text}</p>
+                    {/* Right Column: Question Palette matching standard exam UI */}
+                    <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', sticky: true, top: '90px' }}>
+                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                        Question Palette
+                      </h4>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {q.options?.map((opt: any) => {
-                        const isSelected = studentResponses[q.id!] === opt.key;
-                        return (
-                          <label 
-                            key={opt.key}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '12px', 
-                              padding: '12px 16px', 
-                              borderRadius: '8px', 
-                              border: isSelected ? '2px solid var(--light-primary)' : '1px solid var(--light-border)',
-                              backgroundColor: isSelected ? 'var(--light-primary-glow)' : 'transparent',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <input 
-                              type="radio" 
-                              name={`q-${q.id}`} 
-                              value={opt.key}
-                              checked={isSelected}
-                              onChange={() => {
-                                setStudentResponses(prev => ({ ...prev, [q.id!]: opt.key }));
+                      {/* Numbered Palette Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '20px' }}>
+                        {questions.map((q, idx) => {
+                          const isCurrent = idx === safeIndex;
+                          const isAnswered = studentResponses[q.id!] !== undefined && studentResponses[q.id!] !== '';
+                          const isVisited = visitedQuestionIndexes.includes(idx);
+
+                          let bgColor = '#e2e8f0'; // Gray (Not Visited)
+                          let textColor = '#475569';
+
+                          if (isCurrent) {
+                            bgColor = '#2563eb'; // Blue (Current Active)
+                            textColor = '#ffffff';
+                          } else if (isAnswered) {
+                            bgColor = '#16a34a'; // Green (Answered)
+                            textColor = '#ffffff';
+                          } else if (isVisited) {
+                            bgColor = '#dc2626'; // Red (Skipped / Unanswered)
+                            textColor = '#ffffff';
+                          }
+
+                          return (
+                            <button
+                              key={q.id || idx}
+                              type="button"
+                              onClick={() => setCurrentQuestionIndex(idx)}
+                              style={{
+                                backgroundColor: bgColor,
+                                color: textColor,
+                                border: 'none',
+                                borderRadius: '8px 8px 8px 2px',
+                                height: '38px',
+                                fontWeight: '700',
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                boxShadow: isCurrent ? '0 0 0 3px rgba(37, 99, 235, 0.3)' : 'none'
                               }}
-                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontWeight: '700', minWidth: '20px' }}>{opt.key}.</span>
-                            <span style={{ fontSize: '14.5px' }}>{opt.text}</span>
-                          </label>
-                        );
-                      })}
+                              title={`Question ${idx + 1}`}
+                            >
+                              {idx + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Palette Status Legend */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#16a34a', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Answered ({answeredCount})</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#dc2626', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Unanswered / Skipped ({skippedCount})</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#2563eb', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Current Active</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#e2e8f0', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Not Visited ({notVisitedCount})</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -2007,6 +2300,28 @@ const ClassroomDetails: React.FC = () => {
               <FiAward size={16} />
               <span>MCQ Exams</span>
             </button>
+            {user?.role !== 'student' && (
+              <button
+                onClick={() => setActiveTab('assign_quiz')}
+                style={{
+                  padding: '12px 20px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'assign_quiz' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                  color: activeTab === 'assign_quiz' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  outline: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <FiAward size={16} />
+                <span>Assign Quiz</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('practicals')}
               style={{
@@ -2026,6 +2341,26 @@ const ClassroomDetails: React.FC = () => {
             >
               <FiActivity size={16} />
               <span>Practical Exams</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('sessions')}
+              style={{
+                padding: '12px 20px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'sessions' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: activeTab === 'sessions' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '14px',
+                outline: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FiCalendar size={16} />
+              <span>Sessions</span>
             </button>
           </div>
 
@@ -2150,6 +2485,15 @@ const ClassroomDetails: React.FC = () => {
             />
           )}
 
+          {/* Assign Quiz Tab */}
+          {activeTab === 'assign_quiz' && (
+            <AssignQuizTab
+              classroomId={Number(id)}
+              userRole={user?.role || 'student'}
+              classroomStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
+            />
+          )}
+
           {/* Practical Exams Tab */}
           {activeTab === 'practicals' && (
             <PracticalsTab
@@ -2178,6 +2522,16 @@ const ClassroomDetails: React.FC = () => {
               }}
               onOpenGrading={handleOpenGrading}
               onOpenAssignModal={(prac) => openAssignModal('practical', prac)}
+            />
+          )}
+
+          {/* Sessions Tab */}
+          {activeTab === 'sessions' && (
+            <SessionsTab
+              classroomId={classroom?.id}
+              user={user}
+              teachers={classroom?.teachers}
+              activeStudents={activeStudents}
             />
           )}
         </div>
@@ -3631,23 +3985,54 @@ const ClassroomDetails: React.FC = () => {
                   <h4 style={{ margin: '0 0 12px 0', fontWeight: '700' }}>Answer Key & Responses</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '250px', overflowY: 'auto' }}>
                     {viewAttemptDetails.test?.questions?.map((q, idx) => {
-                      const studentChoice = viewAttemptDetails.responses[q.id!];
-                      const isCorrect = studentChoice?.toUpperCase() === q.correct_answer?.toUpperCase();
+                      const studentChoice = viewAttemptDetails.responses ? viewAttemptDetails.responses[q.id!] : undefined;
+                      const isSubjective = q.question_type === 'subjective';
+                      const isCorrect = !isSubjective && (studentChoice && q.correct_answer && studentChoice.toUpperCase() === q.correct_answer.toUpperCase());
 
                       return (
-                        <div key={q.id} style={{ padding: '16px', border: '1.5px solid var(--light-border)', borderRadius: '8px', backgroundColor: isCorrect ? '#f0fdf4' : '#fef2f2' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-text-secondary)' }}>Question {idx + 1}</span>
-                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0' }}>{q.question_text}</p>
-                          <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
-                            <span>Your Answer: <strong>{studentChoice || 'None'}</strong></span>
-                            {q.correct_answer && (
-                              <span style={{ marginLeft: '20px' }}>Correct Answer: <strong style={{ color: 'var(--light-success)' }}>{q.correct_answer}</strong></span>
-                            )}
+                        <div key={q.id || idx} style={{
+                          padding: '16px',
+                          border: '1.5px solid var(--light-border)',
+                          borderRadius: '8px',
+                          backgroundColor: isSubjective ? '#f8fafc' : (isCorrect ? '#f0fdf4' : '#fef2f2')
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-text-secondary)' }}>
+                              Question {idx + 1} ({isSubjective ? 'Subjective' : 'MCQ'})
+                            </span>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-primary)' }}>
+                              {q.marks} Marks
+                            </span>
                           </div>
-                          {q.explanation && (
-                            <p style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', margin: 0, fontStyle: 'italic' }}>
-                              Explanation: {q.explanation}
-                            </p>
+
+                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0', whiteSpace: 'pre-wrap' }}>{q.question_text}</p>
+
+                          {isSubjective ? (
+                            <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
+                              <div style={{ fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Your Answer:</div>
+                              <div style={{ padding: '10px 14px', backgroundColor: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1', whiteSpace: 'pre-wrap', color: '#0f172a' }}>
+                                {studentChoice || <em style={{ color: '#94a3b8' }}>No response submitted</em>}
+                              </div>
+                              {q.explanation && (
+                                <div style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: '#f0fdf4', borderLeft: '3px solid #22c55e', borderRadius: '4px', fontSize: '12.5px', color: '#15803d' }}>
+                                  <strong>Rubric / Model Answer:</strong> {q.explanation}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
+                                <span>Your Answer: <strong>{studentChoice || 'None'}</strong></span>
+                                {q.correct_answer && (
+                                  <span style={{ marginLeft: '20px' }}>Correct Answer: <strong style={{ color: 'var(--light-success)' }}>{q.correct_answer}</strong></span>
+                                )}
+                              </div>
+                              {q.explanation && (
+                                <p style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', margin: 0, fontStyle: 'italic' }}>
+                                  Explanation: {q.explanation}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       );

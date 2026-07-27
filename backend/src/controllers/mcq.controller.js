@@ -201,18 +201,20 @@ export const getMcqTestDetails = async (req, res) => {
       const hideAnswers = !test.show_result_immediately || !afterDeadline;
 
       let processedQuestions = testJson.questions.map(q => {
-        const options = [
+        const isSubjective = q.question_type === 'subjective';
+        const options = isSubjective ? [] : [
           { key: 'A', text: q.option_a },
           { key: 'B', text: q.option_b },
           { key: 'C', text: q.option_c },
           { key: 'D', text: q.option_d }
         ];
 
-        // Shuffle options if configured
-        const finalOptions = test.shuffle_options ? shuffleArray(options) : options;
+        // Shuffle options if configured for MCQ
+        const finalOptions = (!isSubjective && test.shuffle_options) ? shuffleArray(options) : options;
 
         return {
           id: q.id,
+          question_type: q.question_type || 'mcq',
           question_text: q.question_text,
           options: finalOptions,
           marks: q.marks,
@@ -371,9 +373,13 @@ export const submitMcqAttempt = async (req, res) => {
 
     questions.forEach(q => {
       maxPossibleMarks += q.marks;
-      const studentAnswer = responses[q.id];
-      if (studentAnswer && studentAnswer.toUpperCase() === q.correct_answer.toUpperCase()) {
-        totalMarksEarned += q.marks;
+      const studentAnswer = responses ? responses[q.id] : null;
+
+      // Grade MCQ questions with non-null correct_answer
+      if (q.question_type !== 'subjective' && q.correct_answer && studentAnswer) {
+        if (typeof studentAnswer === 'string' && studentAnswer.toUpperCase() === q.correct_answer.toUpperCase()) {
+          totalMarksEarned += q.marks;
+        }
       }
     });
 

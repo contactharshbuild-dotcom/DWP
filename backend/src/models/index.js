@@ -10,6 +10,8 @@ import McqQuestion from './mcq-question.model.js';
 import McqAttempt from './mcq-attempt.model.js';
 import PracticalExam from './practical-exam.model.js';
 import PracticalSubmission from './practical-submission.model.js';
+import ClassroomModule from './classroom-module.model.js';
+import ModuleSession from './module-session.model.js';
 
 const db = {
   sequelize,
@@ -23,12 +25,20 @@ const db = {
   McqQuestion,
   McqAttempt,
   PracticalExam,
-  PracticalSubmission
+  PracticalSubmission,
+  ClassroomModule,
+  ModuleSession
 };
 
 // Establish relationships
 Organization.hasMany(User, { foreignKey: 'organization_id', as: 'users' });
 User.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+Classroom.hasMany(ClassroomModule, { foreignKey: 'classroom_id', as: 'modules', onDelete: 'CASCADE' });
+ClassroomModule.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
+ClassroomModule.hasMany(ModuleSession, { foreignKey: 'module_id', as: 'sessions', onDelete: 'CASCADE' });
+ModuleSession.belongsTo(ClassroomModule, { foreignKey: 'module_id', as: 'module' });
 
 Organization.hasMany(Classroom, { foreignKey: 'organization_id', as: 'classrooms' });
 Classroom.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
@@ -64,6 +74,9 @@ ClassroomFolder.hasMany(ClassroomResource, { foreignKey: 'folder_id', as: 'resou
 ClassroomResource.belongsTo(ClassroomFolder, { foreignKey: 'folder_id', as: 'folder' });
 
 // MCQ relationships
+Organization.hasMany(McqTest, { foreignKey: 'organization_id', as: 'organizationQuizzes', onDelete: 'CASCADE' });
+McqTest.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
 Classroom.hasMany(McqTest, { foreignKey: 'classroom_id', as: 'mcqTests', onDelete: 'CASCADE' });
 McqTest.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
 
@@ -105,6 +118,8 @@ export {
   McqQuestion,
   McqAttempt,
   PracticalExam,
-  PracticalSubmission
+  PracticalSubmission,
+  ClassroomModule,
+  ModuleSession
 };
 export default db;
