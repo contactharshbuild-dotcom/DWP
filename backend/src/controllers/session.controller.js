@@ -118,12 +118,12 @@ export const getModules = async (req, res) => {
 
           // If explicitly assigned to specific students
           if (assignedIds.length > 0) {
-            return assignedIds.includes(req.user.id);
+            return assignedIds.map(Number).includes(Number(req.user.id));
           }
 
           // If explicitly assigned to specific batches
           if (assignedBatches.length > 0) {
-            return assignedBatches.includes(studentBatch);
+            return !!(studentBatch && assignedBatches.some(b => typeof b === 'string' && b.trim().toLowerCase() === studentBatch.trim().toLowerCase()));
           }
 
           // Otherwise, general session (visible to all students)

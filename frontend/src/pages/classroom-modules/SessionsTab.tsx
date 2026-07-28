@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FiPlus, 
   FiTrash2, 
@@ -11,7 +11,16 @@ import {
   FiXCircle, 
   FiUser,
   FiBookOpen,
-  FiEdit
+  FiEdit,
+  FiChevronLeft,
+  FiChevronRight,
+  FiList,
+  FiDownload,
+  FiFilter,
+  FiInfo,
+  FiExternalLink,
+  FiShare2,
+  FiCheckCircle
 } from 'react-icons/fi';
 import api from '../../services/api';
 
@@ -66,6 +75,181 @@ interface SessionsTabProps {
   activeStudents: StudentUser[];
 }
 
+// Google Calendar single event URL generator
+const generateGoogleCalendarUrl = (session: Session, moduleName?: string) => {
+  let title = `[Classroom] ${moduleName ? moduleName + ': ' : ''}Session ${session.session_number}`;
+  if (session.name) title += ` - ${session.name}`;
+  if (session.part_extension) title += ` (${session.part_extension})`;
+
+  try {
+    const dateParts = session.date.split('-');
+    if (dateParts.length !== 3) return '#';
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const day = parseInt(dateParts[2], 10);
+
+    const [startH, startM] = (session.start_time || '10:00').split(':').map(n => parseInt(n, 10));
+    const [endH, endM] = (session.end_time || '11:30').split(':').map(n => parseInt(n, 10));
+
+    const startDate = new Date(year, month, day, startH, startM, 0);
+    const endDate = new Date(year, month, day, endH, endM, 0);
+
+    const formatUtc = (d: Date) => d.toISOString().replace(/-|:|\.\d+/g, '');
+
+    const datesParam = `${formatUtc(startDate)}/${formatUtc(endDate)}`;
+
+    let details = `Classroom Lecture Session\n`;
+    if (moduleName) details += `Module: ${moduleName}\n`;
+    details += `Session: ${session.name || `Session #${session.session_number}`}\n`;
+    details += `Status: ${session.status}\n`;
+    if (session.mode === 'online' && session.meet_link) {
+      details += `Google Meet / Video Link: ${session.meet_link}\n`;
+    } else if (session.mode === 'offline' && session.venue) {
+      details += `Venue: ${session.venue}\n`;
+    }
+    if (session.notes) {
+      details += `\nAgenda & Notes:\n${session.notes}`;
+    }
+
+    const location = session.mode === 'online' 
+      ? (session.meet_link || 'Online Video Meeting') 
+      : (session.venue || 'Classroom Venue');
+
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: title,
+      dates: datesParam,
+      details: details,
+      location: location
+    });
+
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  } catch (err) {
+    console.error('Error generating Google Calendar URL:', err);
+    return '#';
+  }
+};
+
+// iCal single event downloader
+const downloadIcsFile = (session: Session, moduleName?: string) => {
+  let title = `[Classroom] ${moduleName ? moduleName + ': ' : ''}Session ${session.session_number}`;
+  if (session.name) title += ` - ${session.name}`;
+  if (session.part_extension) title += ` (${session.part_extension})`;
+
+  try {
+    const dateParts = session.date.split('-');
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const day = parseInt(dateParts[2], 10);
+
+    const [startH, startM] = (session.start_time || '10:00').split(':').map(n => parseInt(n, 10));
+    const [endH, endM] = (session.end_time || '11:30').split(':').map(n => parseInt(n, 10));
+
+    const startDate = new Date(year, month, day, startH, startM, 0);
+    const endDate = new Date(year, month, day, endH, endM, 0);
+
+    const formatUtc = (d: Date) => d.toISOString().replace(/-|:|\.\d+/g, '');
+
+    const startUtc = formatUtc(startDate);
+    const endUtc = formatUtc(endDate);
+    const location = session.mode === 'online' ? (session.meet_link || 'Online Video Meeting') : (session.venue || 'Classroom Venue');
+    
+    let description = `Classroom Lecture Session\\nModule: ${moduleName || 'Classroom Module'}\\nStatus: ${session.status}`;
+    if (session.notes) {
+      description += `\\nNotes: ${session.notes.replace(/\n/g, '\\n')}`;
+    }
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//DWP Classroom//Sessions Calendar//EN',
+      'BEGIN:VEVENT',
+      `UID:session-${session.id}-${Date.now()}@dwp.classroom`,
+      `DTSTAMP:${startUtc}`,
+      `DTSTART:${startUtc}`,
+      `DTEND:${endUtc}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${location}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `Session_${session.session_number}_${session.date}.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (e) {
+    console.error('Error creating ICS file:', e);
+  }
+};
+
+// Bulk iCal file downloader for ALL sessions at once
+const downloadBulkSessionsIcsFile = (sessions: Array<Session & { moduleName?: string }>, fileNamePrefix: string = 'Classroom_All_Sessions') => {
+  if (!sessions || sessions.length === 0) {
+    alert('No sessions available to export.');
+    return;
+  }
+
+  const parseDateTimeToUTC = (dateStr: string, timeStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hours, minutes] = (timeStr || '10:00').split(':').map(Number);
+    const date = new Date(year, month - 1, day, hours, minutes, 0);
+    return date.toISOString().replace(/-|:|\.\d+/g, '');
+  };
+
+  const vevents = sessions.map((session, idx) => {
+    let title = `[Classroom] ${session.moduleName ? session.moduleName + ': ' : ''}Session ${session.session_number}`;
+    if (session.name) title += ` - ${session.name}`;
+    if (session.part_extension) title += ` (${session.part_extension})`;
+
+    const startUtc = parseDateTimeToUTC(session.date, session.start_time);
+    const endUtc = parseDateTimeToUTC(session.date, session.end_time);
+    const location = session.mode === 'online' ? (session.meet_link || 'Online Video Meeting') : (session.venue || 'Classroom Venue');
+
+    let description = `Classroom Lecture Session\\nModule: ${session.moduleName || 'Classroom Module'}\\nStatus: ${session.status}`;
+    if (session.notes) {
+      description += `\\nNotes: ${session.notes.replace(/\n/g, '\\n')}`;
+    }
+
+    return [
+      'BEGIN:VEVENT',
+      `UID:session-${session.id}-${idx}-${Date.now()}@dwp.classroom`,
+      `DTSTAMP:${startUtc}`,
+      `DTSTART:${startUtc}`,
+      `DTEND:${endUtc}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${location}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT'
+    ].join('\r\n');
+  });
+
+  const icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//DWP Classroom//All Sessions Calendar//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${fileNamePrefix.replace(/_/g, ' ')}`,
+    ...vevents,
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', `${fileNamePrefix}.ics`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 export const SessionsTab: React.FC<SessionsTabProps> = ({
   classroomId,
   user,
@@ -76,18 +260,37 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // View state: 'timeline' | 'calendar'
+  const [viewMode, setViewMode] = useState<'timeline' | 'calendar'>('timeline');
+
+  // Calendar View State
+  const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date());
+  const [selectedModuleFilter, setSelectedModuleFilter] = useState<string>('all');
+  const [selectedModeFilter, setSelectedModeFilter] = useState<string>('all');
+
+  // Viewing Session Details modal
+  const [viewingSession, setViewingSession] = useState<(Session & { moduleName?: string }) | null>(null);
+
+  // Modal state for Export All Sessions to Google Calendar
+  const [showExportAllModal, setShowExportAllModal] = useState(false);
+  const [exportSelectedModule, setExportSelectedModule] = useState<string>('all');
+
   // Permission checks
   const isOrgAdmin = user?.role === 'admin';
   const primaryTeacher = teachers.find(t => t.id === user?.id && t.ClassroomTeacher?.role === 'teacher');
   const canWrite = isOrgAdmin || !!primaryTeacher;
 
-  // Filter teachers/co-teachers in classroom
+  // Active classroom teachers
   const activeTeachers = teachers.filter(t => 
     (t.ClassroomTeacher?.role === 'teacher' || t.ClassroomTeacher?.role === 'co-teacher') && 
     t.ClassroomTeacher?.status === 'approved'
   );
 
-  // UI state
+  // Student profile match
+  const currentStudent = activeStudents.find(s => s.id === user?.id);
+  const studentBatch = currentStudent?.batch;
+
+  // UI state for Module creation
   const [showAddModule, setShowAddModule] = useState(false);
   const [newModuleName, setNewModuleName] = useState('');
   const [newModuleDesc, setNewModuleDesc] = useState('');
@@ -146,6 +349,20 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   useEffect(() => {
     fetchModulesAndSessions();
   }, [classroomId]);
+
+  // Flattened session list for calendar view and bulk calendar exports
+  const allSessionsWithModule = useMemo(() => {
+    const list: Array<Session & { moduleName: string }> = [];
+    modules.forEach(mod => {
+      (mod.sessions || []).forEach(sess => {
+        list.push({
+          ...sess,
+          moduleName: mod.name
+        });
+      });
+    });
+    return list;
+  }, [modules]);
 
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -422,6 +639,119 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
     });
   };
 
+  // Helper badge for assignment status
+  const getAssignmentBadge = (sess: Session) => {
+    if (user?.role === 'student') {
+      const assignedIds = sess.assigned_student_ids || [];
+      const assignedBatches = sess.batches || [];
+
+      if (assignedIds.length > 0 && assignedIds.map(Number).includes(Number(user.id))) {
+        return (
+          <span className="badge-ld" style={{ fontSize: '11px', background: 'rgba(124, 58, 237, 0.1)', color: '#7c3aed', border: '1px solid rgba(124, 58, 237, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600' }}>
+            Assigned to You
+          </span>
+        );
+      }
+      if (assignedBatches.length > 0 && studentBatch && assignedBatches.some(b => typeof b === 'string' && b.trim().toLowerCase() === studentBatch.trim().toLowerCase())) {
+        return (
+          <span className="badge-ld" style={{ fontSize: '11px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600' }}>
+            Batch: {studentBatch}
+          </span>
+        );
+      }
+      return (
+        <span className="badge-ld" style={{ fontSize: '11px', background: 'rgba(100, 116, 139, 0.1)', color: '#475569', border: '1px solid rgba(100, 116, 139, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600' }}>
+          All Students
+        </span>
+      );
+    } else {
+      // Teacher / Admin view
+      if (sess.assigned_student_ids && sess.assigned_student_ids.length > 0) {
+        return (
+          <span className="badge-ld badge-ld-secondary" style={{ fontSize: '11px' }}>
+            {sess.assigned_student_ids.length} Student(s) Assigned
+          </span>
+        );
+      }
+      if (sess.batches && sess.batches.length > 0) {
+        return (
+          <span className="badge-ld badge-ld-primary" style={{ fontSize: '11px' }}>
+            Batches: {sess.batches.join(', ')}
+          </span>
+        );
+      }
+      return (
+        <span className="badge-ld badge-ld-secondary" style={{ fontSize: '11px' }}>
+          All Students
+        </span>
+      );
+    }
+  };
+
+  // Calendar Calculation Logic
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const calYear = currentCalendarDate.getFullYear();
+  const calMonth = currentCalendarDate.getMonth();
+
+  const firstDayOfMonth = new Date(calYear, calMonth, 1);
+  const startDayOfWeek = firstDayOfMonth.getDay(); // 0 = Sun
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const daysInPrevMonth = new Date(calYear, calMonth, 0).getDate();
+
+  const prevMonthCells: Array<{ day: number; dateStr: string; isCurrentMonth: false }> = [];
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const d = daysInPrevMonth - i;
+    const prevDate = new Date(calYear, calMonth - 1, d);
+    const dateStr = prevDate.toISOString().split('T')[0];
+    prevMonthCells.push({ day: d, dateStr, isCurrentMonth: false });
+  }
+
+  const currentMonthCells: Array<{ day: number; dateStr: string; isCurrentMonth: true }> = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mStr = String(calMonth + 1).padStart(2, '0');
+    const dStr = String(d).padStart(2, '0');
+    const dateStr = `${calYear}-${mStr}-${dStr}`;
+    currentMonthCells.push({ day: d, dateStr, isCurrentMonth: true });
+  }
+
+  const totalCellsSoFar = prevMonthCells.length + currentMonthCells.length;
+  const totalGridCells = totalCellsSoFar > 35 ? 42 : 35;
+  const nextMonthCellsNeeded = totalGridCells - totalCellsSoFar;
+  const nextMonthCells: Array<{ day: number; dateStr: string; isCurrentMonth: false }> = [];
+  for (let d = 1; d <= nextMonthCellsNeeded; d++) {
+    const nextDate = new Date(calYear, calMonth + 1, d);
+    const dateStr = nextDate.toISOString().split('T')[0];
+    nextMonthCells.push({ day: d, dateStr, isCurrentMonth: false });
+  }
+
+  const calendarGrid = [...prevMonthCells, ...currentMonthCells, ...nextMonthCells];
+
+  const handlePrevMonth = () => {
+    setCurrentCalendarDate(new Date(calYear, calMonth - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentCalendarDate(new Date(calYear, calMonth + 1, 1));
+  };
+
+  const handleGoToToday = () => {
+    setCurrentCalendarDate(new Date());
+  };
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Helper for Exporting All / Selected Module Sessions
+  const getExportableSessions = () => {
+    if (exportSelectedModule === 'all') {
+      return allSessionsWithModule;
+    }
+    return allSessionsWithModule.filter(s => s.module_id === Number(exportSelectedModule));
+  };
+
   const isModalOpen = !!activeModuleForSession || !!editingSession;
 
   return (
@@ -458,7 +788,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           background: #ffffff;
           border: 1px solid var(--light-border);
           border-radius: 12px;
-          padding: 16px 20px;
+          padding: 18px 20px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
           transition: all 0.2s;
         }
@@ -480,17 +810,6 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           border: 3px solid var(--light-primary);
           box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
           z-index: 2;
-        }
-
-        .module-accordion-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: rgba(243, 244, 246, 0.8);
-          border: 1px solid var(--light-border);
-          border-radius: 12px;
-          padding: 16px 24px;
-          margin-bottom: 12px;
         }
 
         .modal-sessions-overlay {
@@ -518,43 +837,192 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           padding: 28px;
           box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
         }
+
+        .calendar-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 10px;
+        }
+
+        .calendar-day-cell {
+          background: #ffffff;
+          border: 1px solid var(--light-border);
+          border-radius: 10px;
+          min-height: 120px;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          transition: all 0.15s ease;
+        }
+
+        .calendar-day-cell:hover {
+          border-color: rgba(79, 70, 229, 0.3);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+
+        .calendar-day-cell.dimmed {
+          background: #f9fafb;
+          opacity: 0.6;
+        }
+
+        .calendar-day-cell.today {
+          border: 2px solid var(--light-primary);
+          background: rgba(79, 70, 229, 0.02);
+        }
+
+        .calendar-event-card {
+          background: #ffffff;
+          border: 1px solid var(--light-border);
+          border-left: 3px solid var(--light-primary);
+          border-radius: 6px;
+          padding: 6px 8px;
+          margin-top: 6px;
+          font-size: 11.5px;
+          cursor: pointer;
+          transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .calendar-event-card:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+        }
+
+        .gcal-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          background-color: #ffffff;
+          color: #1a73e8;
+          border: 1px solid rgba(26, 115, 232, 0.3);
+          font-weight: 600;
+          text-decoration: none;
+          transition: all 0.15s;
+          cursor: pointer;
+        }
+
+        .gcal-btn:hover {
+          background-color: #f8b4b415;
+          border-color: #1a73e8;
+          box-shadow: 0 2px 6px rgba(26, 115, 232, 0.15);
+        }
+
+        .btn-sync-all {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12.5px;
+          padding: 6px 14px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #4285F4 0%, #1a73e8 100%);
+          color: #ffffff;
+          border: none;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+          transition: all 0.15s;
+        }
+
+        .btn-sync-all:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(26, 115, 232, 0.35);
+        }
       `}</style>
 
-      {/* Main Tab Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      {/* Main Tab Header with View Switcher */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FiCalendar style={{ color: 'var(--light-primary)' }} />
-            <span>Classroom Sessions & Modules</span>
+            <span>Classroom Sessions & Schedule</span>
           </h3>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-            Organize modules, schedule online/offline sessions, and track recurring lectures.
+            View upcoming lectures, calendar schedule, join meetings, and sync all sessions to Google Calendar.
           </p>
         </div>
 
-        {canWrite && (
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
-              className="btn-ld btn-ld-secondary"
-              onClick={() => setShowBulkAssign(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {/* Sync / Export All Sessions to Google Calendar Button */}
+          <button
+            onClick={() => setShowExportAllModal(true)}
+            className="btn-sync-all"
+            title="Sync all classroom sessions to Google Calendar"
+          >
+            <FiShare2 size={15} />
+            <span>Add All Sessions to Google Calendar</span>
+          </button>
+
+          {/* Timeline / Calendar View Switcher */}
+          <div style={{ display: 'flex', alignItems: 'center', background: '#f3f4f6', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+            <button
+              onClick={() => setViewMode('timeline')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12.5px',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                background: viewMode === 'timeline' ? 'var(--light-primary)' : 'transparent',
+                color: viewMode === 'timeline' ? 'white' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                transition: 'all 0.15s'
+              }}
             >
-              <FiUser size={16} />
-              <span>Bulk Assign</span>
+              <FiList size={15} />
+              <span>Timeline View</span>
             </button>
-            
-            {!showAddModule && (
-              <button 
-                className="btn-ld btn-ld-primary"
-                onClick={() => setShowAddModule(true)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <FiPlus size={16} />
-                <span>Create Module</span>
-              </button>
-            )}
+
+            <button
+              onClick={() => setViewMode('calendar')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12.5px',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                background: viewMode === 'calendar' ? 'var(--light-primary)' : 'transparent',
+                color: viewMode === 'calendar' ? 'white' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                transition: 'all 0.15s'
+              }}
+            >
+              <FiCalendar size={15} />
+              <span>Calendar View</span>
+            </button>
           </div>
-        )}
+
+          {canWrite && (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                className="btn-ld btn-ld-secondary"
+                onClick={() => setShowBulkAssign(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+              >
+                <FiUser size={15} />
+                <span>Bulk Assign</span>
+              </button>
+              
+              {!showAddModule && (
+                <button 
+                  className="btn-ld btn-ld-primary"
+                  onClick={() => setShowAddModule(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                >
+                  <FiPlus size={15} />
+                  <span>Create Module</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -624,330 +1092,776 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         </div>
       )}
 
-      {/* Modules List & Session Timelines */}
-      {loading ? (
-        <div style={{ padding: '60px', display: 'flex', justifyContent: 'center' }}>
-          <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
+      {/* ========================================================================= */}
+      {/* CALENDAR VIEW */}
+      {/* ========================================================================= */}
+      {viewMode === 'calendar' && (
+        <div style={{ background: '#fff', border: '1px solid var(--light-border)', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          
+          {/* Calendar Header Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontWeight: '800', fontSize: '20px', color: 'black' }}>
+                {monthNames[calMonth]} {calYear}
+              </h3>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  onClick={handlePrevMonth}
+                  className="btn-ld btn-ld-secondary btn-ld-small"
+                  style={{ padding: '6px 10px' }}
+                  title="Previous Month"
+                >
+                  <FiChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={handleNextMonth}
+                  className="btn-ld btn-ld-secondary btn-ld-small"
+                  style={{ padding: '6px 10px' }}
+                  title="Next Month"
+                >
+                  <FiChevronRight size={16} />
+                </button>
+                <button
+                  onClick={handleGoToToday}
+                  className="btn-ld btn-ld-secondary btn-ld-small"
+                  style={{ fontSize: '12px', fontWeight: '600' }}
+                >
+                  Today
+                </button>
+              </div>
+            </div>
+
+            {/* Filters for Calendar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
+                <FiFilter size={14} />
+                <span>Filters:</span>
+              </div>
+              <select
+                className="form-input-ld"
+                value={selectedModuleFilter}
+                onChange={(e) => setSelectedModuleFilter(e.target.value)}
+                style={{ padding: '6px 12px', fontSize: '12.5px', width: 'auto' }}
+              >
+                <option value="all">All Modules</option>
+                {modules.map(mod => (
+                  <option key={`cal-mod-opt-${mod.id}`} value={mod.id}>{mod.name}</option>
+                ))}
+              </select>
+
+              <select
+                className="form-input-ld"
+                value={selectedModeFilter}
+                onChange={(e) => setSelectedModeFilter(e.target.value)}
+                style={{ padding: '6px 12px', fontSize: '12.5px', width: 'auto' }}
+              >
+                <option value="all">All Modes (Online & Offline)</option>
+                <option value="online">Online Meetings Only</option>
+                <option value="offline">Offline Venues Only</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Weekday Header Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', marginBottom: '10px', textAlign: 'center' }}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(dayName => (
+              <div key={`head-${dayName}`} style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', padding: '6px 0' }}>
+                {dayName}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Day Grid */}
+          <div className="calendar-grid">
+            {calendarGrid.map((cell, idx) => {
+              const isToday = cell.dateStr === todayStr;
+              
+              // Filter sessions for this date cell
+              const daySessions = allSessionsWithModule.filter(sess => {
+                if (sess.date !== cell.dateStr) return false;
+                if (selectedModuleFilter !== 'all' && sess.module_id !== Number(selectedModuleFilter)) return false;
+                if (selectedModeFilter !== 'all' && sess.mode !== selectedModeFilter) return false;
+                return true;
+              });
+
+              return (
+                <div
+                  key={`cell-${cell.dateStr}-${idx}`}
+                  className={`calendar-day-cell ${!cell.isCurrentMonth ? 'dimmed' : ''} ${isToday ? 'today' : ''}`}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <span style={{
+                      fontSize: '12.5px',
+                      fontWeight: isToday ? '800' : '600',
+                      color: isToday ? 'var(--light-primary)' : (cell.isCurrentMonth ? 'black' : 'var(--light-text-muted)'),
+                      width: isToday ? '22px' : 'auto',
+                      height: isToday ? '22px' : 'auto',
+                      borderRadius: '50%',
+                      background: isToday ? 'rgba(79,70,229,0.1)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      {cell.day}
+                    </span>
+                    {daySessions.length > 0 && (
+                      <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--light-primary)', background: 'rgba(79,70,229,0.08)', padding: '1px 5px', borderRadius: '999px' }}>
+                        {daySessions.length} sess
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Sessions list in date cell */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto', maxHeight: '110px' }}>
+                    {daySessions.map(sess => {
+                      const statusStyle = getStatusStyle(sess.status);
+                      return (
+                        <div
+                          key={`cal-sess-${sess.id}`}
+                          className="calendar-event-card"
+                          style={{ borderLeftColor: statusStyle.color }}
+                          onClick={() => setViewingSession(sess)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: '700', color: 'black', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                              Session {sess.session_number}{sess.name ? `: ${sess.name}` : ''}
+                            </span>
+                            {sess.mode === 'online' ? (
+                              <FiVideo size={11} style={{ color: '#8b5cf6', flexShrink: 0 }} title="Online Session" />
+                            ) : (
+                              <FiMapPin size={11} style={{ color: '#f59e0b', flexShrink: 0 }} title="Offline Session" />
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', color: 'var(--light-text-secondary)', fontSize: '10.5px' }}>
+                            <span>{sess.start_time}</span>
+                            <a
+                              href={generateGoogleCalendarUrl(sess, sess.moduleName)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#1a73e8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                              title="Add to Google Calendar"
+                            >
+                              <FiCalendar size={11} style={{ color: '#4285F4' }} />
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      ) : modules.length === 0 ? (
-        <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-          <FiBookOpen size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
-          <h4>No modules configured</h4>
-          {canWrite ? (
-            <p style={{ fontSize: '13.5px', marginTop: '6px' }}>Click "Create Module" to start adding sessions for your students.</p>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TIMELINE / LIST VIEW */}
+      {/* ========================================================================= */}
+      {viewMode === 'timeline' && (
+        <>
+          {loading ? (
+            <div style={{ padding: '60px', display: 'flex', justifyContent: 'center' }}>
+              <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
+            </div>
+          ) : modules.length === 0 ? (
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+              <FiBookOpen size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
+              <h4>No modules configured</h4>
+              {canWrite ? (
+                <p style={{ fontSize: '13.5px', marginTop: '6px' }}>Click "Create Module" to start adding sessions for your students.</p>
+              ) : (
+                <p style={{ fontSize: '13.5px', marginTop: '6px' }}>The teacher has not scheduled any lecture sessions yet.</p>
+              )}
+            </div>
           ) : (
-            <p style={{ fontSize: '13.5px', marginTop: '6px' }}>The teacher has not scheduled any lecture sessions yet.</p>
-          )}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {modules.map((mod) => (
-            <div key={`module-card-${mod.id}`} style={{
-              background: 'rgba(255, 255, 255, 0.5)',
-              border: '1px solid var(--light-border)',
-              borderRadius: '16px',
-              padding: '24px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.01)'
-            }}>
-              {/* Module Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'black' }}>{mod.name}</h4>
-                  {mod.description && (
-                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--light-text-secondary)' }}>{mod.description}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {modules.map((mod) => (
+                <div key={`module-card-${mod.id}`} style={{
+                  background: '#ffffff',
+                  border: '1px solid var(--light-border)',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.01)'
+                }}>
+                  {/* Module Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'black' }}>{mod.name}</h4>
+                      {mod.description && (
+                        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--light-text-secondary)' }}>{mod.description}</p>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      {/* Export Module Sessions to Calendar */}
+                      {mod.sessions && mod.sessions.length > 0 && (
+                        <button
+                          className="btn-ld btn-ld-secondary btn-ld-small"
+                          onClick={() => {
+                            const modSessions = (mod.sessions || []).map(s => ({ ...s, moduleName: mod.name }));
+                            downloadBulkSessionsIcsFile(modSessions, `Module_${mod.name.replace(/\s+/g, '_')}`);
+                          }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#1a73e8', borderColor: 'rgba(26,115,232,0.3)' }}
+                          title="Export all sessions of this module to Calendar"
+                        >
+                          <FiDownload size={13} />
+                          <span>Export Module Calendar</span>
+                        </button>
+                      )}
+
+                      {canWrite && (
+                        <>
+                          <button
+                            className="btn-ld btn-ld-secondary btn-ld-small"
+                            onClick={() => setActiveModuleForSession(mod.id)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <FiPlus size={14} />
+                            <span>Add Sessions</span>
+                          </button>
+                          <button
+                            className="btn-ld btn-ld-secondary btn-ld-small"
+                            onClick={() => handleDeleteModule(mod.id)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.2)' }}
+                          >
+                            <FiTrash2 size={13} />
+                            <span>Delete Module</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sessions Timeline */}
+                  {!mod.sessions || mod.sessions.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', fontSize: '13px', color: 'var(--light-text-muted)', border: '1px dashed var(--light-border)', borderRadius: '10px' }}>
+                      No sessions scheduled in this module.
+                    </div>
+                  ) : (
+                    <div className="sessions-timeline-container">
+                      {mod.sessions.map((sess) => {
+                        const statusStyle = getStatusStyle(sess.status);
+                        const assignmentBadge = getAssignmentBadge(sess);
+                        const googleCalUrl = generateGoogleCalendarUrl(sess, mod.name);
+
+                        return (
+                          <div key={`session-node-${sess.id}`} className="timeline-session-node">
+                            <div className="timeline-bullet"></div>
+
+                            {/* Title and Metadata line */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'black' }}>
+                                    Session {sess.session_number}
+                                    {sess.name ? `: ${sess.name}` : ''}
+                                    {sess.part_extension ? ` (${sess.part_extension})` : ''}
+                                  </h5>
+                                  {assignmentBadge}
+                                </div>
+
+                                {/* Date and Time */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <FiCalendar size={13} />
+                                    {formatDate(sess.date)}
+                                  </span>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <FiClock size={13} />
+                                    {sess.start_time} - {sess.end_time}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Status and Mode Indicators */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span 
+                                  className="status-badge" 
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    padding: '3px 10px',
+                                    borderRadius: '9999px',
+                                    fontSize: '11px',
+                                    fontWeight: '700',
+                                    ...statusStyle
+                                  }}
+                                >
+                                  {sess.status === 'Live' && <span className="live-pulsate"></span>}
+                                  {sess.status}
+                                </span>
+
+                                {sess.mode === 'online' ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', padding: '3px 8px', borderRadius: '4px' }}>
+                                    <FiVideo size={13} />
+                                    <span>Online</span>
+                                  </span>
+                                ) : (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '3px 8px', borderRadius: '4px' }}>
+                                    <FiMapPin size={13} />
+                                    <span>Offline</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Middle contents: meeting link/venue, notes, conductors */}
+                            <div style={{ marginTop: '12px', fontSize: '13.5px' }}>
+                              
+                              {/* Conducted by / Assigned Teachers info */}
+                              {sess.assigned_teacher_ids && sess.assigned_teacher_ids.length > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
+                                  <FiUser size={13} style={{ color: 'var(--light-text-muted)' }} />
+                                  <span>Conducted by: <strong style={{ color: 'black' }}>
+                                    {sess.assigned_teacher_ids
+                                      .map(id => teachers.find(t => t.id === id)?.name)
+                                      .filter(Boolean)
+                                      .join(', ') || 'Assigned Teachers'}
+                                  </strong></span>
+                                </div>
+                              )}
+
+                              {/* Location / Meet link & Google Calendar button */}
+                              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                                {sess.mode === 'online' && sess.meet_link && (
+                                  <a 
+                                    href={sess.meet_link.startsWith('http') ? sess.meet_link : `https://${sess.meet_link}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="btn-ld btn-ld-secondary"
+                                    style={{
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '6px', 
+                                      fontSize: '12.5px',
+                                      padding: '5px 12px',
+                                      color: '#7c3aed',
+                                      borderColor: 'rgba(124,58,237,0.3)'
+                                    }}
+                                  >
+                                    <FiVideo size={14} />
+                                    <span>Join Online Meeting</span>
+                                  </a>
+                                )}
+
+                                {sess.mode === 'offline' && sess.venue && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)' }}>
+                                    <FiMapPin size={14} style={{ color: 'var(--light-text-muted)' }} />
+                                    <span>Venue: <strong style={{ color: 'black' }}>{sess.venue}</strong></span>
+                                  </div>
+                                )}
+
+                                {/* Add to Google Calendar button */}
+                                <a
+                                  href={googleCalUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="gcal-btn"
+                                  title="Add to Google Calendar"
+                                >
+                                  <FiCalendar size={14} style={{ color: '#4285F4' }} />
+                                  <span>Add to Google Calendar</span>
+                                </a>
+
+                                {/* View Details Button */}
+                                <button
+                                  onClick={() => setViewingSession({ ...sess, moduleName: mod.name })}
+                                  className="btn-ld btn-ld-secondary"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '5px 10px' }}
+                                >
+                                  <FiInfo size={13} />
+                                  <span>View Details</span>
+                                </button>
+                              </div>
+
+                              {/* Notes/Agenda */}
+                              {sess.notes && (
+                                <div style={{ 
+                                  background: '#f9fafb', 
+                                  borderLeft: '3px solid var(--light-primary)', 
+                                  padding: '10px 14px', 
+                                  borderRadius: '4px',
+                                  fontSize: '13px',
+                                  color: '#374151',
+                                  marginTop: '8px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase', color: 'var(--light-primary)', marginBottom: '4px' }}>
+                                    <FiFileText size={11} />
+                                    <span>Agenda & Notes</span>
+                                  </div>
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{sess.notes}</div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions footer (Teachers/Admins only) */}
+                            {canWrite && (
+                              <div style={{ 
+                                marginTop: '16px', 
+                                borderTop: '1px solid rgba(0,0,0,0.04)', 
+                                paddingTop: '12px', 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center' 
+                              }}>
+                                {/* Status Quick Select */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase' }}>
+                                    Set Status:
+                                  </span>
+                                  
+                                  <button
+                                    onClick={() => handleUpdateStatus(sess.id, 'Live')}
+                                    disabled={sess.status === 'Live'}
+                                    style={{
+                                      fontSize: '11.5px',
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      background: sess.status === 'Live' ? '#10b981' : '#f3f4f6',
+                                      color: sess.status === 'Live' ? 'white' : 'var(--light-text)',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontWeight: '600'
+                                    }}
+                                  >
+                                    Live
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleUpdateStatus(sess.id, 'Completed')}
+                                    disabled={sess.status === 'Completed'}
+                                    style={{
+                                      fontSize: '11.5px',
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      background: sess.status === 'Completed' ? '#3b82f6' : '#f3f4f6',
+                                      color: sess.status === 'Completed' ? 'white' : 'var(--light-text)',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontWeight: '600'
+                                    }}
+                                  >
+                                    Completed
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleUpdateStatus(sess.id, 'Cancelled')}
+                                    disabled={sess.status === 'Cancelled'}
+                                    style={{
+                                      fontSize: '11.5px',
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      background: sess.status === 'Cancelled' ? '#ef4444' : '#f3f4f6',
+                                      color: sess.status === 'Cancelled' ? 'white' : 'var(--light-text)',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontWeight: '600'
+                                    }}
+                                  >
+                                    Cancelled
+                                  </button>
+                                </div>
+
+                                {/* Edit & Delete actions */}
+                                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                  <button
+                                    onClick={() => handleStartEdit(sess)}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: 'var(--light-primary)',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '12.5px',
+                                      fontWeight: '600'
+                                    }}
+                                  >
+                                    <FiEdit size={13} />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteSession(sess.id)}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: '#ef4444',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '12px',
+                                      fontWeight: '600'
+                                    }}
+                                  >
+                                    <FiTrash2 size={13} />
+                                    <span>Remove</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  {canWrite && (
-                    <>
-                      <button
-                        className="btn-ld btn-ld-secondary btn-ld-small"
-                        onClick={() => setActiveModuleForSession(mod.id)}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <FiPlus size={14} />
-                        <span>Add Sessions</span>
-                      </button>
-                      <button
-                        className="btn-ld btn-ld-secondary btn-ld-small"
-                        onClick={() => handleDeleteModule(mod.id)}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.2)' }}
-                      >
-                        <FiTrash2 size={13} />
-                        <span>Delete Module</span>
-                      </button>
-                    </>
-                  )}
+      {/* ========================================================================= */}
+      {/* BULK / ALL SESSIONS GOOGLE CALENDAR SYNC MODAL */}
+      {/* ========================================================================= */}
+      {showExportAllModal && (
+        <div className="modal-sessions-overlay" onClick={() => setShowExportAllModal(false)}>
+          <div className="modal-sessions-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(26,115,232,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FiShare2 size={20} style={{ color: '#1a73e8' }} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontWeight: '800', fontSize: '18px', color: 'black' }}>
+                    Add All Sessions to Google Calendar
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
+                    Export all classroom sessions into Google Calendar or Apple Calendar at once.
+                  </p>
                 </div>
               </div>
 
-              {/* Sessions Timeline */}
-              {!mod.sessions || mod.sessions.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', fontSize: '13px', color: 'var(--light-text-muted)', border: '1px dashed var(--light-border)', borderRadius: '10px' }}>
-                  No sessions scheduled in this module.
+              <button 
+                onClick={() => setShowExportAllModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--light-text-secondary)', cursor: 'pointer' }}
+              >
+                <FiXCircle size={22} />
+              </button>
+            </div>
+
+            {/* Scope selection */}
+            <div style={{ marginBottom: '20px', background: '#f9fafb', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
+              <label className="form-label-ld" htmlFor="exportScope" style={{ marginBottom: '8px', display: 'block' }}>
+                Select Scope of Sessions to Export *
+              </label>
+              <select
+                id="exportScope"
+                className="form-input-ld"
+                value={exportSelectedModule}
+                onChange={(e) => setExportSelectedModule(e.target.value)}
+              >
+                <option value="all">All Modules ({allSessionsWithModule.length} Total Sessions)</option>
+                {modules.map(mod => (
+                  <option key={`exp-mod-${mod.id}`} value={mod.id}>
+                    {mod.name} ({(mod.sessions || []).length} Sessions)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Step-by-Step Instructions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+              
+              {/* Step 1 */}
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: '#fff', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
+                <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#1a73e8', color: 'white', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  1
+                </span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ fontSize: '14px', color: 'black' }}>Download Calendar File (.ics)</strong>
+                  <p style={{ margin: '2px 0 10px 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
+                    Generates a single calendar file containing all {getExportableSessions().length} scheduled sessions.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const sessionsToExport = getExportableSessions();
+                      const prefix = exportSelectedModule === 'all' 
+                        ? 'Classroom_All_Sessions' 
+                        : `Module_${modules.find(m => m.id === Number(exportSelectedModule))?.name.replace(/\s+/g, '_')}`;
+                      downloadBulkSessionsIcsFile(sessionsToExport, prefix);
+                    }}
+                    className="btn-sync-all"
+                    style={{ fontSize: '12.5px', padding: '8px 14px' }}
+                    disabled={getExportableSessions().length === 0}
+                  >
+                    <FiDownload size={15} />
+                    <span>Download {getExportableSessions().length} Sessions (.ics)</span>
+                  </button>
                 </div>
-              ) : (
-                <div className="sessions-timeline-container">
-                  {mod.sessions.map((sess) => {
-                    const statusStyle = getStatusStyle(sess.status);
-                    return (
-                      <div key={`session-node-${sess.id}`} className="timeline-session-node">
-                        <div className="timeline-bullet"></div>
+              </div>
 
-                        {/* Title and Metadata line */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                          <div>
-                            <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'black' }}>
-                              Session {sess.session_number}
-                              {sess.name ? `: ${sess.name}` : ''}
-                              {sess.part_extension ? ` (${sess.part_extension})` : ''}
-                            </h5>
+              {/* Step 2 */}
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: '#fff', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
+                <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#4285F4', color: 'white', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  2
+                </span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ fontSize: '14px', color: 'black' }}>Import into Google Calendar</strong>
+                  <p style={{ margin: '2px 0 10px 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
+                    Open Google Calendar's Import page and upload the downloaded file to add all sessions to your Google Calendar at once.
+                  </p>
+                  <a
+                    href="https://calendar.google.com/calendar/u/0/r/settings/export"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gcal-btn"
+                    style={{ fontSize: '12.5px', padding: '8px 14px' }}
+                  >
+                    <FiExternalLink size={15} style={{ color: '#4285F4' }} />
+                    <span>Open Google Calendar Import Page</span>
+                  </a>
+                </div>
+              </div>
+            </div>
 
-                            {/* Date and Time */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <FiCalendar size={13} />
-                                {formatDate(sess.date)}
-                              </span>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <FiClock size={13} />
-                                {sess.start_time} - {sess.end_time}
-                              </span>
-                            </div>
-                          </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowExportAllModal(false)}
+                className="btn-ld btn-ld-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                          {/* Status and Mode Indicators */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span 
-                              className="status-badge" 
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '3px 10px',
-                                borderRadius: '9999px',
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                ...statusStyle
-                              }}
-                            >
-                              {sess.status === 'Live' && <span className="live-pulsate"></span>}
-                              {sess.status}
-                            </span>
+      {/* ========================================================================= */}
+      {/* SESSION DETAILS MODAL */}
+      {/* ========================================================================= */}
+      {viewingSession && (
+        <div className="modal-sessions-overlay" onClick={() => setViewingSession(null)}>
+          <div className="modal-sessions-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <div>
+                <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-primary)', textTransform: 'uppercase' }}>
+                  {viewingSession.moduleName || 'Classroom Module'}
+                </span>
+                <h3 style={{ margin: '4px 0 0 0', fontWeight: '800', fontSize: '18px', color: 'black' }}>
+                  Session {viewingSession.session_number}{viewingSession.name ? `: ${viewingSession.name}` : ''}
+                  {viewingSession.part_extension ? ` (${viewingSession.part_extension})` : ''}
+                </h3>
+              </div>
+              <button
+                onClick={() => setViewingSession(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--light-text-secondary)', cursor: 'pointer' }}
+              >
+                <FiXCircle size={22} />
+              </button>
+            </div>
 
-                            {sess.mode === 'online' ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', padding: '3px 8px', borderRadius: '4px' }}>
-                                <FiVideo size={13} />
-                                <span>Online</span>
-                              </span>
-                            ) : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '3px 8px', borderRadius: '4px' }}>
-                                <FiMapPin size={13} />
-                                <span>Offline</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
+            {/* Session Info Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', background: '#f9fafb', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Status:</span>
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: '9999px',
+                  fontSize: '11.5px',
+                  fontWeight: '700',
+                  ...getStatusStyle(viewingSession.status)
+                }}>
+                  {viewingSession.status}
+                </span>
+              </div>
 
-                        {/* Middle contents: meeting link/venue, notes, assignments */}
-                        <div style={{ marginTop: '12px', fontSize: '13.5px' }}>
-                          
-                          {/* Conducted by / Assigned Teachers info */}
-                          {sess.assigned_teacher_ids && sess.assigned_teacher_ids.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
-                              <FiUser size={13} style={{ color: 'var(--light-text-muted)' }} />
-                              <span>Conducted by: <strong style={{ color: 'black' }}>
-                                {sess.assigned_teacher_ids
-                                  .map(id => teachers.find(t => t.id === id)?.name)
-                                  .filter(Boolean)
-                                  .join(', ') || 'Assigned Teachers'}
-                              </strong></span>
-                            </div>
-                          )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Audience Assignment:</span>
+                {getAssignmentBadge(viewingSession)}
+              </div>
 
-                          {/* Location / Meet link */}
-                          {sess.mode === 'online' && sess.meet_link && (
-                            <div style={{ marginBottom: '8px' }}>
-                              <a 
-                                href={sess.meet_link.startsWith('http') ? sess.meet_link : `https://${sess.meet_link}`} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="btn-ld btn-ld-secondary"
-                                style={{
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '6px', 
-                                  fontSize: '12.5px',
-                                  padding: '5px 12px',
-                                  color: '#7c3aed',
-                                  borderColor: 'rgba(124,58,237,0.3)'
-                                }}
-                              >
-                                <FiVideo size={14} />
-                                <span>Join Online Meeting</span>
-                              </a>
-                            </div>
-                          )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Date & Time:</span>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>
+                  {formatDate(viewingSession.date)} ({viewingSession.start_time} - {viewingSession.end_time})
+                </span>
+              </div>
 
-                          {sess.mode === 'offline' && sess.venue && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)', marginBottom: '8px' }}>
-                              <FiMapPin size={14} style={{ color: 'var(--light-text-muted)' }} />
-                              <span>Venue: <strong style={{ color: 'black' }}>{sess.venue}</strong></span>
-                            </div>
-                          )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Delivery Mode:</span>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: viewingSession.mode === 'online' ? '#8b5cf6' : '#f59e0b' }}>
+                  {viewingSession.mode === 'online' ? 'Online Video Meeting' : 'Offline Venue'}
+                </span>
+              </div>
 
-                          {/* Notes/Agenda */}
-                          {sess.notes && (
-                            <div style={{ 
-                              background: '#f9fafb', 
-                              borderLeft: '3px solid var(--light-primary)', 
-                              padding: '10px 14px', 
-                              borderRadius: '4px',
-                              fontSize: '13px',
-                              color: '#374151',
-                              marginTop: '8px'
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase', color: 'var(--light-primary)', marginBottom: '4px' }}>
-                                <FiFileText size={11} />
-                                <span>Agenda & Notes</span>
-                              </div>
-                              <div style={{ whiteSpace: 'pre-wrap' }}>{sess.notes}</div>
-                            </div>
-                          )}
+              {viewingSession.mode === 'online' && viewingSession.meet_link && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Meeting Link:</span>
+                  <a
+                    href={viewingSession.meet_link.startsWith('http') ? viewingSession.meet_link : `https://${viewingSession.meet_link}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#7c3aed', fontWeight: '700', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <FiVideo size={14} />
+                    <span>Join Meeting</span>
+                  </a>
+                </div>
+              )}
 
-                          {/* Assignments info */}
-                          {canWrite && (sess.batches || sess.assigned_student_ids) && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-                              {sess.batches && sess.batches.map(b => (
-                                <span key={`badge-batch-${b}`} className="badge-ld badge-ld-primary" style={{ fontSize: '11px' }}>
-                                  Batch: {b}
-                                </span>
-                              ))}
-                              {sess.assigned_student_ids && sess.assigned_student_ids.length > 0 && (
-                                <span className="badge-ld badge-ld-secondary" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                  <FiUser size={10} />
-                                  <span>{sess.assigned_student_ids.length} Assigned Student(s)</span>
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+              {viewingSession.mode === 'offline' && viewingSession.venue && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Venue Location:</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>{viewingSession.venue}</span>
+                </div>
+              )}
 
-                        {/* Actions footer (Teachers/Admins only) */}
-                        {canWrite && (
-                          <div style={{ 
-                            marginTop: '16px', 
-                            borderTop: '1px solid rgba(0,0,0,0.04)', 
-                            paddingTop: '12px', 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center' 
-                          }}>
-                            {/* Status Quick Select */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase' }}>
-                                Set Status:
-                              </span>
-                              
-                              <button
-                                onClick={() => handleUpdateStatus(sess.id, 'Live')}
-                                disabled={sess.status === 'Live'}
-                                style={{
-                                  fontSize: '11.5px',
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
-                                  background: sess.status === 'Live' ? '#10b981' : '#f3f4f6',
-                                  color: sess.status === 'Live' ? 'white' : 'var(--light-text)',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                Live
-                              </button>
-
-                              <button
-                                onClick={() => handleUpdateStatus(sess.id, 'Completed')}
-                                disabled={sess.status === 'Completed'}
-                                style={{
-                                  fontSize: '11.5px',
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
-                                  background: sess.status === 'Completed' ? '#3b82f6' : '#f3f4f6',
-                                  color: sess.status === 'Completed' ? 'white' : 'var(--light-text)',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                Completed
-                              </button>
-
-                              <button
-                                onClick={() => handleUpdateStatus(sess.id, 'Cancelled')}
-                                disabled={sess.status === 'Cancelled'}
-                                style={{
-                                  fontSize: '11.5px',
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
-                                  background: sess.status === 'Cancelled' ? '#ef4444' : '#f3f4f6',
-                                  color: sess.status === 'Cancelled' ? 'white' : 'var(--light-text)',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                Cancelled
-                              </button>
-                            </div>
-
-                            {/* Edit & Delete actions */}
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                              <button
-                                onClick={() => handleStartEdit(sess)}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: 'var(--light-primary)',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  fontSize: '12.5px',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                <FiEdit size={13} />
-                                <span>Edit</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteSession(sess.id)}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: '#ef4444',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                <FiTrash2 size={13} />
-                                <span>Remove</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+              {viewingSession.assigned_teacher_ids && viewingSession.assigned_teacher_ids.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--light-border)', paddingTop: '10px', marginTop: '4px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    Conducted By:
+                  </span>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>
+                    {viewingSession.assigned_teacher_ids
+                      .map(id => teachers.find(t => t.id === id)?.name)
+                      .filter(Boolean)
+                      .join(', ') || 'Classroom Teachers'}
+                  </div>
                 </div>
               )}
             </div>
-          ))}
+
+            {/* Agenda / Notes */}
+            {viewingSession.notes && (
+              <div style={{ marginBottom: '20px' }}>
+                <h5 style={{ margin: '0 0 8px 0', fontWeight: '700', fontSize: '13px', color: 'black' }}>Agenda & Notes</h5>
+                <div style={{ background: '#f9fafb', borderLeft: '3px solid var(--light-primary)', padding: '12px', borderRadius: '6px', fontSize: '13px', color: '#374151', whiteSpace: 'pre-wrap' }}>
+                  {viewingSession.notes}
+                </div>
+              </div>
+            )}
+
+            {/* Actions: Add to Google Calendar & Download iCal */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
+              <a
+                href={generateGoogleCalendarUrl(viewingSession, viewingSession.moduleName)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="gcal-btn"
+                style={{ justifyContent: 'center', padding: '10px 16px', fontSize: '13.5px' }}
+              >
+                <FiCalendar size={18} style={{ color: '#4285F4' }} />
+                <span>Add to Google Calendar</span>
+              </a>
+
+              <button
+                onClick={() => downloadIcsFile(viewingSession, viewingSession.moduleName)}
+                className="btn-ld btn-ld-secondary"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 16px', fontSize: '13px' }}
+              >
+                <FiDownload size={15} />
+                <span>Download Calendar Event (.ics)</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
