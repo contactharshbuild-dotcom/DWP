@@ -20,7 +20,8 @@ import {
   FiInfo,
   FiExternalLink,
   FiShare2,
-  FiCheckCircle
+  FiCheckCircle,
+  FiChevronDown
 } from 'react-icons/fi';
 import api from '../../services/api';
 
@@ -66,6 +67,8 @@ interface ClassroomModule {
   name: string;
   description?: string | null;
   sessions?: Session[];
+  totalSessionsCount?: number;
+  hasMoreSessions?: boolean;
 }
 
 interface SessionsTabProps {
@@ -318,6 +321,137 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   const [assignType, setAssignType] = useState<'all' | 'batches' | 'students'>('all');
   const [assignBatches, setAssignBatches] = useState('');
   const [assignStudentIds, setAssignStudentIds] = useState<number[]>([]);
+
+  // Server-side session pagination / load more state
+  const [loadingMoreModuleId, setLoadingMoreModuleId] = useState<number | null>(null);
+
+  const handleLoadMoreSessions = async (moduleId: number) => {
+    try {
+      setLoadingMoreModuleId(moduleId);
+      const targetModule = modules.find(m => m.id === moduleId);
+      if (!targetModule) return;
+
+      const currentLoadedCount = (targetModule.sessions || []).length;
+      const nextPage = Math.floor(currentLoadedCount / 5) + 1;
+
+      const response = await api.get(`/sessions/modules/${moduleId}/sessions?page=${nextPage}&limit=5`);
+      if (response.data?.success) {
+        const newSessions: Session[] = response.data.sessions || [];
+        
+        setModules(prevModules => prevModules.map(mod => {
+          if (mod.id !== moduleId) return mod;
+          
+          const existingIds = new Set((mod.sessions || []).map(s => s.id));
+          const uniqueNewSessions = newSessions.filter(s => !existingIds.has(s.id));
+          const updatedSessions = [...(mod.sessions || []), ...uniqueNewSessions];
+          
+          return {
+            ...mod,
+            sessions: updatedSessions,
+            totalSessionsCount: response.data.totalSessionsCount || updatedSessions.length,
+            hasMoreSessions: response.data.hasMore
+          };
+        }));
+      }
+    } catch (err) {
+      console.error('Error fetching next page of module sessions:', err);
+    } finally {
+      setLoadingMoreModuleId(null);
+    }
+  };
+
+  // Session Attendance Modal State
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [attendanceSession, setAttendanceSession] = useState<Session | null>(null);
+  const [attendanceList, setAttendanceList] = useState<Array<{
+    studentId: number;
+    name: string;
+    email: string;
+    batch?: string | null;
+    profile_url?: string | null;
+    profileUrl?: string | null;
+    status: 'present' | 'absent' | 'late' | 'excused' | 'unmarked';
+    remarks: string;
+  }>>([]);
+  const [attendanceStats, setAttendanceStats] = useState<{
+    total: number;
+    unmarked: number;
+    present: number;
+    absent: number;
+    late: number;
+    excused: number;
+  }>({ total: 0, unmarked: 0, present: 0, absent: 0, late: 0, excused: 0 });
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [savingAttendance, setSavingAttendance] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [attendanceSuccess, setAttendanceSuccess] = useState<string | null>(null);
+  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
+
+  const handleOpenAttendance = async (session: Session) => {
+    setAttendanceSession(session);
+    setShowAttendanceModal(true);
+    setLoadingAttendance(true);
+    setAttendanceError(null);
+    setAttendanceSuccess(null);
+    setAttendanceSearchQuery('');
+
+    try {
+      const res = await api.get(`/sessions/${session.id}/attendance`);
+      setAttendanceList(res.data.attendanceList || []);
+      setAttendanceStats(res.data.stats || { total: 0, unmarked: 0, present: 0, absent: 0, late: 0, excused: 0 });
+    } catch (err: any) {
+      console.error('Error fetching attendance:', err);
+      setAttendanceError(err.response?.data?.message || 'Failed to load session attendance.');
+    } finally {
+      setLoadingAttendance(false);
+    }
+  };
+
+  const handleStatusToggle = (studentId: number, status: 'present' | 'absent' | 'late' | 'excused' | 'unmarked') => {
+    setAttendanceList(prev => prev.map(item => item.studentId === studentId ? { ...item, status } : item));
+  };
+
+  const handleRemarksChange = (studentId: number, remarks: string) => {
+    setAttendanceList(prev => prev.map(item => item.studentId === studentId ? { ...item, remarks } : item));
+  };
+
+  const handleMarkAll = (status: 'present' | 'absent') => {
+    setAttendanceList(prev => prev.map(item => ({ ...item, status })));
+  };
+
+  const handleSaveAttendance = async () => {
+    if (!attendanceSession) return;
+    setSavingAttendance(true);
+    setAttendanceError(null);
+    setAttendanceSuccess(null);
+
+    try {
+      await api.post(`/sessions/${attendanceSession.id}/attendance`, {
+        attendanceRecords: attendanceList.map(item => ({
+          studentId: item.studentId,
+          status: item.status,
+          remarks: item.remarks
+        }))
+      });
+
+      const unmarked = attendanceList.filter(a => a.status === 'unmarked').length;
+      const present = attendanceList.filter(a => a.status === 'present').length;
+      const absent = attendanceList.filter(a => a.status === 'absent').length;
+      const late = attendanceList.filter(a => a.status === 'late').length;
+      const excused = attendanceList.filter(a => a.status === 'excused').length;
+      setAttendanceStats({ total: attendanceList.length, unmarked, present, absent, late, excused });
+
+      setAttendanceSuccess('Session attendance saved successfully!');
+      setTimeout(() => {
+        setAttendanceSuccess(null);
+      }, 2500);
+    } catch (err: any) {
+      console.error('Error saving attendance:', err);
+      setAttendanceError(err.response?.data?.message || 'Failed to save session attendance.');
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
   const [assignTeacherIds, setAssignTeacherIds] = useState<number[]>([]);
   const [sessionLoading, setSessionLoading] = useState(false);
 
@@ -1341,8 +1475,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                       No sessions scheduled in this module.
                     </div>
                   ) : (
-                    <div className="sessions-timeline-container">
-                      {mod.sessions.map((sess) => {
+                    <>
+                      <div className="sessions-timeline-container">
+                      {(mod.sessions || []).map((sess) => {
                         const statusStyle = getStatusStyle(sess.status);
                         const assignmentBadge = getAssignmentBadge(sess);
                         const googleCalUrl = generateGoogleCalendarUrl(sess, mod.name);
@@ -1565,8 +1700,30 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                   </button>
                                 </div>
 
-                                {/* Edit & Delete actions */}
-                                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                {/* Edit, Attendance & Delete actions */}
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                  <button
+                                    onClick={() => handleOpenAttendance(sess)}
+                                    style={{
+                                      background: 'var(--light-primary)',
+                                      border: 'none',
+                                      color: '#ffffff',
+                                      padding: '5px 12px',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      fontSize: '12px',
+                                      fontWeight: '700',
+                                      boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)'
+                                    }}
+                                    title="Take or view student attendance for this session"
+                                  >
+                                    <FiCheckCircle size={14} />
+                                    <span>Take Attendance</span>
+                                  </button>
+
                                   <button
                                     onClick={() => handleStartEdit(sess)}
                                     style={{
@@ -1605,10 +1762,87 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                 </div>
                               </div>
                             )}
+
+                            {!canWrite && (
+                              <div style={{ 
+                                marginTop: '12px', 
+                                borderTop: '1px solid rgba(0,0,0,0.04)', 
+                                paddingTop: '10px', 
+                                display: 'flex', 
+                                justifyContent: 'flex-end', 
+                                alignItems: 'center' 
+                              }}>
+                                <button
+                                  onClick={() => handleOpenAttendance(sess)}
+                                  style={{
+                                    background: 'rgba(79, 70, 229, 0.08)',
+                                    border: '1px solid rgba(79, 70, 229, 0.25)',
+                                    color: 'var(--light-primary)',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    fontSize: '12px',
+                                    fontWeight: '600'
+                                  }}
+                                  title="View your attendance status for this session"
+                                >
+                                  <FiCheckCircle size={13} />
+                                  <span>View Attendance</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
+                      {(() => {
+                        const totalSessionsCount = mod.totalSessionsCount !== undefined ? mod.totalSessionsCount : (mod.sessions || []).length;
+                        const remainingCount = totalSessionsCount - (mod.sessions || []).length;
+
+                        if (remainingCount <= 0) return null;
+
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                            <button
+                              type="button"
+                              className="btn-ld btn-ld-secondary"
+                              disabled={loadingMoreModuleId === mod.id}
+                              onClick={() => handleLoadMoreSessions(mod.id)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                fontSize: '13px',
+                                fontWeight: '700',
+                                padding: '8px 24px',
+                                borderRadius: '24px',
+                                background: '#ffffff',
+                                border: '1.5px solid var(--light-primary)',
+                                color: 'var(--light-primary)',
+                                boxShadow: '0 2px 10px rgba(79, 70, 229, 0.12)',
+                                cursor: loadingMoreModuleId === mod.id ? 'not-allowed' : 'pointer',
+                                opacity: loadingMoreModuleId === mod.id ? 0.7 : 1
+                              }}
+                            >
+                              {loadingMoreModuleId === mod.id ? (
+                                <>
+                                  <span className="spinner" style={{ width: '14px', height: '14px', borderColor: 'rgba(79,70,229,0.3)', borderTopColor: 'var(--light-primary)' }}></span>
+                                  <span>Loading Next Sessions...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <FiChevronDown size={16} />
+                                  <span>Load More Sessions ({remainingCount} remaining)</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </>
                   )}
                 </div>
               ))}
@@ -2497,6 +2731,317 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Session Student Attendance Modal */}
+      {showAttendanceModal && attendanceSession && (
+        <div className="modal-overlay-ld" onClick={() => setShowAttendanceModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '820px', width: '92%' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--light-border)', paddingBottom: '12px' }}>
+              <div>
+                <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiCheckCircle style={{ color: 'var(--light-primary)' }} />
+                  <span>Session Attendance: {attendanceSession.name || `Session ${attendanceSession.session_number}`}</span>
+                </h3>
+                <p className="modal-subtitle-ld" style={{ margin: '4px 0 0 0' }}>
+                  <FiCalendar size={13} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  {attendanceSession.date} • {attendanceSession.start_time} - {attendanceSession.end_time}
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowAttendanceModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiXCircle size={22} />
+              </button>
+            </div>
+
+            {attendanceError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{attendanceError}</span>
+              </div>
+            )}
+
+            {attendanceSuccess && (
+              <div className="alert-ld alert-ld-success" style={{ marginBottom: '16px' }}>
+                <FiCheckCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{attendanceSuccess}</span>
+              </div>
+            )}
+
+            {loadingAttendance ? (
+              <div style={{ padding: '40px', textAlign: 'center' }}>
+                <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
+                <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--light-text-secondary)' }}>Loading session student roster...</p>
+              </div>
+            ) : (
+              <div>
+                {/* Stats Header & Quick Action Buttons */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  flexWrap: 'wrap', 
+                  gap: '12px', 
+                  background: '#f8fafc', 
+                  padding: '12px 16px', 
+                  borderRadius: '10px', 
+                  marginBottom: '16px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  {/* Real-time Counters */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className="badge-ld" style={{ background: '#e2e8f0', color: '#334155', fontWeight: '700' }}>
+                      Total: {attendanceStats.total}
+                    </span>
+                    <span className="badge-ld" style={{ background: '#f1f5f9', color: '#64748b', fontWeight: '700' }}>
+                      Unmarked: {attendanceList.filter(a => a.status === 'unmarked').length}
+                    </span>
+                    <span className="badge-ld" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '700' }}>
+                      Present: {attendanceList.filter(a => a.status === 'present').length}
+                    </span>
+                    <span className="badge-ld" style={{ background: '#fee2e2', color: '#b91c1c', fontWeight: '700' }}>
+                      Absent: {attendanceList.filter(a => a.status === 'absent').length}
+                    </span>
+                    <span className="badge-ld" style={{ background: '#fef3c7', color: '#b45309', fontWeight: '700' }}>
+                      Late: {attendanceList.filter(a => a.status === 'late').length}
+                    </span>
+                    <span className="badge-ld" style={{ background: '#dbeafe', color: '#1d4ed8', fontWeight: '700' }}>
+                      Excused: {attendanceList.filter(a => a.status === 'excused').length}
+                    </span>
+                  </div>
+
+                  {/* Batch Action Buttons */}
+                  {canWrite && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn-ld btn-ld-secondary btn-ld-small"
+                        onClick={() => handleMarkAll('present')}
+                        style={{ fontSize: '12px' }}
+                      >
+                        Mark All Present
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ld btn-ld-secondary btn-ld-small"
+                        onClick={() => handleMarkAll('absent')}
+                        style={{ fontSize: '12px', color: '#ef4444' }}
+                      >
+                        Mark All Absent
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter Search Input */}
+                <div style={{ marginBottom: '14px' }}>
+                  <input
+                    type="text"
+                    className="form-input-ld"
+                    placeholder="Search student by name, email or batch..."
+                    value={attendanceSearchQuery}
+                    onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+                    style={{ padding: '8px 12px', fontSize: '13px' }}
+                  />
+                </div>
+
+                {/* Student Attendance List Table */}
+                <div className="ld-table-container" style={{ maxHeight: '380px', overflowY: 'auto', marginBottom: '20px' }}>
+                  {attendanceList.length === 0 ? (
+                    <div style={{ padding: '30px', textAlign: 'center', color: 'var(--light-text-secondary)' }}>
+                      No active students enrolled or assigned to this session.
+                    </div>
+                  ) : (
+                    <table className="ld-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Batch</th>
+                          <th style={{ textAlign: 'center' }}>Attendance Status</th>
+                          <th>Remarks / Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attendanceList
+                          .filter(st => {
+                            if (!attendanceSearchQuery.trim()) return true;
+                            const q = attendanceSearchQuery.toLowerCase();
+                            return st.name.toLowerCase().includes(q) ||
+                              st.email.toLowerCase().includes(q) ||
+                              (st.batch && st.batch.toLowerCase().includes(q));
+                          })
+                          .map((st) => (
+                            <tr key={`attendance-student-${st.studentId}`}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  {st.profile_url || st.profileUrl ? (
+                                    <img 
+                                      src={st.profile_url || st.profileUrl || ''} 
+                                      alt={st.name} 
+                                      className="teacher-avatar-thumb"
+                                      onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                                    />
+                                  ) : (
+                                    <div className="ld-avatar" style={{ width: '30px', height: '30px', fontSize: '11px' }}>
+                                      {st.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div style={{ fontWeight: '600', fontSize: '13.5px' }}>{st.name}</div>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--light-text-muted)' }}>{st.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                {st.batch ? (
+                                  <span className="badge-ld badge-ld-primary" style={{ fontSize: '11px' }}>{st.batch}</span>
+                                ) : (
+                                  <span style={{ fontSize: '12px', color: 'var(--light-text-muted)', fontStyle: 'italic' }}>General</span>
+                                )}
+                              </td>
+                              <td>
+                                {canWrite ? (
+                                  <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStatusToggle(st.studentId, 'present')}
+                                      style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        border: st.status === 'present' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                                        background: st.status === 'present' ? '#22c55e' : '#f8fafc',
+                                        color: st.status === 'present' ? '#ffffff' : '#475569',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Present
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStatusToggle(st.studentId, 'absent')}
+                                      style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        border: st.status === 'absent' ? '2px solid #dc2626' : '1px solid #cbd5e1',
+                                        background: st.status === 'absent' ? '#ef4444' : '#f8fafc',
+                                        color: st.status === 'absent' ? '#ffffff' : '#475569',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Absent
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStatusToggle(st.studentId, 'late')}
+                                      style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        border: st.status === 'late' ? '2px solid #d97706' : '1px solid #cbd5e1',
+                                        background: st.status === 'late' ? '#f59e0b' : '#f8fafc',
+                                        color: st.status === 'late' ? '#ffffff' : '#475569',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Late
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStatusToggle(st.studentId, 'excused')}
+                                      style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        border: st.status === 'excused' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                                        background: st.status === 'excused' ? '#3b82f6' : '#f8fafc',
+                                        color: st.status === 'excused' ? '#ffffff' : '#475569',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Excused
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={{ textAlign: 'center' }}>
+                                    <span 
+                                      className="badge-ld"
+                                      style={{
+                                        background: 
+                                          st.status === 'present' ? '#dcfce7' :
+                                          st.status === 'absent' ? '#fee2e2' :
+                                          st.status === 'late' ? '#fef3c7' :
+                                          st.status === 'excused' ? '#dbeafe' : '#f1f5f9',
+                                        color: 
+                                          st.status === 'present' ? '#15803d' :
+                                          st.status === 'absent' ? '#b91c1c' :
+                                          st.status === 'late' ? '#b45309' :
+                                          st.status === 'excused' ? '#1d4ed8' : '#64748b',
+                                        textTransform: 'capitalize',
+                                        fontWeight: '700'
+                                      }}
+                                    >
+                                      {st.status === 'unmarked' ? 'Not Marked' : st.status}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                {canWrite ? (
+                                  <input
+                                    type="text"
+                                    className="form-input-ld"
+                                    placeholder="Add notes..."
+                                    value={st.remarks}
+                                    onChange={(e) => handleRemarksChange(st.studentId, e.target.value)}
+                                    style={{ padding: '4px 8px', fontSize: '12px', width: '100%' }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>{st.remarks || '-'}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* Footer Submit Buttons */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button 
+                    type="button" 
+                    className="btn-ld btn-ld-secondary" 
+                    onClick={() => setShowAttendanceModal(false)}
+                  >
+                    Close
+                  </button>
+                  {canWrite && (
+                    <button 
+                      type="button" 
+                      className="btn-ld btn-ld-primary" 
+                      onClick={handleSaveAttendance}
+                      disabled={savingAttendance}
+                    >
+                      {savingAttendance ? 'Saving...' : 'Save Attendance'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

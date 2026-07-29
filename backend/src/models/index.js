@@ -12,6 +12,7 @@ import PracticalExam from './practical-exam.model.js';
 import PracticalSubmission from './practical-submission.model.js';
 import ClassroomModule from './classroom-module.model.js';
 import ModuleSession from './module-session.model.js';
+import SessionAttendance from './session-attendance.model.js';
 
 const db = {
   sequelize,
@@ -27,7 +28,8 @@ const db = {
   PracticalExam,
   PracticalSubmission,
   ClassroomModule,
-  ModuleSession
+  ModuleSession,
+  SessionAttendance
 };
 
 // Establish relationships
@@ -99,6 +101,14 @@ PracticalSubmission.belongsTo(PracticalExam, { foreignKey: 'practical_id', as: '
 User.hasMany(PracticalSubmission, { foreignKey: 'user_id', as: 'practicalSubmissions', onDelete: 'CASCADE' });
 PracticalSubmission.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// Session Attendance relationships
+ModuleSession.hasMany(SessionAttendance, { foreignKey: 'session_id', as: 'attendances', onDelete: 'CASCADE' });
+SessionAttendance.belongsTo(ModuleSession, { foreignKey: 'session_id', as: 'session' });
+
+User.hasMany(SessionAttendance, { foreignKey: 'student_id', as: 'sessionAttendances', onDelete: 'CASCADE' });
+SessionAttendance.belongsTo(User, { foreignKey: 'student_id', as: 'student' });
+SessionAttendance.belongsTo(User, { foreignKey: 'marked_by', as: 'marker' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -120,6 +130,7 @@ export {
   PracticalExam,
   PracticalSubmission,
   ClassroomModule,
-  ModuleSession
+  ModuleSession,
+  SessionAttendance
 };
 export default db;

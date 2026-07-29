@@ -8,6 +8,8 @@ interface StudentUser {
   batch?: string | null;
   status?: string;
   invite_token?: string | null;
+  profile_url?: string | null;
+  profileUrl?: string | null;
 }
 
 interface StudentsTabProps {
@@ -33,6 +35,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 }) => {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const getInitials = (name: string = '') => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
   };
 
   return (
@@ -89,7 +100,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               <tbody>
                 {pendingStudents.map((stud) => (
                   <tr key={`pending-student-${stud.id}`}>
-                    <td style={{ fontWeight: '600' }}>{stud.name}</td>
+                    <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {stud.profile_url || stud.profileUrl ? (
+                        <img 
+                          src={stud.profile_url || stud.profileUrl || ''} 
+                          alt={stud.name} 
+                          className="teacher-avatar-thumb"
+                          onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
+                          {getInitials(stud.name)}
+                        </div>
+                      )}
+                      <span>{stud.name}</span>
+                    </td>
                     <td>{stud.email}</td>
                     <td>
                       {stud.batch ? (
@@ -146,7 +171,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             <tbody>
               {activeStudents.map((stud) => (
                 <tr key={`student-${stud.id}`}>
-                  <td style={{ fontWeight: '600' }}>{stud.name}</td>
+                  <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {stud.profile_url || stud.profileUrl ? (
+                      <img 
+                        src={stud.profile_url || stud.profileUrl || ''} 
+                        alt={stud.name} 
+                        className="teacher-avatar-thumb"
+                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
+                        {getInitials(stud.name)}
+                      </div>
+                    )}
+                    <span>{stud.name}</span>
+                  </td>
                   <td>{stud.email}</td>
                   <td>
                     {stud.batch ? (
@@ -164,29 +203,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   </td>
                   {(user?.role === 'admin' || user?.role === 'teacher') && (
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        {stud.status === 'pending' && stud.invite_token && (
-                          <button
-                            className="btn-ld btn-ld-secondary btn-ld-small"
-                            onClick={() => {
-                              const link = `http://localhost:5173/accept-invite?token=${stud.invite_token}`;
-                              copyToClipboard(link);
-                              alert('Copied invite link to clipboard!');
-                            }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <FiCopy size={12} />
-                            <span>Copy Link</span>
-                          </button>
-                        )}
-                        <button
-                          className="btn-ld btn-ld-danger btn-ld-small"
-                          onClick={() => onRemoveStudent(stud.id)}
-                        >
-                          <FiTrash2 size={13} />
-                          <span>Remove</span>
-                        </button>
-                      </div>
+                      <button
+                        className="btn-ld btn-ld-danger btn-ld-small"
+                        onClick={() => onRemoveStudent(stud.id)}
+                        title="Remove student from classroom"
+                      >
+                        <FiTrash2 size={13} />
+                        <span>Remove</span>
+                      </button>
                     </td>
                   )}
                 </tr>

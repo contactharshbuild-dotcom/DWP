@@ -1,4 +1,4 @@
-import { Classroom, ClassroomTeacher, ClassroomModule, ModuleSession, User } from '../models/index.js';
+import { Classroom, ClassroomTeacher, ClassroomModule, ModuleSession, SessionAttendance, User } from '../models/index.js';
 
 // Helper to check if a user is an organization admin or primary teacher of the classroom
 const hasWritePermission = async (userId, userRole, classroomId) => {
@@ -104,15 +104,19 @@ export const getModules = async (req, res) => {
     });
 
     const isStudent = req.user.role === 'student';
-    let formattedModules = [];
+    let studentBatch = null;
 
     if (isStudent) {
       const student = await User.findByPk(req.user.id);
-      const studentBatch = student ? student.batch : null;
+      studentBatch = student ? student.batch : null;
+    }
 
-      formattedModules = modules.map(mod => {
-        const rawMod = mod.toJSON();
-        const filteredSessions = (rawMod.sessions || []).filter(session => {
+    const formattedModules = modules.map(mod => {
+      const rawMod = mod.toJSON();
+      let allSessions = rawMod.sessions || [];
+
+      if (isStudent) {
+        allSessions = allSessions.filter(session => {
           const assignedIds = session.assigned_student_ids || [];
           const assignedBatches = session.batches || [];
 
@@ -129,15 +133,20 @@ export const getModules = async (req, res) => {
           // Otherwise, general session (visible to all students)
           return true;
         });
+      }
 
-        return {
-          ...rawMod,
-          sessions: filteredSessions
-        };
-      });
-    } else {
-      formattedModules = modules.map(mod => mod.toJSON());
-    }
+      const totalSessionsCount = allSessions.length;
+      const initialLimit = 5;
+      const paginatedSessions = allSessions.slice(0, initialLimit);
+
+      return {
+        ...rawMod,
+        sessions: paginatedSessions,
+        totalSessionsCount,
+        hasMoreSessions: totalSessionsCount > initialLimit,
+        sessionPage: 1
+      };
+    });
 
     return res.json({
       success: true,
@@ -145,6 +154,65 @@ export const getModules = async (req, res) => {
     });
   } catch (error) {
     console.error('Error in getModules:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+// 2b. Get Paginated Sessions for a Module (Server-Side On-Demand Fetching)
+export const getModuleSessionsPaginated = async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const offset = (page - 1) * limit;
+
+    const mod = await ClassroomModule.findByPk(moduleId);
+    if (!mod) {
+      return res.status(404).json({ message: 'Module not found.' });
+    }
+
+    const allSessions = await ModuleSession.findAll({
+      where: { module_id: moduleId },
+      order: [
+        ['date', 'ASC'],
+        ['start_time', 'ASC']
+      ]
+    });
+
+    const isStudent = req.user.role === 'student';
+    let filteredSessions = allSessions.map(s => s.toJSON());
+
+    if (isStudent) {
+      const student = await User.findByPk(req.user.id);
+      const studentBatch = student ? student.batch : null;
+
+      filteredSessions = filteredSessions.filter(session => {
+        const assignedIds = session.assigned_student_ids || [];
+        const assignedBatches = session.batches || [];
+
+        if (assignedIds.length > 0) {
+          return assignedIds.map(Number).includes(Number(req.user.id));
+        }
+        if (assignedBatches.length > 0) {
+          return !!(studentBatch && assignedBatches.some(b => typeof b === 'string' && b.trim().toLowerCase() === studentBatch.trim().toLowerCase()));
+        }
+        return true;
+      });
+    }
+
+    const totalSessionsCount = filteredSessions.length;
+    const paginatedSessions = filteredSessions.slice(offset, offset + limit);
+
+    return res.json({
+      success: true,
+      sessions: paginatedSessions,
+      totalSessionsCount,
+      page,
+      limit,
+      hasMore: (offset + limit) < totalSessionsCount
+    });
+  } catch (error) {
+    console.error('Error in getModuleSessionsPaginated:', error);
     return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };
@@ -425,3 +493,196 @@ export const bulkAssign = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };
+
+// 12. Get Session Attendance
+export const getSessionAttendance = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await ModuleSession.findByPk(sessionId, {
+      include: [{
+        model: ClassroomModule,
+        as: 'module'
+      }]
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found.' });
+    }
+
+    const classroomId = session.module.classroom_id;
+
+    // Get all active students belonging to the same organization
+    const allStudents = await User.findAll({
+      where: {
+        organization_id: req.user.organizationId,
+        role: 'student',
+        status: 'active'
+      },
+      attributes: ['id', 'name', 'email', 'batch', 'profile_url'],
+      order: [['name', 'ASC']]
+    });
+
+    // Filter students by assigned_student_ids or batches if specified
+    let targetStudents = allStudents;
+    if (session.assigned_student_ids && session.assigned_student_ids.length > 0) {
+      targetStudents = targetStudents.filter(s => session.assigned_student_ids.includes(s.id));
+    } else if (session.batches && session.batches.length > 0) {
+      targetStudents = targetStudents.filter(s => s.batch && session.batches.includes(s.batch));
+    }
+
+    // Fetch existing attendance records for this session
+    const attendanceRecords = await SessionAttendance.findAll({
+      where: { session_id: sessionId }
+    });
+
+    const attendanceMap = new Map();
+    attendanceRecords.forEach(rec => {
+      attendanceMap.set(rec.student_id, rec);
+    });
+
+    const attendanceList = targetStudents.map(student => {
+      const rec = attendanceMap.get(student.id);
+      return {
+        studentId: student.id,
+        name: student.name,
+        email: student.email,
+        batch: student.batch,
+        profile_url: student.profile_url,
+        profileUrl: student.profile_url,
+        status: rec ? rec.status : 'unmarked',
+        remarks: rec ? rec.remarks || '' : '',
+        markedBy: rec ? rec.marked_by : null,
+        updatedAt: rec ? rec.updated_at : null
+      };
+    });
+
+    const stats = {
+      total: attendanceList.length,
+      unmarked: attendanceList.filter(a => a.status === 'unmarked').length,
+      present: attendanceList.filter(a => a.status === 'present').length,
+      absent: attendanceList.filter(a => a.status === 'absent').length,
+      late: attendanceList.filter(a => a.status === 'late').length,
+      excused: attendanceList.filter(a => a.status === 'excused').length
+    };
+
+    return res.json({
+      success: true,
+      sessionId: session.id,
+      sessionName: session.name || `Session ${session.session_number}`,
+      date: session.date,
+      startTime: session.start_time,
+      endTime: session.end_time,
+      stats,
+      attendanceList
+    });
+  } catch (error) {
+    console.error('Error in getSessionAttendance:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+// 13. Save Session Attendance (Bulk Upsert)
+export const saveSessionAttendance = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { attendanceRecords } = req.body;
+
+    if (!Array.isArray(attendanceRecords)) {
+      return res.status(400).json({ message: 'attendanceRecords array is required.' });
+    }
+
+    const session = await ModuleSession.findByPk(sessionId, {
+      include: [{ model: ClassroomModule, as: 'module' }]
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found.' });
+    }
+
+    const classroomId = session.module.classroom_id;
+
+    if (req.user.role !== 'admin') {
+      const relation = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: classroomId,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!relation) {
+        return res.status(403).json({ message: 'Access denied. Only classroom teachers or admins can mark attendance.' });
+      }
+    }
+
+    for (const record of attendanceRecords) {
+      const { studentId, status, remarks } = record;
+      if (!studentId || !['present', 'absent', 'late', 'excused', 'unmarked'].includes(status)) {
+        continue;
+      }
+
+      await SessionAttendance.upsert({
+        session_id: parseInt(sessionId, 10),
+        student_id: parseInt(studentId, 10),
+        status,
+        remarks: remarks || null,
+        marked_by: req.user.id
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Attendance saved successfully for ${attendanceRecords.length} student(s).`
+    });
+  } catch (error) {
+    console.error('Error in saveSessionAttendance:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+// 14. Get Classroom Attendance Summary
+export const getClassroomAttendanceSummary = async (req, res) => {
+  try {
+    const { classroomId } = req.params;
+    const modules = await ClassroomModule.findAll({
+      where: { classroom_id: classroomId },
+      include: [{ model: ModuleSession, as: 'sessions' }]
+    });
+
+    const sessionIds = [];
+    modules.forEach(m => {
+      if (m.sessions) {
+        m.sessions.forEach(s => sessionIds.push(s.id));
+      }
+    });
+
+    if (sessionIds.length === 0) {
+      return res.json({
+        success: true,
+        summary: { totalSessions: 0, totalRecords: 0, overallPercentage: 100 }
+      });
+    }
+
+    const records = await SessionAttendance.findAll({
+      where: { session_id: sessionIds }
+    });
+
+    const totalRecords = records.length;
+    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
+    const overallPercentage = totalRecords > 0 ? Math.round((presentCount / totalRecords) * 100) : 100;
+
+    return res.json({
+      success: true,
+      summary: {
+        totalSessions: sessionIds.length,
+        totalRecords,
+        presentCount,
+        absentCount: records.filter(r => r.status === 'absent').length,
+        overallPercentage
+      }
+    });
+  } catch (error) {
+    console.error('Error in getClassroomAttendanceSummary:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+

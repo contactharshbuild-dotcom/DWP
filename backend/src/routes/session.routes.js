@@ -7,7 +7,11 @@ import {
   updateSessionStatus,
   deleteSession,
   updateSession,
-  bulkAssign
+  bulkAssign,
+  getSessionAttendance,
+  saveSessionAttendance,
+  getClassroomAttendanceSummary,
+  getModuleSessionsPaginated
 } from '../controllers/session.controller.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.middleware.js';
 
@@ -17,6 +21,12 @@ router.use(authenticate);
 
 // Read-only access for classrooms
 router.get('/classrooms/:classroomId', getModules);
+router.get('/modules/:moduleId/sessions', getModuleSessionsPaginated);
+router.get('/classrooms/:classroomId/attendance-summary', getClassroomAttendanceSummary);
+
+// Session Attendance endpoints
+router.get('/:sessionId/attendance', getSessionAttendance);
+router.post('/:sessionId/attendance', authorizeRoles('admin', 'teacher'), saveSessionAttendance);
 
 // Write operations (further checked in controller to filter out co-teachers)
 router.post('/modules', authorizeRoles('admin', 'teacher'), createModule);

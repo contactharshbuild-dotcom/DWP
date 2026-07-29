@@ -17,6 +17,8 @@ interface Teacher {
   status: string;
   created_at: string;
   invite_token: string | null;
+  profile_url?: string | null;
+  profileUrl?: string | null;
 }
 
 const Teachers: React.FC = () => {
@@ -161,7 +163,21 @@ const Teachers: React.FC = () => {
               <tbody>
                 {teachers.map((teacher) => (
                   <tr key={teacher.id}>
-                    <td style={{ fontWeight: '600' }}>{teacher.name}</td>
+                    <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {teacher.profile_url || teacher.profileUrl ? (
+                        <img 
+                          src={teacher.profile_url || teacher.profileUrl || ''} 
+                          alt={teacher.name} 
+                          className="teacher-avatar-thumb"
+                          onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
+                          {teacher.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                        </div>
+                      )}
+                      <span>{teacher.name}</span>
+                    </td>
                     <td>{teacher.email}</td>
                     <td>
                       {teacher.status === 'active' ? (

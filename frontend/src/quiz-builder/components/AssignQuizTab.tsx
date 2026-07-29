@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiClock, FiShield, FiPlay, FiSquare, FiCheckCircle, FiTrash2, FiAward } from 'react-icons/fi';
+import { FiPlus, FiPlay, FiSquare, FiCheckCircle, FiTrash2, FiAward, FiEye, FiEdit2, FiBarChart2, FiFileText } from 'react-icons/fi';
 import { quizBuilderService } from '../services/quizBuilderService';
 import { AssignQuizModal } from './AssignQuizModal';
 import type { Quiz } from '../types/quizBuilder.types';
@@ -13,23 +13,54 @@ interface Student {
 interface AssignQuizTabProps {
   classroomId: number;
   userRole: string;
+  user?: { id: number; role: string } | null;
   classroomStudents: Student[];
+  onViewReport?: (attemptId: number) => void;
+  onPreviewTest?: (test: any) => void;
+  onOpenAnalytics?: (testId: number) => void;
+  onStartAttempt?: (test: any) => void;
+  onPendingCountChange?: (count: number) => void;
 }
 
 export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
   classroomId,
   userRole,
-  classroomStudents
+  user,
+  classroomStudents,
+  onViewReport,
+  onPreviewTest,
+  onOpenAnalytics,
+  onStartAttempt,
+  onPendingCountChange
 }) => {
   const [assignedQuizzes, setAssignedQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [quizToEditSettings, setQuizToEditSettings] = useState<Quiz | null>(null);
 
   const fetchClassroomQuizzes = async () => {
     setLoading(true);
     try {
       const data = await quizBuilderService.getClassroomQuizzes(classroomId);
       setAssignedQuizzes(data);
+
+      if (onPendingCountChange) {
+        const now = new Date();
+        const pendingCount = data.filter((quiz: any) => {
+          const start = quiz.start_window ? new Date(quiz.start_window) : null;
+          const end = quiz.end_window ? new Date(quiz.end_window) : null;
+          const isWindowActive = (!start || now >= start) && (!end || now <= end);
+          const isExpired = !!end && now > end;
+          const isScheduled = quiz.status === 'scheduled';
+          const isActive = (quiz.status === 'active' || isWindowActive) && !isExpired;
+
+          const attempts = quiz.attempts || [];
+          const hasAttempt = user ? attempts.some((a: any) => a.user_id === user.id) : false;
+
+          return (isActive || isScheduled) && !hasAttempt;
+        }).length;
+        onPendingCountChange(pendingCount);
+      }
     } catch (err: any) {
       console.error('Failed to fetch assigned classroom quizzes:', err);
     } finally {
@@ -85,6 +116,11 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
     }
   };
 
+  const handleOpenEditSettings = (quiz: Quiz) => {
+    setQuizToEditSettings(quiz);
+    setShowAssignModal(true);
+  };
+
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('en-US', {
@@ -111,7 +147,10 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
 
           <button
             className="btn-ld btn-ld-primary"
-            onClick={() => setShowAssignModal(true)}
+            onClick={() => {
+              setQuizToEditSettings(null);
+              setShowAssignModal(true);
+            }}
             style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <FiPlus size={16} />
@@ -154,9 +193,22 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
             </thead>
             <tbody>
               {assignedQuizzes.map((quiz: any) => {
+                const now = new Date();
+                const start = quiz.start_window ? new Date(quiz.start_window) : null;
+                const end = quiz.end_window ? new Date(quiz.end_window) : null;
+                const isWindowActive = (!start || now >= start) && (!end || now <= end);
+                const isExpired = !!end && now > end;
+
                 const isScheduled = quiz.status === 'scheduled';
-                const isActive = quiz.status === 'active';
-                const isCompleted = quiz.status === 'completed';
+                const isActive = quiz.status === 'active' || isWindowActive;
+                const isCompleted = quiz.status === 'completed' || isExpired;
+
+                // Check student attempt
+                const attempts = quiz.attempts || [];
+                const attempt = user 
+                  ? attempts.find((a: any) => a.user_id === user.id) 
+                  : (attempts.length > 0 ? attempts[0] : null);
+                const hasAttempt = !!attempt;
 
                 return (
                   <tr key={quiz.id}>
@@ -178,8 +230,8 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
 
                     <td>
                       {isActive && <span className="badge-ld badge-ld-primary">Active</span>}
-                      {isScheduled && <span className="badge-ld badge-ld-warning">Scheduled</span>}
-                      {isCompleted && <span className="badge-ld badge-ld-secondary">Completed</span>}
+                      {isScheduled && !isActive && <span className="badge-ld badge-ld-warning">Scheduled</span>}
+                      {isCompleted && !isActive && <span className="badge-ld badge-ld-secondary">Completed</span>}
                     </td>
 
                     <td>
@@ -201,51 +253,114 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                     </td>
 
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        {userRole !== 'student' && isScheduled && (
-                          <button
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {/* Student Start Attempt */}
+                        {userRole === 'student' && !hasAttempt && isActive && onStartAttempt && (
+                          <button 
                             className="btn-ld btn-ld-primary btn-ld-small"
-                            onClick={() => handleManualStart(quiz.id)}
-                            title="Start Quiz Now"
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => onStartAttempt(quiz)}
+                            title="Start Attempt"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                           >
-                            <FiPlay size={12} />
-                            <span>Start Now</span>
+                            <FiPlay size={14} />
                           </button>
                         )}
 
-                        {userRole !== 'student' && isActive && (
-                          <button
-                            className="btn-ld btn-ld-warning btn-ld-small"
-                            onClick={() => handleManualEnd(quiz.id)}
-                            title="End Quiz Session"
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                        {/* View Report */}
+                        {hasAttempt && (quiz.show_result_immediately || quiz.score_release_mode === 'immediate' || isExpired) && onViewReport && (
+                          <button 
+                            className="btn-ld btn-ld-secondary btn-ld-small"
+                            onClick={() => onViewReport(attempt.id)}
+                            title="View Report"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                           >
-                            <FiSquare size={12} />
-                            <span>End Session</span>
+                            <FiFileText size={14} />
                           </button>
                         )}
 
-                        {userRole !== 'student' && quiz.score_release_mode === 'manual_review' && !quiz.show_result_immediately && (
-                          <button
-                            className="btn-ld btn-ld-success btn-ld-small"
-                            onClick={() => handleReleaseScores(quiz.id)}
-                            title="Publish Scores to Students"
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <FiCheckCircle size={12} />
-                            <span>Release Scores</span>
-                          </button>
-                        )}
-
+                        {/* Teacher/Admin Actions */}
                         {userRole !== 'student' && (
-                          <button
-                            className="btn-ld btn-ld-danger btn-ld-small"
-                            onClick={() => handleDeleteAssignment(quiz.id)}
-                            title="Delete Assignment"
-                          >
-                            <FiTrash2 size={14} />
-                          </button>
+                          <>
+                            {/* Preview */}
+                            {onPreviewTest && (
+                              <button 
+                                className="btn-ld btn-ld-primary btn-ld-small"
+                                onClick={() => onPreviewTest(quiz)}
+                                title="Preview Quiz"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              >
+                                <FiEye size={14} />
+                              </button>
+                            )}
+
+                            {/* Analytics */}
+                            {onOpenAnalytics && (
+                              <button 
+                                className="btn-ld btn-ld-secondary btn-ld-small"
+                                onClick={() => onOpenAnalytics(quiz.id)}
+                                title="Preview Analytics"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              >
+                                <FiBarChart2 size={14} />
+                              </button>
+                            )}
+
+                            {/* Edit Settings */}
+                            <button 
+                              className="btn-ld btn-ld-secondary btn-ld-small"
+                              onClick={() => handleOpenEditSettings(quiz)}
+                              title="Edit Quiz Settings & Schedule"
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                            >
+                              <FiEdit2 size={14} />
+                            </button>
+
+                            {/* Manual Session Start */}
+                            {isScheduled && (
+                              <button
+                                className="btn-ld btn-ld-primary btn-ld-small"
+                                onClick={() => handleManualStart(quiz.id)}
+                                title="Start Quiz Now"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              >
+                                <FiPlay size={14} />
+                              </button>
+                            )}
+
+                            {/* Manual Session End */}
+                            {isActive && (
+                              <button
+                                className="btn-ld btn-ld-warning btn-ld-small"
+                                onClick={() => handleManualEnd(quiz.id)}
+                                title="End Quiz Session"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              >
+                                <FiSquare size={14} />
+                              </button>
+                            )}
+
+                            {/* Release Scores */}
+                            {quiz.score_release_mode === 'manual_review' && !quiz.show_result_immediately && (
+                              <button
+                                className="btn-ld btn-ld-success btn-ld-small"
+                                onClick={() => handleReleaseScores(quiz.id)}
+                                title="Publish Scores to Students"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              >
+                                <FiCheckCircle size={14} />
+                              </button>
+                            )}
+
+                            {/* Delete */}
+                            <button
+                              className="btn-ld btn-ld-danger btn-ld-small"
+                              onClick={() => handleDeleteAssignment(quiz.id)}
+                              title="Delete Assignment"
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                            >
+                              <FiTrash2 size={14} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -257,12 +372,16 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
         </div>
       )}
 
-      {/* Assign Quiz Modal */}
+      {/* Assign / Edit Quiz Settings Modal */}
       <AssignQuizModal
         isOpen={showAssignModal}
         classroomId={classroomId}
         classroomStudents={classroomStudents}
-        onClose={() => setShowAssignModal(false)}
+        quizToEdit={quizToEditSettings}
+        onClose={() => {
+          setShowAssignModal(false);
+          setQuizToEditSettings(null);
+        }}
         onSuccess={fetchClassroomQuizzes}
       />
     </div>

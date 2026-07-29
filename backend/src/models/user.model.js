@@ -69,6 +69,10 @@ const User = sequelize.define('User', {
   batch: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  profile_url: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   tableName: 'users',

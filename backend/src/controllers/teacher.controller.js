@@ -73,7 +73,7 @@ export const getTeachers = async (req, res) => {
         organization_id: req.user.organizationId,
         role: 'teacher'
       },
-      attributes: ['id', 'name', 'email', 'status', 'created_at', 'invite_token'],
+      attributes: ['id', 'name', 'email', 'status', 'created_at', 'invite_token', 'profile_url'],
       order: [['created_at', 'DESC']]
     });
 

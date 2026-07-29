@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiShield, FiClock, FiUsers, FiAlertCircle, FiCheckSquare, FiShuffle } from 'react-icons/fi';
+import { FiX, FiShield, FiUsers, FiAlertCircle, FiShuffle } from 'react-icons/fi';
 import { quizBuilderService } from '../services/quizBuilderService';
 import type { Quiz } from '../types/quizBuilder.types';
 
@@ -13,6 +13,7 @@ interface AssignQuizModalProps {
   isOpen: boolean;
   classroomId: number;
   classroomStudents: Student[];
+  quizToEdit?: Quiz | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -21,6 +22,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
   isOpen,
   classroomId,
   classroomStudents,
+  quizToEdit,
   onClose,
   onSuccess
 }) => {
@@ -67,19 +69,40 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
         .catch(err => console.error('Failed to load organization quizzes:', err))
         .finally(() => setLoadingQuizzes(false));
 
-      // Default select ALL classroom students
-      const allStudentIds = classroomStudents.map(s => s.id);
-      setSelectedStudentIds(allStudentIds);
+      if (quizToEdit) {
+        setTitle(quizToEdit.title || '');
+        setDescription(quizToEdit.description || '');
+        setTimeLimit(quizToEdit.time_limit || 30);
+        setStartWindow(quizToEdit.start_window ? new Date(quizToEdit.start_window).toISOString().slice(0, 16) : '');
+        setEndWindow(quizToEdit.end_window ? new Date(quizToEdit.end_window).toISOString().slice(0, 16) : '');
+        setActivationMode(quizToEdit.activation_mode || 'auto');
+        setScoreReleaseMode(quizToEdit.score_release_mode || 'immediate');
+        setForceFullscreen(!!quizToEdit.security_force_fullscreen);
+        setTabSwitchBehavior(quizToEdit.security_tab_switch_behavior || 'warning');
+        setMaxWarnings(quizToEdit.security_max_warnings || 3);
+        setProctorExtension(!!quizToEdit.proctor_extension_required);
+        setShuffleQuestions(!!quizToEdit.shuffle_questions);
+        setShuffleOptions(!!quizToEdit.shuffle_options);
+        setSelectedStudentIds(quizToEdit.assigned_student_ids || classroomStudents.map(s => s.id));
+      } else {
+        setSelectedTemplateId('');
+        setTitle('');
+        setDescription('');
+        setTimeLimit(30);
+        // Default select ALL classroom students
+        const allStudentIds = classroomStudents.map(s => s.id);
+        setSelectedStudentIds(allStudentIds);
 
-      // Default opening window dates
-      const now = new Date();
-      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      setStartWindow(now.toISOString().slice(0, 16));
-      setEndWindow(tomorrow.toISOString().slice(0, 16));
+        // Default opening window dates
+        const now = new Date();
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        setStartWindow(now.toISOString().slice(0, 16));
+        setEndWindow(tomorrow.toISOString().slice(0, 16));
+      }
 
       setError(null);
     }
-  }, [isOpen, classroomStudents]);
+  }, [isOpen, quizToEdit, classroomStudents]);
 
   if (!isOpen) return null;
 
@@ -121,7 +144,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTemplateId) {
+    if (!quizToEdit && !selectedTemplateId) {
       setError('Please select a Quiz Template created via Quiz Builder.');
       return;
     }
@@ -135,29 +158,48 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
     setError(null);
 
     try {
-      await quizBuilderService.assignQuizToClassroom({
-        templateQuizId: Number(selectedTemplateId),
-        classroomId,
-        title,
-        description,
-        timeLimit: Number(timeLimit) || 30,
-        startWindow: startWindow ? new Date(startWindow).toISOString() : null,
-        endWindow: endWindow ? new Date(endWindow).toISOString() : null,
-        activationMode,
-        scoreReleaseMode,
-        securityForceFullscreen: forceFullscreen,
-        securityTabSwitchBehavior: tabSwitchBehavior,
-        securityMaxWarnings: Number(maxWarnings) || 3,
-        proctorExtensionRequired: proctorExtension,
-        shuffleQuestions,
-        shuffleOptions,
-        assignedStudentIds: selectedStudentIds
-      });
+      if (quizToEdit) {
+        await quizBuilderService.updateQuiz(quizToEdit.id, {
+          title,
+          description,
+          timeLimit: Number(timeLimit) || 30,
+          startWindow: startWindow ? new Date(startWindow).toISOString() : null,
+          endWindow: endWindow ? new Date(endWindow).toISOString() : null,
+          activationMode,
+          scoreReleaseMode,
+          securityForceFullscreen: forceFullscreen,
+          securityTabSwitchBehavior: tabSwitchBehavior,
+          securityMaxWarnings: Number(maxWarnings) || 3,
+          proctorExtensionRequired: proctorExtension,
+          shuffleQuestions,
+          shuffleOptions,
+          assignedStudentIds: selectedStudentIds
+        });
+      } else {
+        await quizBuilderService.assignQuizToClassroom({
+          templateQuizId: Number(selectedTemplateId),
+          classroomId,
+          title,
+          description,
+          timeLimit: Number(timeLimit) || 30,
+          startWindow: startWindow ? new Date(startWindow).toISOString() : null,
+          endWindow: endWindow ? new Date(endWindow).toISOString() : null,
+          activationMode,
+          scoreReleaseMode,
+          securityForceFullscreen: forceFullscreen,
+          securityTabSwitchBehavior: tabSwitchBehavior,
+          securityMaxWarnings: Number(maxWarnings) || 3,
+          proctorExtensionRequired: proctorExtension,
+          shuffleQuestions,
+          shuffleOptions,
+          assignedStudentIds: selectedStudentIds
+        });
+      }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to assign quiz.');
+      setError(err.response?.data?.message || err.message || 'Failed to save assigned quiz.');
     } finally {
       setSubmitting(false);
     }
@@ -199,10 +241,12 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
         }}>
           <div>
             <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>
-              Assign Quiz to Classroom
+              {quizToEdit ? 'Edit Assigned Quiz' : 'Assign Quiz to Classroom'}
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-              Select a Quiz Builder template, configure schedules, proctoring options, and target students.
+              {quizToEdit
+                ? 'Modify schedules, proctoring options, time limits, and assigned students.'
+                : 'Select a Quiz Builder template, configure schedules, proctoring options, and target students.'}
             </p>
           </div>
 
@@ -236,26 +280,28 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             )}
 
             {/* 1. Quiz Template Selection */}
-            <div style={{ marginBottom: '20px' }}>
-              <label className="form-label-ld">Select Quiz Template (From Quiz Builder) *</label>
-              {loadingQuizzes ? (
-                <div style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>Loading organization templates...</div>
-              ) : (
-                <select
-                  className="select-ld"
-                  value={selectedTemplateId}
-                  onChange={(e) => handleTemplateChange(e.target.value)}
-                  required
-                >
-                  <option value="">-- Choose Quiz Template --</option>
-                  {orgQuizzes.map(quiz => (
-                    <option key={quiz.id} value={quiz.id}>
-                      {quiz.title} ({quiz.total_questions || (quiz.questions?.length || 0)} Questions)
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+            {!quizToEdit && (
+              <div style={{ marginBottom: '20px' }}>
+                <label className="form-label-ld">Select Quiz Template (From Quiz Builder) *</label>
+                {loadingQuizzes ? (
+                  <div style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>Loading organization templates...</div>
+                ) : (
+                  <select
+                    className="select-ld"
+                    value={selectedTemplateId}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    required
+                  >
+                    <option value="">-- Choose Quiz Template --</option>
+                    {orgQuizzes.map(quiz => (
+                      <option key={quiz.id} value={quiz.id}>
+                        {quiz.title} ({quiz.total_questions || (quiz.questions?.length || 0)} Questions)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             {/* 2. Opening Window & Duration */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
@@ -473,7 +519,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             padding: '16px 24px',
             borderTop: '1px solid var(--light-border)',
             display: 'flex',
-            justify: 'flex-end',
+            justifyContent: 'flex-end',
             gap: '12px',
             backgroundColor: '#f9fafb'
           }}>

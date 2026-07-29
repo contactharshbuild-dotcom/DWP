@@ -145,6 +145,12 @@ const Login: React.FC = () => {
         `}</style>
         <div className="glass-card" style={{ maxWidth: '640px', padding: '40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <img 
+              src="/dwp-logo.png" 
+              alt="DWP Logo" 
+              className="dwp-auth-header-logo" 
+              onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+            />
             <h2 className="form-title" style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
               Welcome to DWP LMS
             </h2>

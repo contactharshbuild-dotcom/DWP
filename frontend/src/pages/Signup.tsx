@@ -116,8 +116,16 @@ const Signup: React.FC = () => {
   return (
     <div className="auth-page-wrapper">
       <div className="glass-card wide">
-        <h2 className="form-title">Create LMS Organization</h2>
-        <p className="form-subtitle">Set up your multi-tenant portal and owner account</p>
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <img 
+            src="/dwp-logo.png" 
+            alt="DWP Logo" 
+            className="dwp-auth-header-logo" 
+            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
+          <h2 className="form-title" style={{ margin: 0 }}>Create LMS Organization</h2>
+          <p className="form-subtitle">Set up your multi-tenant portal and owner account</p>
+        </div>
 
         {error && (
           <div className="alert alert-error">

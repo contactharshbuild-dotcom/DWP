@@ -43,6 +43,17 @@ export const uploadResource = async (req, res) => {
     // Upload using S3/Google Drive / local storage fallback
     const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
 
+    // Default unassigned uploads to Extras folder if no folder specifies
+    let targetFolderId = folderId ? parseInt(folderId) : null;
+    if (!targetFolderId) {
+      const extrasFolder = await ClassroomFolder.findOne({
+        where: { classroom_id: classroomId, name: 'Extras' }
+      });
+      if (extrasFolder) {
+        targetFolderId = extrasFolder.id;
+      }
+    }
+
     // Save metadata in database
     const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
@@ -52,7 +63,7 @@ export const uploadResource = async (req, res) => {
       drive_link: webViewLink,
       mime_type: file.mimetype,
       uploaded_by: req.user.id,
-      folder_id: folderId ? parseInt(folderId) : null,
+      folder_id: targetFolderId,
       module_session: moduleSession || null,
       visibility: visibility || 'all_students',
       batch: batch || null,
@@ -121,6 +132,17 @@ export const addLinkResource = async (req, res) => {
       mimeType = 'youtube';
     }
 
+    // Default unassigned links to Extras folder if no folder specified
+    let targetFolderId = folderId ? parseInt(folderId) : null;
+    if (!targetFolderId) {
+      const extrasFolder = await ClassroomFolder.findOne({
+        where: { classroom_id: classroomId, name: 'Extras' }
+      });
+      if (extrasFolder) {
+        targetFolderId = extrasFolder.id;
+      }
+    }
+
     const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
@@ -129,7 +151,7 @@ export const addLinkResource = async (req, res) => {
       drive_link: link,
       mime_type: mimeType,
       uploaded_by: req.user.id,
-      folder_id: folderId ? parseInt(folderId) : null,
+      folder_id: targetFolderId,
       module_session: moduleSession || null,
       visibility: visibility || 'all_students',
       batch: batch || null,
@@ -160,6 +182,7 @@ export const addLinkResource = async (req, res) => {
 export const getClassroomResources = async (req, res) => {
   try {
     const { classroomId } = req.params;
+    const { folderId } = req.query;
 
     // Verify classroom and authorization
     const classroom = await Classroom.findOne({
@@ -186,7 +209,74 @@ export const getClassroomResources = async (req, res) => {
       }
     }
 
-    // Fetch and sync default folders
+    // CASE 1: Fetching resources inside a specific folder (folderId query parameter provided)
+    if (folderId) {
+      const targetFolderId = parseInt(folderId, 10);
+      const extrasFolder = await ClassroomFolder.findOne({
+        where: { classroom_id: classroomId, name: 'Extras' }
+      });
+
+      const whereCondition = {
+        classroom_id: classroomId,
+        [Op.or]: [
+          { folder_id: targetFolderId },
+          ...(extrasFolder && extrasFolder.id === targetFolderId ? [{ folder_id: null }] : [])
+        ]
+      };
+
+      let resources = [];
+      if (req.user.role === 'admin' || req.user.role === 'teacher') {
+        resources = await ClassroomResource.findAll({
+          where: whereCondition,
+          include: [{
+            model: User,
+            as: 'uploader',
+            attributes: ['id', 'name', 'email']
+          }],
+          order: [['created_at', 'DESC']]
+        });
+      } else {
+        const allResources = await ClassroomResource.findAll({
+          where: whereCondition,
+          include: [{
+            model: User,
+            as: 'uploader',
+            attributes: ['id', 'name', 'email']
+          }],
+          order: [['created_at', 'DESC']]
+        });
+
+        const student = await User.findByPk(req.user.id);
+        const studentBatch = student ? student.batch : null;
+
+        resources = allResources.filter(resrc => {
+          const assignedIds = resrc.assigned_student_ids || [];
+          if (assignedIds.length > 0) {
+            return assignedIds.includes(req.user.id);
+          }
+          if (resrc.visibility === 'specific_batch') {
+            return resrc.batch === studentBatch;
+          }
+          if (resrc.visibility === 'hidden') {
+            return false;
+          }
+          return true;
+        });
+      }
+
+      resources = resources.map(resrc => {
+        if (!resrc.folder_id && extrasFolder) {
+          const item = resrc.toJSON ? resrc.toJSON() : resrc;
+          return { ...item, folder_id: extrasFolder.id };
+        }
+        return resrc;
+      });
+
+      // Cost effective: Return ONLY resources for this folder, do NOT query or return all other folders!
+      return res.json({ resources });
+    }
+
+    // CASE 2: Fetching root Study Materials view (no folderId query parameter)
     let folders = await ClassroomFolder.findAll({
       where: { classroom_id: classroomId },
       order: [['created_at', 'ASC']]
@@ -204,51 +294,8 @@ export const getClassroomResources = async (req, res) => {
       );
     }
 
-    let resources = [];
-    if (req.user.role === 'admin' || req.user.role === 'teacher') {
-      resources = await ClassroomResource.findAll({
-        where: { classroom_id: classroomId },
-        include: [{
-          model: User,
-          as: 'uploader',
-          attributes: ['id', 'name', 'email']
-        }],
-        order: [['created_at', 'DESC']]
-      });
-    } else {
-      // Student: filter based on visibility & assigned_student_ids
-      const allResources = await ClassroomResource.findAll({
-        where: { classroom_id: classroomId },
-        include: [{
-          model: User,
-          as: 'uploader',
-          attributes: ['id', 'name', 'email']
-        }],
-        order: [['created_at', 'DESC']]
-      });
-
-      const student = await User.findByPk(req.user.id);
-      const studentBatch = student ? student.batch : null;
-
-      resources = allResources.filter(resrc => {
-        // If assigned to specific students individually
-        const assignedIds = resrc.assigned_student_ids || [];
-        if (assignedIds.length > 0) {
-          return assignedIds.includes(req.user.id);
-        }
-
-        // Otherwise fallback to batch/visibility filters
-        if (resrc.visibility === 'specific_batch') {
-          return resrc.batch === studentBatch;
-        }
-        if (resrc.visibility === 'hidden') {
-          return false;
-        }
-        return true;
-      });
-    }
-
-    return res.json({ resources, folders });
+    // Return ONLY folders for the root view, 0 resources fetched!
+    return res.json({ folders, resources: [] });
 
   } catch (error) {
     console.error('Error in getClassroomResources:', error);

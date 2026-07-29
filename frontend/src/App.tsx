@@ -1,18 +1,20 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from './store';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import Dashboard from './pages/Dashboard';
-import Teachers from './pages/Teachers';
-import AcceptInvite from './pages/AcceptInvite';
-import ClassroomDetails from './pages/ClassroomDetails';
-import JoinClassroom from './pages/JoinClassroom';
-import MasterAdminLogin from './pages/MasterAdminLogin';
-import MasterAdminDashboard from './pages/MasterAdminDashboard';
-import { QuizBuilderPage } from './quiz-builder/QuizBuilderPage';
 import { ClassroomProvider } from './components/ClassroomContext';
+
+// Lazy loading route components for code splitting & initial bundle optimization
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Teachers = lazy(() => import('./pages/Teachers'));
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const ClassroomDetails = lazy(() => import('./pages/ClassroomDetails'));
+const JoinClassroom = lazy(() => import('./pages/JoinClassroom'));
+const MasterAdminLogin = lazy(() => import('./pages/MasterAdminLogin'));
+const MasterAdminDashboard = lazy(() => import('./pages/MasterAdminDashboard'));
+const QuizBuilderPage = lazy(() => import('./quiz-builder/QuizBuilderPage').then(module => ({ default: module.QuizBuilderPage })));
 
 // Protected Route wrapper component
 interface ProtectedRouteProps {
@@ -73,92 +75,109 @@ const MasterPublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
   return children;
 };
 
+const PageFallback = (
+  <div style={{
+    height: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    gap: '12px'
+  }}>
+    <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary, #4f46e5)', width: '36px', height: '36px' }}></span>
+    <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>Loading view...</span>
+  </div>
+);
+
 function App() {
   return (
     <BrowserRouter>
       <ClassroomProvider>
-        <Routes>
-          {/* Master Admin Routes */}
-          <Route
-            path="/master-login"
-            element={
-              <MasterPublicRoute>
-                <MasterAdminLogin />
-              </MasterPublicRoute>
-            }
-          />
-          <Route
-            path="/master-admin"
-            element={
-              <MasterProtectedRoute>
-                <MasterAdminDashboard />
-              </MasterProtectedRoute>
-            }
-          />
+        <Suspense fallback={PageFallback}>
+          <Routes>
+            {/* Master Admin Routes */}
+            <Route
+              path="/master-login"
+              element={
+                <MasterPublicRoute>
+                  <MasterAdminLogin />
+                </MasterPublicRoute>
+              }
+            />
+            <Route
+              path="/master-admin"
+              element={
+                <MasterProtectedRoute>
+                  <MasterAdminDashboard />
+                </MasterProtectedRoute>
+              }
+            />
 
-          {/* Protected Dashboard Route */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/teachers"
-            element={
-              <ProtectedRoute>
-                <Teachers />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/quiz-builder"
-            element={
-              <ProtectedRoute>
-                <QuizBuilderPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/classrooms/:id"
-            element={
-              <ProtectedRoute>
-                <ClassroomDetails />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/accept-invite"
-            element={<AcceptInvite />}
-          />
-          <Route
-            path="/join-classroom/:classroomId"
-            element={<JoinClassroom />}
-          />
+            {/* Protected Dashboard Route */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teachers"
+              element={
+                <ProtectedRoute>
+                  <Teachers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/quiz-builder"
+              element={
+                <ProtectedRoute>
+                  <QuizBuilderPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/classrooms/:id"
+              element={
+                <ProtectedRoute>
+                  <ClassroomDetails />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/accept-invite"
+              element={<AcceptInvite />}
+            />
+            <Route
+              path="/join-classroom/:classroomId"
+              element={<JoinClassroom />}
+            />
 
-          {/* Public Login/Signup Routes */}
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/signup"
-            element={
-              <PublicRoute>
-                <Signup />
-              </PublicRoute>
-            }
-          />
+            {/* Public Login/Signup Routes */}
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <PublicRoute>
+                  <Signup />
+                </PublicRoute>
+              }
+            />
 
-          {/* Fallback Catch-All */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* Fallback Catch-All */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </ClassroomProvider>
     </BrowserRouter>
   );

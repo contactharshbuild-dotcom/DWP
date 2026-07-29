@@ -123,9 +123,16 @@ const MasterAdminLogin: React.FC = () => {
 
       <div className="master-glow-card">
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <img 
+            src="/dwp-logo.png" 
+            alt="DWP Logo" 
+            className="dwp-auth-header-logo" 
+            style={{ margin: '0 auto 12px auto', display: 'block' }}
+            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
           <div style={{
-            width: '64px',
-            height: '64px',
+            width: '54px',
+            height: '54px',
             borderRadius: '16px',
             background: 'rgba(0, 180, 216, 0.1)',
             border: '1px solid rgba(0, 180, 216, 0.2)',
@@ -136,7 +143,7 @@ const MasterAdminLogin: React.FC = () => {
             margin: '0 auto 16px auto',
             boxShadow: '0 0 20px rgba(0, 180, 216, 0.2)'
           }}>
-            <FiShield size={32} />
+            <FiShield size={28} />
           </div>
           <h2 style={{ color: 'white', fontSize: '26px', fontWeight: '800', letterSpacing: '-0.5px', marginBottom: '8px' }}>
             System Core Control

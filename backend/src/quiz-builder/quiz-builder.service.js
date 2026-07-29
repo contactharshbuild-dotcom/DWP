@@ -1,4 +1,4 @@
-import { McqTest, McqQuestion, Classroom } from '../models/index.js';
+import { McqTest, McqQuestion, McqAttempt, Classroom, User } from '../models/index.js';
 import { Op } from 'sequelize';
 
 export class QuizBuilderService {
@@ -19,7 +19,12 @@ export class QuizBuilderService {
         {
           model: McqQuestion,
           as: 'questions',
-          attributes: ['id', 'question_type', 'question_text', 'marks', 'difficulty']
+          attributes: ['id', 'question_type']
+        },
+        {
+          model: Classroom,
+          as: 'classroom',
+          attributes: ['id', 'name', 'subject']
         }
       ],
       order: [['created_at', 'DESC']]
@@ -213,7 +218,16 @@ export class QuizBuilderService {
       shuffleQuestions,
       shuffleOptions,
       showResultImmediately,
-      questions = []
+      startWindow,
+      endWindow,
+      activationMode,
+      scoreReleaseMode,
+      securityForceFullscreen,
+      securityTabSwitchBehavior,
+      securityMaxWarnings,
+      proctorExtensionRequired,
+      assignedStudentIds,
+      questions
     } = quizData;
 
     // Verify classroom belongs to organization if provided
@@ -238,7 +252,16 @@ export class QuizBuilderService {
       shuffle_questions: shuffleQuestions !== undefined ? !!shuffleQuestions : quiz.shuffle_questions,
       shuffle_options: shuffleOptions !== undefined ? !!shuffleOptions : quiz.shuffle_options,
       show_result_immediately: showResultImmediately !== undefined ? !!showResultImmediately : quiz.show_result_immediately,
-      total_questions: questions.length
+      start_window: startWindow !== undefined ? (startWindow ? new Date(startWindow) : null) : quiz.start_window,
+      end_window: endWindow !== undefined ? (endWindow ? new Date(endWindow) : null) : quiz.end_window,
+      activation_mode: activationMode !== undefined ? activationMode : quiz.activation_mode,
+      score_release_mode: scoreReleaseMode !== undefined ? scoreReleaseMode : quiz.score_release_mode,
+      security_force_fullscreen: securityForceFullscreen !== undefined ? !!securityForceFullscreen : quiz.security_force_fullscreen,
+      security_tab_switch_behavior: securityTabSwitchBehavior !== undefined ? securityTabSwitchBehavior : quiz.security_tab_switch_behavior,
+      security_max_warnings: securityMaxWarnings !== undefined ? parseInt(securityMaxWarnings) : quiz.security_max_warnings,
+      proctor_extension_required: proctorExtensionRequired !== undefined ? !!proctorExtensionRequired : quiz.proctor_extension_required,
+      assigned_student_ids: assignedStudentIds !== undefined ? assignedStudentIds : quiz.assigned_student_ids,
+      total_questions: questions ? questions.length : quiz.total_questions
     });
 
     // Replace questions
@@ -425,6 +448,17 @@ export class QuizBuilderService {
           model: McqQuestion,
           as: 'questions',
           attributes: ['id', 'question_type', 'marks']
+        },
+        {
+          model: McqAttempt,
+          as: 'attempts',
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['id', 'name', 'email']
+            }
+          ]
         }
       ],
       order: [['created_at', 'DESC']]

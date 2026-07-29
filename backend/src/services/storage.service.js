@@ -73,6 +73,12 @@ if (!isS3Configured && !isDriveConfigured) {
  * @returns {Promise<{ fileId: string, webViewLink: string }>}
  */
 export const uploadFile = async (fileBuffer, fileName, mimeType) => {
+  // Enforce server-side 5MB limit for uploads (S3/Drive/Local)
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB Limit
+  if (fileBuffer && fileBuffer.length > MAX_FILE_SIZE) {
+    throw new Error('File size exceeds the maximum server-side limit of 5MB.');
+  }
+
   // 1. Try AWS S3
   if (isS3Configured && s3Client) {
     try {

@@ -23,11 +23,20 @@ export interface Quiz {
   total_questions: number;
   time_limit: number;
   test_type?: string;
+  status?: string;
   shuffle_questions?: boolean;
   shuffle_options?: boolean;
   show_result_immediately?: boolean;
   start_window?: string | null;
   end_window?: string | null;
+  activation_mode?: 'auto' | 'manual';
+  score_release_mode?: 'immediate' | 'manual_review' | 'after_deadline';
+  security_force_fullscreen?: boolean;
+  security_tab_switch_behavior?: 'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit';
+  security_max_warnings?: number;
+  proctor_extension_required?: boolean;
+  assigned_student_ids?: number[];
+  attempts?: any[];
   created_at?: string;
   questions?: QuizQuestionInput[];
   classroom?: {
@@ -46,5 +55,14 @@ export interface CreateQuizPayload {
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
   showResultImmediately?: boolean;
-  questions: QuizQuestionInput[];
+  startWindow?: string | null;
+  endWindow?: string | null;
+  activationMode?: 'auto' | 'manual';
+  scoreReleaseMode?: 'immediate' | 'manual_review' | 'after_deadline';
+  securityForceFullscreen?: boolean;
+  securityTabSwitchBehavior?: 'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit';
+  securityMaxWarnings?: number;
+  proctorExtensionRequired?: boolean;
+  assignedStudentIds?: number[];
+  questions?: QuizQuestionInput[];
 }

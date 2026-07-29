@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import {
@@ -28,6 +28,7 @@ import { McqExamsTab } from './classroom-modules/McqExamsTab';
 import { PracticalsTab } from './classroom-modules/PracticalsTab';
 import { SessionsTab } from './classroom-modules/SessionsTab';
 import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
+import { quizBuilderService } from '../quiz-builder/services/quizBuilderService';
 import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
 
 interface Teacher {
@@ -253,9 +254,12 @@ function shuffleArray<T>(array: T[]): T[] {
   return arr;
 }
 
+const validTabs = ['active', 'pending', 'students', 'resources', 'mcqs', 'practicals', 'sessions', 'assign_quiz'];
+
 const ClassroomDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
 
   // Classroom Detail State
@@ -263,8 +267,57 @@ const ClassroomDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Tabs state
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions'>('active');
+  // Tabs state from URL query parameter
+  const tabParam = searchParams.get('tab');
+  const initialTab = (tabParam && validTabs.includes(tabParam))
+    ? tabParam
+    : (user?.role === 'student' ? 'resources' : 'active');
+
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions' | 'assign_quiz'>(initialTab as any);
+
+  // Loaded tab flags for lazy on-demand data fetching
+  const [resourcesLoaded, setResourcesLoaded] = useState(false);
+  const [mcqLoaded, setMcqLoaded] = useState(false);
+  const [practicalsLoaded, setPracticalsLoaded] = useState(false);
+
+  // Sync activeTab with URL search params when user navigates (e.g. browser Back/Forward)
+  useEffect(() => {
+    const currentTabInUrl = searchParams.get('tab');
+    if (currentTabInUrl && validTabs.includes(currentTabInUrl) && currentTabInUrl !== activeTab) {
+      setActiveTab(currentTabInUrl as any);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab as any);
+    setSearchParams({ tab: newTab });
+  };
+  const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
+
+  useEffect(() => {
+    // Only fetch pending quiz count for student badge calculation
+    if (id && user?.role === 'student') {
+      quizBuilderService.getClassroomQuizzes(Number(id))
+        .then((quizzes: any[]) => {
+          const now = new Date();
+          const count = quizzes.filter((quiz: any) => {
+            const start = quiz.start_window ? new Date(quiz.start_window) : null;
+            const end = quiz.end_window ? new Date(quiz.end_window) : null;
+            const isWindowActive = (!start || now >= start) && (!end || now <= end);
+            const isExpired = !!end && now > end;
+            const isScheduled = quiz.status === 'scheduled';
+            const isActive = (quiz.status === 'active' || isWindowActive) && !isExpired;
+
+            const attempts = quiz.attempts || [];
+            const hasAttempt = user ? attempts.some((a: any) => a.user_id === user.id) : false;
+
+            return (isActive || isScheduled) && !hasAttempt;
+          }).length;
+          setPendingQuizCount(count);
+        })
+        .catch((err) => console.error('Failed to fetch pending quiz count:', err));
+    }
+  }, [id, user]);
 
   // Student Invitation States
   const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
@@ -458,12 +511,19 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  const fetchResources = async () => {
+  const fetchResources = async (targetFolderId?: number | null) => {
     setResourcesLoading(true);
     try {
-      const response = await api.get(`/resources/classroom/${id}`);
-      setResources(response.data.resources);
-      setFolders(response.data.folders || []);
+      const url = targetFolderId 
+        ? `/resources/classroom/${id}?folderId=${targetFolderId}` 
+        : `/resources/classroom/${id}`;
+      const response = await api.get(url);
+      if (targetFolderId) {
+        setResources(response.data.resources || []);
+      } else {
+        setFolders(response.data.folders || []);
+        setResources([]);
+      }
     } catch (err) {
       console.error('Failed to fetch resources:', err);
     } finally {
@@ -495,21 +555,36 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  // Initial page mount: ONLY fetch basic classroom details
   useEffect(() => {
     fetchClassroomDetails();
-    fetchResources();
-    fetchMcqTests();
-    fetchPracticals();
-    // Reset folder view
     setCurrentFolderId(null);
+    setResourcesLoaded(false);
+    setMcqLoaded(false);
+    setPracticalsLoaded(false);
   }, [id]);
 
-  // Handle setting default tab based on role
+  // Lazy / On-Demand Data Fetching (only fetch tab data when that tab becomes active!)
   useEffect(() => {
-    if (user?.role === 'student') {
-      setActiveTab('resources');
+    if (!id) return;
+    if (activeTab === 'resources' && !resourcesLoaded) {
+      fetchResources();
+      setResourcesLoaded(true);
+    } else if ((activeTab === 'assign_quiz' || activeTab === 'mcqs') && !mcqLoaded) {
+      fetchMcqTests();
+      setMcqLoaded(true);
+    } else if (activeTab === 'practicals' && !practicalsLoaded) {
+      fetchPracticals();
+      setPracticalsLoaded(true);
     }
-  }, [user]);
+  }, [id, activeTab, resourcesLoaded, mcqLoaded, practicalsLoaded]);
+
+  // Fetch folder-specific resources on-demand ONLY when user opens a folder
+  useEffect(() => {
+    if (id && currentFolderId !== null) {
+      fetchResources(currentFolderId);
+    }
+  }, [id, currentFolderId]);
 
   const handleApproveTeacher = async (teacherId: number) => {
     try {
@@ -902,18 +977,21 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  // Partition teachers and students by role & status
-  const activeTeachers = classroom?.teachers.filter(t => t.ClassroomTeacher?.role !== 'student' && t.ClassroomTeacher?.status === 'approved') || [];
-  const pendingRequests = classroom?.teachers.filter(t => t.ClassroomTeacher?.role !== 'student' && t.ClassroomTeacher?.status === 'pending') || [];
-  const activeStudents = classroom?.teachers.filter(t => t.ClassroomTeacher?.role === 'student' && t.ClassroomTeacher?.status === 'approved') || [];
-  const pendingStudents = classroom?.teachers.filter(t => t.ClassroomTeacher?.role === 'student' && t.ClassroomTeacher?.status === 'pending') || [];
+  // Partition teachers and students by role & status (checks both user.role and ClassroomTeacher.role)
+  const isStudentMember = (t: any) => t.role === 'student' || t.ClassroomTeacher?.role === 'student';
+  const isTeacherMember = (t: any) => !isStudentMember(t);
+
+  const activeTeachers = classroom?.teachers.filter(t => isTeacherMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingRequests = classroom?.teachers.filter(t => isTeacherMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
+  const activeStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
 
   // Generate generic shareable link for this classroom ID
   const inviteLink = classroom ? `http://localhost:5173/join-classroom/${classroom.classroom_id}` : '';
 
-  // Filter resources and folders for display
+  // Filter resources and folders for display (show ONLY folders at root level; show resources ONLY inside opened folder)
   const currentFolders = currentFolderId === null ? folders : [];
-  const currentResources = resources.filter(resrc => resrc.folder_id === currentFolderId);
+  const currentResources = currentFolderId === null ? [] : resources.filter(resrc => resrc.folder_id === currentFolderId);
 
   // Check if resource is previewable
   const isPreviewable = (resrc: Resource): boolean => {
@@ -2179,7 +2257,7 @@ const ClassroomDetails: React.FC = () => {
             {user?.role !== 'student' && (
               <>
                 <button
-                  onClick={() => setActiveTab('active')}
+                  onClick={() => handleTabChange('active')}
                   style={{
                     padding: '12px 20px',
                     background: 'transparent',
@@ -2196,7 +2274,7 @@ const ClassroomDetails: React.FC = () => {
                 </button>
                 {user?.role === 'admin' && (
                   <button
-                    onClick={() => setActiveTab('pending')}
+                    onClick={() => handleTabChange('pending')}
                     style={{
                       padding: '12px 20px',
                       background: 'transparent',
@@ -2228,7 +2306,7 @@ const ClassroomDetails: React.FC = () => {
                   </button>
                 )}
                 <button
-                  onClick={() => setActiveTab('students')}
+                  onClick={() => handleTabChange('students')}
                   style={{
                     padding: '12px 20px',
                     background: 'transparent',
@@ -2261,7 +2339,7 @@ const ClassroomDetails: React.FC = () => {
               </>
             )}
             <button
-              onClick={() => setActiveTab('resources')}
+              onClick={() => handleTabChange('resources')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
@@ -2281,13 +2359,13 @@ const ClassroomDetails: React.FC = () => {
               <span>Study Materials</span>
             </button>
             <button
-              onClick={() => setActiveTab('mcqs')}
+              onClick={() => handleTabChange('assign_quiz')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
                 border: 'none',
-                borderBottom: activeTab === 'mcqs' ? '2px solid var(--light-primary)' : '2px solid transparent',
-                color: activeTab === 'mcqs' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                borderBottom: activeTab === 'assign_quiz' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: activeTab === 'assign_quiz' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                 fontWeight: '600',
                 cursor: 'pointer',
                 fontSize: '14px',
@@ -2298,32 +2376,24 @@ const ClassroomDetails: React.FC = () => {
               }}
             >
               <FiAward size={16} />
-              <span>MCQ Exams</span>
+              <span>{user?.role === 'student' ? 'MCQ Exams' : 'Assign Quiz'}</span>
+              {user?.role === 'student' && pendingQuizCount > 0 && (
+                <span style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  lineHeight: '1',
+                  marginLeft: '2px'
+                }}>
+                  {pendingQuizCount}
+                </span>
+              )}
             </button>
-            {user?.role !== 'student' && (
-              <button
-                onClick={() => setActiveTab('assign_quiz')}
-                style={{
-                  padding: '12px 20px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: activeTab === 'assign_quiz' ? '2px solid var(--light-primary)' : '2px solid transparent',
-                  color: activeTab === 'assign_quiz' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  outline: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <FiAward size={16} />
-                <span>Assign Quiz</span>
-              </button>
-            )}
             <button
-              onClick={() => setActiveTab('practicals')}
+              onClick={() => handleTabChange('practicals')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
@@ -2343,7 +2413,7 @@ const ClassroomDetails: React.FC = () => {
               <span>Practical Exams</span>
             </button>
             <button
-              onClick={() => setActiveTab('sessions')}
+              onClick={() => handleTabChange('sessions')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
@@ -2451,46 +2521,23 @@ const ClassroomDetails: React.FC = () => {
             />
           )}
 
-          {/* MCQ Exams Tab */}
-          {activeTab === 'mcqs' && (
-            <McqExamsTab
-              user={user}
-              mcqLoading={mcqLoading}
-              mcqTests={mcqTests}
-              onOpenCreateMcqTest={() => {
-                setTestTitle('');
-                setTestDescription('');
-                setTestTimeLimit(30);
-                setTestShuffleQuestions(false);
-                setTestShuffleOptions(false);
-                setTestShowResultImmediately(true);
-                setTestQuestions([]);
-                setShowTestBuilderModal(true);
-              }}
-              onOpenQuestionBank={() => {
-                loadQuestionBank();
-                setShowQuestionBankModal(true);
-              }}
-              onStartAttempt={(test) => {
-                setActiveTest(test);
-                setActivePledgeChecked(false);
-                setPledgeConfirmed(false);
-                setActiveAttempt({ status: 'started' } as any); // open pledge screen
-              }}
-              onViewReport={handleViewResultDetails}
-              onPreviewTest={handlePreviewTest}
-              onCloneTest={handleCloneTest}
-              onOpenAnalytics={handleOpenAnalytics}
-              onOpenAssignModal={(test) => openAssignModal('mcq', test)}
-            />
-          )}
-
-          {/* Assign Quiz Tab */}
+          {/* Assign Quiz / MCQ Exams Tab */}
           {activeTab === 'assign_quiz' && (
             <AssignQuizTab
               classroomId={Number(id)}
               userRole={user?.role || 'student'}
+              user={user}
               classroomStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
+              onViewReport={handleViewResultDetails}
+              onPreviewTest={handlePreviewTest}
+              onOpenAnalytics={handleOpenAnalytics}
+              onStartAttempt={(test) => {
+                setActiveTest(test);
+                setActivePledgeChecked(false);
+                setPledgeConfirmed(false);
+                setActiveAttempt({ status: 'started' } as any);
+              }}
+              onPendingCountChange={(count) => setPendingQuizCount(count)}
             />
           )}
 

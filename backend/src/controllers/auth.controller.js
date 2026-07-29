@@ -92,13 +92,18 @@ export const signup = async (req, res) => {
       organization: {
         id: organization.id,
         name: organization.name,
-        slug: organization.slug
+        slug: organization.slug,
+        logo_url: organization.logo_url,
+        logoUrl: organization.logo_url
       },
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        batch: user.batch,
+        profile_url: user.profile_url,
+        profileUrl: user.profile_url
       }
     });
 
@@ -132,7 +137,7 @@ export const login = async (req, res) => {
       include: [{
         model: Organization,
         as: 'organization',
-        attributes: ['id', 'name', 'slug', 'status']
+        attributes: ['id', 'name', 'slug', 'status', 'logo_url', 'email', 'phone', 'address']
       }]
     });
 
@@ -164,7 +169,10 @@ export const login = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        batch: user.batch,
+        profile_url: user.profile_url,
+        profileUrl: user.profile_url
       },
       organization: user.organization
     });
@@ -241,7 +249,7 @@ export const verifyLoginOtp = async (req, res) => {
       include: [{
         model: Organization,
         as: 'organization',
-        attributes: ['id', 'name', 'slug', 'status']
+        attributes: ['id', 'name', 'slug', 'status', 'logo_url', 'email', 'phone', 'address']
       }]
     });
 
@@ -272,7 +280,10 @@ export const verifyLoginOtp = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        batch: user.batch,
+        profile_url: user.profile_url,
+        profileUrl: user.profile_url
       },
       organization: user.organization
     });
@@ -285,3 +296,95 @@ export const verifyLoginOtp = async (req, res) => {
     });
   }
 };
+
+// Update user profile (Name, email, batch, profile_url)
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { name, batch, profile_url, profileUrl } = req.body;
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const newProfileUrl = profile_url !== undefined ? profile_url : (profileUrl !== undefined ? profileUrl : user.profile_url);
+
+    await user.update({
+      name: name !== undefined ? name : user.name,
+      batch: batch !== undefined ? batch : user.batch,
+      profile_url: newProfileUrl
+    });
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        batch: user.batch,
+        profile_url: user.profile_url,
+        profileUrl: user.profile_url
+      }
+    });
+  } catch (error) {
+    console.error('Error in updateProfile:', error);
+    return res.status(500).json({
+      message: 'Internal server error while updating profile.',
+      error: error.message
+    });
+  }
+};
+
+// Upload user profile avatar image
+export const uploadAvatar = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file uploaded.' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const { uploadFile } = await import('../services/storage.service.js');
+    const { webViewLink } = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+
+    await user.update({ profile_url: webViewLink });
+
+    return res.json({
+      success: true,
+      message: 'Profile picture uploaded successfully.',
+      profile_url: webViewLink,
+      profileUrl: webViewLink,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        batch: user.batch,
+        profile_url: webViewLink,
+        profileUrl: webViewLink
+      }
+    });
+  } catch (error) {
+    console.error('Error in uploadAvatar:', error);
+    return res.status(500).json({
+      message: 'Internal server error while uploading profile picture.',
+      error: error.message
+    });
+  }
+};
+

@@ -58,7 +58,7 @@ export const getClassrooms = async (req, res) => {
       include: [{
         model: User,
         as: 'teachers',
-        attributes: ['id', 'name', 'email', 'status'],
+        attributes: ['id', 'name', 'email', 'status', 'role', 'batch'],
         through: { attributes: ['status', 'role'] }
       }],
       order: [['created_at', 'DESC']]
@@ -109,7 +109,7 @@ export const getClassroomById = async (req, res) => {
       include: [{
         model: User,
         as: 'teachers',
-        attributes: ['id', 'name', 'email', 'status', 'batch'],
+        attributes: ['id', 'name', 'email', 'status', 'batch', 'role'],
         through: { attributes: ['status', 'role'] } // Include join table status & role
       }]
     });
