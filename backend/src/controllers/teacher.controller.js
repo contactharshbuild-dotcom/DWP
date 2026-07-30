@@ -40,9 +40,8 @@ export const inviteTeacher = async (req, res) => {
       invite_expires: expiry
     });
 
-    // 6. Generate shareable invite link
-    // Note: Using localhost:5173 for local frontend development
-    const inviteLink = `http://localhost:5173/accept-invite?token=${token}`;
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const inviteLink = `${frontendUrl}/accept-invite?token=${token}`;
 
     return res.status(201).json({
       message: 'Teacher invited successfully.',

@@ -26,7 +26,11 @@ services:
       - postgres
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://localhost:3000}
     container_name: lms-frontend
     restart: always
     ports:

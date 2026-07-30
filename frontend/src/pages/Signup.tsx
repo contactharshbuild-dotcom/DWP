@@ -170,7 +170,7 @@ const Signup: React.FC = () => {
                 <FiLink className="input-icon" />
               </div>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                Your URL: localhost:5173/org/{slug || 'slug'}
+                Your URL: {typeof window !== 'undefined' ? window.location.host : 'localhost:5173'}/org/{slug || 'slug'}
               </span>
             </div>
           </div>

@@ -18,7 +18,7 @@ import {
   FiActivity,
   FiCalendar
 } from 'react-icons/fi';
-import api from '../services/api';
+import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 import { TeachersTab } from './classroom-modules/TeachersTab';
 import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
@@ -4393,7 +4393,7 @@ const ClassroomDetails: React.FC = () => {
                   <strong>Attached Files:</strong>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
                     {selectedSubForGrading.submitted_files.map((f, i) => {
-                      const fileLink = f.url.startsWith('/uploads/') ? `http://localhost:5000${f.url}` : f.url;
+                      const fileLink = f.url.startsWith('/uploads/') ? `${getServerUrl()}${f.url}` : f.url;
                       return (
                         <a key={i} href={fileLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'underline' }}>{f.name}</a>
                       );
@@ -4517,7 +4517,7 @@ const ClassroomDetails: React.FC = () => {
                 const isYouTube = previewResource.mime_type === 'youtube';
 
                 const fullLink = previewResource.drive_link.startsWith('/uploads/') 
-                  ? `http://localhost:5000${previewResource.drive_link}` 
+                  ? `${getServerUrl()}${previewResource.drive_link}` 
                   : previewResource.drive_link;
 
                 if (isYouTube) {

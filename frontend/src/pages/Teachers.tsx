@@ -193,7 +193,7 @@ const Teachers: React.FC = () => {
                       {teacher.status === 'pending' && teacher.invite_token && (
                         <button 
                           className="btn-ld btn-ld-secondary btn-ld-small" 
-                          onClick={() => copyToClipboard(`http://localhost:5173/accept-invite?token=${teacher.invite_token}`)}
+                          onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
                         >
                           <FiCopy size={13} />
                           <span>Copy Link</span>

@@ -3,6 +3,8 @@ import {
   FiChevronRight, FiPlus, FiYoutube, FiFolderPlus, FiUploadCloud, 
   FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink 
 } from 'react-icons/fi';
+import { getServerUrl } from '../../services/api';
+
 
 interface Folder {
   id: number;
@@ -236,7 +238,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   minute: '2-digit'
                 });
 
-                const serverUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:3000';
+                const serverUrl = getServerUrl();
                 const fullLink = res.drive_link.startsWith('/uploads/') 
                   ? `${serverUrl}${res.drive_link}` 
                   : res.drive_link;
