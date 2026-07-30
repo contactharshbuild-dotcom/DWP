@@ -29,8 +29,8 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
-        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://localhost:3000}
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-}
     container_name: lms-frontend
     restart: always
     ports:

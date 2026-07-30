@@ -5,11 +5,12 @@ import { attachAuthInterceptors } from './authInterceptor.ts';
 export const getApiUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl && envUrl.trim() !== '') {
-    return envUrl.replace(/\/+$/, '');
+    const cleanUrl = envUrl.replace(/\/+$/, '');
+    return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
   }
   // Fallback for development vs production deployment
   if (import.meta.env.DEV) {
-    return 'http://localhost:3000/api';
+    return 'http://localhost:5000/api';
   }
   // Relative path in production if VITE_API_URL is not explicitly set at build time
   return '/api';
@@ -28,7 +29,7 @@ export const getServerUrl = (): string => {
   }
 
   if (import.meta.env.DEV) {
-    return 'http://localhost:3000';
+    return 'http://localhost:5000';
   }
 
   return typeof window !== 'undefined' ? window.location.origin : '';
