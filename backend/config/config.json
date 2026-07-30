@@ -1,25 +1,25 @@
 {
   "development": {
     "username": "postgres",
-    "password": "root",
-    "database": "DWP",
-    "host": "localhost",
+    "password": "postgres",
+    "database": "lms",
+    "host": "postgres",
     "dialect": "postgres",
     "port": 5432
   },
   "test": {
     "username": "postgres",
-    "password": "root",
-    "database": "DWP_test",
-    "host": "localhost",
+    "password": "postgres",
+    "database": "lms_test",
+    "host": "postgres",
     "dialect": "postgres",
     "port": 5432
   },
   "production": {
     "username": "postgres",
-    "password": "root",
-    "database": "DWP",
-    "host": "localhost",
+    "password": "postgres",
+    "database": "lms",
+    "host": "postgres",
     "dialect": "postgres",
     "port": 5432
   }
