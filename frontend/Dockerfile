@@ -6,6 +6,8 @@ COPY package*.json ./
 
 RUN npm install
 
+COPY . .
+
 ARG VITE_API_URL
 ARG VITE_SERVER_URL
 
