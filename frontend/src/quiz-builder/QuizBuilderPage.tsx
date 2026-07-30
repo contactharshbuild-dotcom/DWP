@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
-import { FiPlus, FiSearch, FiHelpCircle, FiFileText, FiCheckSquare } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiFileText, FiCheckSquare } from 'react-icons/fi';
 import { QuizListTable } from './components/QuizListTable';
 import { CreateEditQuizModal } from './components/CreateEditQuizModal';
 import { QuizPreviewModal } from './components/QuizPreviewModal';

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { FiX, FiCheckCircle, FiHelpCircle, FiFileText } from 'react-icons/fi';
 import type { Quiz, QuizQuestionInput } from '../types/quizBuilder.types';
 

@@ -236,8 +236,9 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   minute: '2-digit'
                 });
 
+                const serverUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:3000';
                 const fullLink = res.drive_link.startsWith('/uploads/') 
-                  ? `http://localhost:5000${res.drive_link}` 
+                  ? `${serverUrl}${res.drive_link}` 
                   : res.drive_link;
 
                 return (

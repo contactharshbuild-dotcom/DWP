@@ -14,9 +14,7 @@ import {
   FiShield,
   FiCalendar,
   FiEdit2,
-  FiUpload,
   FiX,
-  FiCheck,
   FiAlertCircle
 } from 'react-icons/fi';
 import type { RootState } from '../store';

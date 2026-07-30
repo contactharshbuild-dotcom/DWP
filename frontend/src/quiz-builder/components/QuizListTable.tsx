@@ -1,5 +1,4 @@
-import React from 'react';
-import { FiEye, FiEdit2, FiTrash2, FiClock, FiHelpCircle, FiFileText, FiCopy } from 'react-icons/fi';
+import { FiEye, FiEdit2, FiTrash2, FiHelpCircle, FiCopy } from 'react-icons/fi';
 import type { Quiz } from '../types/quizBuilder.types';
 
 interface QuizListTableProps {

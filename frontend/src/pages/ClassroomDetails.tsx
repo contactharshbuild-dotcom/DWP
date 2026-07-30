@@ -24,7 +24,6 @@ import { TeachersTab } from './classroom-modules/TeachersTab';
 import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
 import { StudentsTab } from './classroom-modules/StudentsTab';
 import { ResourcesTab } from './classroom-modules/ResourcesTab';
-import { McqExamsTab } from './classroom-modules/McqExamsTab';
 import { PracticalsTab } from './classroom-modules/PracticalsTab';
 import { SessionsTab } from './classroom-modules/SessionsTab';
 import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
@@ -84,6 +83,7 @@ interface Classroom {
 
 export interface MCQQuestionInput {
   id?: number;
+  question_type?: string;
   course?: string;
   module?: string;
   session?: string;
@@ -365,7 +365,7 @@ const ClassroomDetails: React.FC = () => {
   // MCQ Examination States
   // ----------------------------------------------------
   const [mcqTests, setMcqTests] = useState<MCQTest[]>([]);
-  const [mcqLoading, setMcqLoading] = useState(false);
+  const [_mcqLoading, setMcqLoading] = useState(false);
 
   // Test builder
   const [showTestBuilderModal, setShowTestBuilderModal] = useState(false);
@@ -987,7 +987,7 @@ const ClassroomDetails: React.FC = () => {
   const pendingStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
 
   // Generate generic shareable link for this classroom ID
-  const inviteLink = classroom ? `http://localhost:5173/join-classroom/${classroom.classroom_id}` : '';
+  const inviteLink = classroom ? `${window.location.origin}/join-classroom/${classroom.classroom_id}` : '';
 
   // Filter resources and folders for display (show ONLY folders at root level; show resources ONLY inside opened folder)
   const currentFolders = currentFolderId === null ? folders : [];
@@ -1248,18 +1248,7 @@ const ClassroomDetails: React.FC = () => {
     alert(`Imported ${selected.length} questions from Bank!`);
   };
 
-  // Clone MCQ Test
-  const handleCloneTest = async (testId: number) => {
-    if (!window.confirm('Clone this test?')) return;
-    try {
-      const response = await api.post(`/mcq/tests/${testId}/clone`);
-      setMcqTests(prev => [response.data.test, ...prev]);
-      alert('Test cloned successfully!');
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to clone test.');
-    }
-  };
+
 
   // Preview MCQ Test
   const handlePreviewTest = async (test: MCQTest) => {
@@ -2130,7 +2119,7 @@ const ClassroomDetails: React.FC = () => {
                     </div>
 
                     {/* Right Column: Question Palette matching standard exam UI */}
-                    <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', sticky: true, top: '90px' }}>
+                    <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', position: 'sticky', top: '90px' }}>
                       <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
                         Question Palette
                       </h4>

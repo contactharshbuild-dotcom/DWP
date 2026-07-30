@@ -12,7 +12,6 @@ import {
   FiCamera,
   FiUpload,
   FiEdit2,
-  FiSettings,
   FiCheck,
   FiX
 } from 'react-icons/fi';

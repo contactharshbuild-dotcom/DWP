@@ -1,5 +1,4 @@
-import React from 'react';
-import { FiPlus, FiTrash2, FiHelpCircle, FiFileText } from 'react-icons/fi';
+import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import type { QuizQuestionInput, QuestionType } from '../types/quizBuilder.types';
 
 interface ManualQuestionBuilderProps {

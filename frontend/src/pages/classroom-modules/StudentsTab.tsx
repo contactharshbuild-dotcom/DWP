@@ -59,7 +59,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               className="btn-ld btn-ld-secondary"
               onClick={() => {
                 if (!classroomId) return;
-                const link = `http://localhost:5173/join-classroom/${classroomId}?role=student`;
+                const link = `${window.location.origin}/join-classroom/${classroomId}?role=student`;
                 copyToClipboard(link);
                 alert('Copied student registration link to clipboard!');
               }}
