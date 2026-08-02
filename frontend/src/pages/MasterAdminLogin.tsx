@@ -63,66 +63,9 @@ const MasterAdminLogin: React.FC = () => {
   };
 
   return (
-    <div className="auth-page-wrapper" style={{
-      background: 'radial-gradient(ellipse at bottom, #0d1d30 0%, #050a12 100%)',
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px'
-    }}>
-      <style>{`
-        .master-glow-card {
-          position: relative;
-          background: rgba(10, 20, 38, 0.65) !important;
-          border: 1px solid rgba(0, 180, 216, 0.2) !important;
-          box-shadow: 0 0 40px rgba(0, 180, 216, 0.15), inset 0 0 15px rgba(0, 180, 216, 0.05) !important;
-          backdrop-filter: blur(16px);
-          max-width: 440px;
-          width: 100%;
-          border-radius: 24px;
-          padding: 40px;
-        }
-
-        .master-glow-card::before {
-          content: '';
-          position: absolute;
-          top: -2px;
-          left: -2px;
-          right: -2px;
-          bottom: -2px;
-          background: linear-gradient(135deg, rgba(0, 180, 216, 0.4), transparent 40%, transparent 60%, rgba(79, 70, 229, 0.4));
-          border-radius: 24px;
-          z-index: -1;
-          pointer-events: none;
-        }
-
-        .master-input:focus {
-          border-color: #00b4d8 !important;
-          box-shadow: 0 0 10px rgba(0, 180, 216, 0.3) !important;
-        }
-
-        .btn-master {
-          background: linear-gradient(135deg, #00b4d8 0%, #4f46e5 100%) !important;
-          color: white !important;
-          border: none !important;
-          box-shadow: 0 4px 20px rgba(0, 180, 216, 0.3) !important;
-          transition: all 0.3s ease !important;
-        }
-
-        .btn-master:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 25px rgba(0, 180, 216, 0.5) !important;
-          filter: brightness(1.1);
-        }
-
-        .btn-master:active:not(:disabled) {
-          transform: translateY(0);
-        }
-      `}</style>
-
-      <div className="master-glow-card">
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+    <div className="auth-page-wrapper">
+      <div className="glass-card" style={{ maxWidth: '440px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <img 
             src="/dwp-logo.png" 
             alt="DWP Logo" 
@@ -131,119 +74,73 @@ const MasterAdminLogin: React.FC = () => {
             onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
           />
           <div style={{
-            width: '54px',
-            height: '54px',
-            borderRadius: '16px',
-            background: 'rgba(0, 180, 216, 0.1)',
-            border: '1px solid rgba(0, 180, 216, 0.2)',
-            color: '#00b4d8',
+            width: '50px',
+            height: '50px',
+            borderRadius: '12px',
+            background: '#e0e7ff',
+            color: '#4f46e5',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 16px auto',
-            boxShadow: '0 0 20px rgba(0, 180, 216, 0.2)'
+            margin: '0 auto 16px auto'
           }}>
-            <FiShield size={28} />
+            <FiShield size={26} />
           </div>
-          <h2 style={{ color: 'white', fontSize: '26px', fontWeight: '800', letterSpacing: '-0.5px', marginBottom: '8px' }}>
+          <h2 style={{ color: '#0f172a', fontSize: '24px', fontWeight: '700', letterSpacing: '-0.4px', marginBottom: '6px' }}>
             System Core Control
           </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+          <p style={{ color: '#64748b', fontSize: '13.5px' }}>
             Master Administrator Secure Access Portal
           </p>
         </div>
 
         {error && (
-          <div className="alert alert-error" style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            color: '#ef4444',
-            display: 'flex',
-            gap: '10px',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            fontSize: '13px',
-            marginBottom: '24px',
-            textAlign: 'left'
-          }}>
-            <FiAlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="alert alert-error">
+            <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
             <span>{error}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group" style={{ marginBottom: '20px' }}>
-            <label className="form-label" htmlFor="email" style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '13px', fontWeight: '600' }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="email">
               Master Email Address
             </label>
-            <div className="input-wrapper" style={{ position: 'relative' }}>
+            <div className="input-wrapper">
               <input
-                className="form-input master-input"
+                className="form-input"
                 type="email"
                 id="email"
                 placeholder="master@system.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: 'white',
-                  paddingLeft: '40px',
-                  height: '46px',
-                  width: '100%',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
               />
-              <FiMail className="input-icon" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+              <FiMail className="input-icon" />
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: '32px' }}>
-            <label className="form-label" htmlFor="password" style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '13px', fontWeight: '600' }}>
+          <div className="form-group" style={{ marginBottom: '28px' }}>
+            <label className="form-label" htmlFor="password">
               Security Keyphrase
             </label>
-            <div className="input-wrapper" style={{ position: 'relative' }}>
+            <div className="input-wrapper">
               <input
-                className="form-input master-input"
+                className="form-input"
                 type="password"
                 id="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: 'white',
-                  paddingLeft: '40px',
-                  height: '46px',
-                  width: '100%',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
               />
-              <FiLock className="input-icon" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+              <FiLock className="input-icon" />
             </div>
           </div>
 
-          <button className="btn btn-master" type="submit" disabled={loading} style={{
-            width: '100%',
-            height: '46px',
-            borderRadius: '12px',
-            fontWeight: '700',
-            fontSize: '15px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            cursor: 'pointer'
-          }}>
+          <button className="btn" type="submit" disabled={loading}>
             {loading ? (
-              <span className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'white', borderRadius: '50%' }}></span>
+              <span className="spinner"></span>
             ) : (
               <>
                 <FiLogIn size={18} />

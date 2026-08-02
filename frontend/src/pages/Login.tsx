@@ -137,13 +137,13 @@ const Login: React.FC = () => {
       <div className="auth-page-wrapper">
         <style>{`
           .role-card-hover:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.05) !important;
-            border-color: rgba(255, 255, 255, 0.15) !important;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+            transform: translateY(-3px);
+            border-color: #4f46e5 !important;
+            background: #ffffff !important;
+            box-shadow: 0 12px 28px -4px rgba(79, 70, 229, 0.12) !important;
           }
         `}</style>
-        <div className="glass-card" style={{ maxWidth: '640px', padding: '40px' }}>
+        <div className="glass-card" style={{ maxWidth: '680px', padding: '40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <img 
               src="/dwp-logo.png" 
@@ -151,15 +151,15 @@ const Login: React.FC = () => {
               className="dwp-auth-header-logo" 
               onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
             />
-            <h2 className="form-title" style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            <h2 className="form-title" style={{ fontSize: '26px', fontWeight: '700', color: '#0f172a' }}>
               Welcome to DWP LMS
             </h2>
-            <p className="form-subtitle" style={{ fontSize: '15px' }}>
+            <p className="form-subtitle" style={{ fontSize: '14px', color: '#64748b' }}>
               Select your role to log in to your dashboard
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '28px' }}>
             {/* Student Card */}
             <div 
               onClick={() => {
@@ -168,36 +168,35 @@ const Login: React.FC = () => {
                 dispatch(setError(null));
               }}
               style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '16px',
-                padding: '30px 20px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '24px 16px',
                 textAlign: 'center',
                 cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'all 0.2s ease',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-                backdropFilter: 'blur(5px)'
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.04)'
               }}
               className="role-card-hover"
             >
               <div style={{
-                width: '60px',
-                height: '60px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '12px',
-                background: 'rgba(79, 70, 229, 0.15)',
-                color: 'var(--primary)',
+                background: '#eff6ff',
+                color: '#3b82f6',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: '16px'
               }}>
-                <FiBookOpen size={30} />
+                <FiBookOpen size={26} />
               </div>
-              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Student</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+              <h3 style={{ color: '#0f172a', fontSize: '16px', fontWeight: '700', marginBottom: '6px' }}>Student</h3>
+              <p style={{ color: '#64748b', fontSize: '12.5px', lineHeight: '1.45' }}>
                 Access courses, tests, and study materials.
               </p>
             </div>
@@ -210,36 +209,35 @@ const Login: React.FC = () => {
                 dispatch(setError(null));
               }}
               style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '16px',
-                padding: '30px 20px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '24px 16px',
                 textAlign: 'center',
                 cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'all 0.2s ease',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-                backdropFilter: 'blur(5px)'
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.04)'
               }}
               className="role-card-hover"
             >
               <div style={{
-                width: '60px',
-                height: '60px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '12px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#10b981',
+                background: '#f0fdf4',
+                color: '#16a34a',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: '16px'
               }}>
-                <FiAward size={30} />
+                <FiAward size={26} />
               </div>
-              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Teacher</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+              <h3 style={{ color: '#0f172a', fontSize: '16px', fontWeight: '700', marginBottom: '6px' }}>Teacher</h3>
+              <p style={{ color: '#64748b', fontSize: '12.5px', lineHeight: '1.45' }}>
                 Manage classes, grade tests, and review students.
               </p>
             </div>
@@ -252,42 +250,41 @@ const Login: React.FC = () => {
                 dispatch(setError(null));
               }}
               style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '16px',
-                padding: '30px 20px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '24px 16px',
                 textAlign: 'center',
                 cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'all 0.2s ease',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-                backdropFilter: 'blur(5px)'
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.04)'
               }}
               className="role-card-hover"
             >
               <div style={{
-                width: '60px',
-                height: '60px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '12px',
-                background: 'rgba(245, 158, 11, 0.15)',
-                color: '#f59e0b',
+                background: '#fffbeb',
+                color: '#d97706',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: '16px'
               }}>
-                <FiKey size={30} />
+                <FiKey size={26} />
               </div>
-              <h3 style={{ color: 'white', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>Admin</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+              <h3 style={{ color: '#0f172a', fontSize: '16px', fontWeight: '700', marginBottom: '6px' }}>Admin</h3>
+              <p style={{ color: '#64748b', fontSize: '12.5px', lineHeight: '1.45' }}>
                 Configure organization details, approvals, and settings.
               </p>
             </div>
           </div>
 
-          <div className="form-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px', margin: '0' }}>
+          <div className="form-footer" style={{ borderTop: '1px solid #f1f5f9', paddingTop: '20px', margin: '0' }}>
             Don't have an organization?{' '}
             <Link className="form-link" to="/signup">
               Register Organization
@@ -311,7 +308,7 @@ const Login: React.FC = () => {
             style={{
               background: 'transparent',
               border: 'none',
-              color: 'var(--text-secondary)',
+              color: '#64748b',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -393,8 +390,8 @@ const Login: React.FC = () => {
                   <FiKey className="input-icon" />
                 </div>
                 {otpHelp && (
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'left' }}>
-                    🧪 Testing OTP: <strong style={{ color: 'white' }}>{otpHelp}</strong>
+                  <span style={{ fontSize: '12px', color: '#64748b', display: 'block', marginTop: '6px', textAlign: 'left' }}>
+                    🧪 Testing OTP: <strong style={{ color: '#0f172a' }}>{otpHelp}</strong>
                   </span>
                 )}
               </div>

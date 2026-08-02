@@ -58,11 +58,38 @@ export const quizBuilderService = {
   },
 
   /**
-   * Get all assigned quizzes for a classroom
+   * Get assigned quizzes for a classroom with pagination and search
    */
-  async getClassroomQuizzes(classroomId: number): Promise<Quiz[]> {
-    const response = await api.get(`/quiz-builder/classroom/${classroomId}`);
-    return response.data.quizzes || [];
+  async getClassroomQuizzes(
+    classroomId: number,
+    params?: { page?: number; limit?: number; search?: string }
+  ): Promise<{ quizzes: Quiz[]; total: number; page: number; limit: number; totalPages: number }> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', String(params.page));
+    if (params?.limit) queryParams.append('limit', String(params.limit));
+    if (params?.search) queryParams.append('search', params.search);
+
+    const queryString = queryParams.toString();
+    const url = `/quiz-builder/classroom/${classroomId}${queryString ? `?${queryString}` : ''}`;
+    const response = await api.get(url);
+
+    if (Array.isArray(response.data)) {
+      return {
+        quizzes: response.data,
+        total: response.data.length,
+        page: 1,
+        limit: response.data.length || 5,
+        totalPages: 1
+      };
+    }
+
+    return {
+      quizzes: response.data.quizzes || [],
+      total: response.data.total ?? (response.data.quizzes ? response.data.quizzes.length : 0),
+      page: response.data.page ?? 1,
+      limit: response.data.limit ?? 5,
+      totalPages: response.data.totalPages ?? 1
+    };
   },
 
   /**

@@ -97,8 +97,16 @@ export const getClassroomQuizzes = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const { classroomId } = req.params;
-    const quizzes = await QuizBuilderService.getClassroomAssignedQuizzes(classroomId, organizationId);
-    return res.json({ quizzes });
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const search = req.query.search ? String(req.query.search) : '';
+
+    const result = await QuizBuilderService.getClassroomAssignedQuizzes(classroomId, organizationId, {
+      page,
+      limit,
+      search
+    });
+    return res.json(result);
   } catch (error) {
     console.error('Error in getClassroomQuizzes:', error);
     return res.status(error.statusCode || 500).json({ message: error.message || 'Failed to fetch classroom quizzes.' });

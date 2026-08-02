@@ -1,5 +1,5 @@
 import { Organization } from '../models/index.js';
-import { uploadFile } from '../services/storage.service.js';
+import { uploadFile, deleteOldImage } from '../services/storage.service.js';
 
 // Get current user's organization profile
 export const getMyOrganization = async (req, res) => {
@@ -52,6 +52,7 @@ export const updateMyOrganization = async (req, res) => {
       return res.status(404).json({ message: 'Organization not found.' });
     }
 
+    const oldLogoUrl = organization.logo_url;
     const newLogoUrl = logo_url !== undefined ? logo_url : (logoUrl !== undefined ? logoUrl : organization.logo_url);
 
     await organization.update({
@@ -61,6 +62,12 @@ export const updateMyOrganization = async (req, res) => {
       phone: phone !== undefined ? phone : organization.phone,
       address: address !== undefined ? address : organization.address
     });
+
+    if (oldLogoUrl && oldLogoUrl !== newLogoUrl) {
+      deleteOldImage(oldLogoUrl).catch(err => {
+        console.error('Failed to delete old organization logo during update:', err);
+      });
+    }
 
     return res.json({
       success: true,
@@ -103,11 +110,19 @@ export const uploadOrgLogo = async (req, res) => {
       return res.status(404).json({ message: 'Organization not found.' });
     }
 
+    const oldLogoUrl = organization.logo_url;
+
     // Upload file using storage service
     const { webViewLink } = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
 
     // Save logo_url to organization
     await organization.update({ logo_url: webViewLink });
+
+    if (oldLogoUrl && oldLogoUrl !== webViewLink) {
+      deleteOldImage(oldLogoUrl).catch(err => {
+        console.error('Failed to delete old organization logo after upload:', err);
+      });
+    }
 
     return res.json({
       success: true,

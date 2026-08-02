@@ -428,9 +428,9 @@ export class QuizBuilderService {
   }
 
   /**
-   * Get all quizzes assigned to a specific classroom
+   * Get quizzes assigned to a specific classroom with pagination and search filter
    */
-  static async getClassroomAssignedQuizzes(classroomId, organizationId) {
+  static async getClassroomAssignedQuizzes(classroomId, organizationId, options = {}) {
     const classroom = await Classroom.findOne({
       where: { id: classroomId, organization_id: organizationId }
     });
@@ -441,8 +441,26 @@ export class QuizBuilderService {
       throw error;
     }
 
-    const quizzes = await McqTest.findAll({
-      where: { classroom_id: classroomId, organization_id: organizationId },
+    const page = Math.max(1, parseInt(options.page, 10) || 1);
+    const limit = Math.max(1, parseInt(options.limit, 10) || 5);
+    const offset = (page - 1) * limit;
+    const search = options.search ? options.search.trim() : '';
+
+    const where = {
+      classroom_id: classroomId,
+      organization_id: organizationId
+    };
+
+    if (search) {
+      const searchTerm = `%${search}%`;
+      where[Op.or] = [
+        { title: { [Op.iLike]: searchTerm } },
+        { description: { [Op.iLike]: searchTerm } }
+      ];
+    }
+
+    const { count, rows: quizzes } = await McqTest.findAndCountAll({
+      where,
       include: [
         {
           model: McqQuestion,
@@ -461,10 +479,21 @@ export class QuizBuilderService {
           ]
         }
       ],
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
+      limit,
+      offset,
+      distinct: true
     });
 
-    return quizzes;
+    const totalPages = Math.ceil(count / limit) || 1;
+
+    return {
+      quizzes,
+      total: count,
+      page,
+      limit,
+      totalPages
+    };
   }
 
   /**

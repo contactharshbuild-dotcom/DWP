@@ -312,6 +312,7 @@ export const updateProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
+    const oldProfileUrl = user.profile_url;
     const newProfileUrl = profile_url !== undefined ? profile_url : (profileUrl !== undefined ? profileUrl : user.profile_url);
 
     await user.update({
@@ -319,6 +320,13 @@ export const updateProfile = async (req, res) => {
       batch: batch !== undefined ? batch : user.batch,
       profile_url: newProfileUrl
     });
+
+    if (oldProfileUrl && oldProfileUrl !== newProfileUrl) {
+      const { deleteOldImage } = await import('../services/storage.service.js');
+      deleteOldImage(oldProfileUrl).catch(err => {
+        console.error('Failed to delete old user profile image during profile update:', err);
+      });
+    }
 
     return res.json({
       success: true,
@@ -359,10 +367,18 @@ export const uploadAvatar = async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    const { uploadFile } = await import('../services/storage.service.js');
+    const oldProfileUrl = user.profile_url;
+
+    const { uploadFile, deleteOldImage } = await import('../services/storage.service.js');
     const { webViewLink } = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
 
     await user.update({ profile_url: webViewLink });
+
+    if (oldProfileUrl && oldProfileUrl !== webViewLink) {
+      deleteOldImage(oldProfileUrl).catch(err => {
+        console.error('Failed to delete old user profile image:', err);
+      });
+    }
 
     return res.json({
       success: true,

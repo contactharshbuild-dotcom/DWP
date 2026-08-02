@@ -88,6 +88,7 @@ export const updateOrganization = async (req, res) => {
       return res.status(404).json({ message: 'Organization not found.' });
     }
 
+    const oldLogoUrl = organization.logo_url;
     const newLogoUrl = logo_url !== undefined ? logo_url : (logoUrl !== undefined ? logoUrl : organization.logo_url);
 
     await organization.update({
@@ -97,6 +98,13 @@ export const updateOrganization = async (req, res) => {
       phone: phone !== undefined ? phone : organization.phone,
       status: status !== undefined ? status : organization.status
     });
+
+    if (oldLogoUrl && oldLogoUrl !== newLogoUrl) {
+      const { deleteOldImage } = await import('../services/storage.service.js');
+      deleteOldImage(oldLogoUrl).catch(err => {
+        console.error('Failed to delete old organization logo during masteradmin update:', err);
+      });
+    }
 
     return res.json({
       success: true,

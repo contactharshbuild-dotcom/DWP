@@ -295,12 +295,13 @@ const ClassroomDetails: React.FC = () => {
   const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
 
   useEffect(() => {
-    // Only fetch pending quiz count for student badge calculation
-    if (id && user?.role === 'student') {
-      quizBuilderService.getClassroomQuizzes(Number(id))
-        .then((quizzes: any[]) => {
+    // Only fetch pending quiz count for student badge calculation when quiz tab is active
+    if (id && user?.role === 'student' && activeTab === 'assign_quiz') {
+      quizBuilderService.getClassroomQuizzes(Number(id), { limit: 100 })
+        .then((res: any) => {
+          const quizList = Array.isArray(res) ? res : (res?.quizzes || []);
           const now = new Date();
-          const count = quizzes.filter((quiz: any) => {
+          const count = quizList.filter((quiz: any) => {
             const start = quiz.start_window ? new Date(quiz.start_window) : null;
             const end = quiz.end_window ? new Date(quiz.end_window) : null;
             const isWindowActive = (!start || now >= start) && (!end || now <= end);
@@ -317,7 +318,7 @@ const ClassroomDetails: React.FC = () => {
         })
         .catch((err) => console.error('Failed to fetch pending quiz count:', err));
     }
-  }, [id, user]);
+  }, [id, user, activeTab]);
 
   // Student Invitation States
   const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
