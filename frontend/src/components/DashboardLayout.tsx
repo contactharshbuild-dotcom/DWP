@@ -9,6 +9,7 @@ import {
   FiBookOpen, 
   FiAlertCircle,
   FiHelpCircle,
+  FiFolder,
   FiCamera,
   FiUpload,
   FiEdit2,
@@ -327,22 +328,34 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                 <span>Overview</span>
               </Link>
               
-              <Link 
-                to="/teachers" 
-                className={`ld-nav-item ${location.pathname === '/teachers' ? 'active' : ''}`}
-              >
-                <FiUsers size={18} />
-                <span>Teachers</span>
-              </Link>
-
               {user?.role !== 'student' && (
                 <Link 
-                  to="/quiz-builder" 
-                  className={`ld-nav-item ${location.pathname === '/quiz-builder' ? 'active' : ''}`}
+                  to="/teachers" 
+                  className={`ld-nav-item ${location.pathname === '/teachers' ? 'active' : ''}`}
                 >
-                  <FiHelpCircle size={18} />
-                  <span>Quiz Builder</span>
+                  <FiUsers size={18} />
+                  <span>Teachers</span>
                 </Link>
+              )}
+
+              {user?.role !== 'student' && (
+                <>
+                  <Link 
+                    to="/quiz-builder" 
+                    className={`ld-nav-item ${location.pathname === '/quiz-builder' ? 'active' : ''}`}
+                  >
+                    <FiHelpCircle size={18} />
+                    <span>Quiz Builder</span>
+                  </Link>
+
+                  <Link 
+                    to="/material-bank" 
+                    className={`ld-nav-item ${location.pathname === '/material-bank' ? 'active' : ''}`}
+                  >
+                    <FiFolder size={18} />
+                    <span>Material Bank</span>
+                  </Link>
+                </>
               )}
 
               {/* Classrooms Section */}

@@ -7,6 +7,9 @@ import {
   FiUser,
   FiClock
 } from 'react-icons/fi';
+import { useSelector } from 'react-redux';
+import { Navigate } from 'react-router-dom';
+import { RootState } from '../store';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 
@@ -22,6 +25,12 @@ interface Teacher {
 }
 
 const Teachers: React.FC = () => {
+  const { user } = useSelector((state: RootState) => state.auth);
+
+  if (user?.role === 'student') {
+    return <Navigate to="/" replace />;
+  }
+
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -8,7 +8,9 @@ import {
   addLinkResource,
   createFolder,
   deleteFolder,
-  assignResource
+  assignResource,
+  assignFolder,
+  importFromMaterialBank
 } from '../controllers/resource.controller.js';
 
 const router = express.Router();
@@ -24,6 +26,9 @@ const upload = multer({
 
 // Guard all resource endpoints with authentication
 router.use(authenticate);
+
+// Import from Material Bank (reuses file keys without re-uploading)
+router.post('/import-material-bank', importFromMaterialBank);
 
 // Upload resource
 router.post('/upload', upload.single('file'), uploadResource);
@@ -43,5 +48,6 @@ router.put('/:resourceId/assign', assignResource);
 // Folders endpoints
 router.post('/folders', createFolder);
 router.delete('/folders/:folderId', deleteFolder);
+router.put('/folders/:folderId/assign', assignFolder);
 
 export default router;

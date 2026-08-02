@@ -1,4 +1,4 @@
-import { ClassroomResource, User, Classroom, ClassroomTeacher, ClassroomFolder } from '../models/index.js';
+import { ClassroomResource, User, Classroom, ClassroomTeacher, ClassroomFolder, MaterialBankFolder, MaterialBankItem } from '../models/index.js';
 import { uploadFile, deleteFile } from '../services/storage.service.js';
 import { Op } from 'sequelize';
 
@@ -43,16 +43,7 @@ export const uploadResource = async (req, res) => {
     // Upload using S3/Google Drive / local storage fallback
     const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
 
-    // Default unassigned uploads to Extras folder if no folder specifies
-    let targetFolderId = folderId ? parseInt(folderId) : null;
-    if (!targetFolderId) {
-      const extrasFolder = await ClassroomFolder.findOne({
-        where: { classroom_id: classroomId, name: 'Extras' }
-      });
-      if (extrasFolder) {
-        targetFolderId = extrasFolder.id;
-      }
-    }
+    let targetFolderId = folderId ? parseInt(folderId, 10) : null;
 
     // Save metadata in database
     const { assignedStudentIds } = req.body;
@@ -65,7 +56,7 @@ export const uploadResource = async (req, res) => {
       uploaded_by: req.user.id,
       folder_id: targetFolderId,
       module_session: moduleSession || null,
-      visibility: visibility || 'all_students',
+      visibility: visibility || 'hidden',
       batch: batch || null,
       assigned_student_ids: assignedStudentIds ? (typeof assignedStudentIds === 'string' ? JSON.parse(assignedStudentIds) : assignedStudentIds) : null
     });
@@ -95,10 +86,10 @@ export const uploadResource = async (req, res) => {
 
 export const addLinkResource = async (req, res) => {
   try {
-    const { classroomId, name, link, folderId, moduleSession, visibility, batch } = req.body;
+    const { classroomId, name, link, driveFileId, mimeType: customMimeType, folderId, moduleSession, visibility, batch } = req.body;
 
-    if (!classroomId || !name || !link) {
-      return res.status(400).json({ message: 'Classroom ID, name, and link are required.' });
+    if (!classroomId || !name || (!link && !driveFileId)) {
+      return res.status(400).json({ message: 'Classroom ID, name, and link/file are required.' });
     }
 
     // Verify classroom and authorization
@@ -126,34 +117,25 @@ export const addLinkResource = async (req, res) => {
       }
     }
 
-    // Save link in database (no actual file upload)
-    let mimeType = 'url';
-    if (link.includes('youtube.com') || link.includes('youtu.be')) {
+    // Save link / file reference in database
+    let mimeType = customMimeType || 'url';
+    if (!customMimeType && link && (link.includes('youtube.com') || link.includes('youtu.be'))) {
       mimeType = 'youtube';
     }
 
-    // Default unassigned links to Extras folder if no folder specified
-    let targetFolderId = folderId ? parseInt(folderId) : null;
-    if (!targetFolderId) {
-      const extrasFolder = await ClassroomFolder.findOne({
-        where: { classroom_id: classroomId, name: 'Extras' }
-      });
-      if (extrasFolder) {
-        targetFolderId = extrasFolder.id;
-      }
-    }
+    let targetFolderId = folderId ? parseInt(folderId, 10) : null;
 
     const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
       name,
-      drive_file_id: null,
+      drive_file_id: driveFileId || null,
       drive_link: link,
       mime_type: mimeType,
       uploaded_by: req.user.id,
       folder_id: targetFolderId,
       module_session: moduleSession || null,
-      visibility: visibility || 'all_students',
+      visibility: visibility || 'hidden',
       batch: batch || null,
       assigned_student_ids: assignedStudentIds || null
     });
@@ -209,93 +191,109 @@ export const getClassroomResources = async (req, res) => {
       }
     }
 
+    const isAccessible = (item, userObj, studentBatch) => {
+      const now = new Date();
+
+      if (userObj.role === 'student') {
+        if (item.scheduled_at && now < new Date(item.scheduled_at)) {
+          return false; // Not yet released/published
+        }
+        if (item.expiry_at && now > new Date(item.expiry_at)) {
+          return false; // Expired
+        }
+
+        const assignedStudentIds = item.assigned_student_ids || [];
+        if (assignedStudentIds.length > 0) {
+          return assignedStudentIds.includes(userObj.id);
+        }
+
+        if (item.visibility === 'all_students') {
+          return true;
+        }
+
+        if (item.visibility === 'specific_batch') {
+          return Boolean(studentBatch && item.batch === studentBatch);
+        }
+
+        // Default: unassigned / hidden from students
+        return false;
+      }
+
+      if (userObj.role === 'teacher') {
+        if (item.uploaded_by === userObj.id) {
+          return true;
+        }
+
+        const assignedTeacherIds = item.assigned_teacher_ids || [];
+        if (assignedTeacherIds.length > 0) {
+          return assignedTeacherIds.includes(userObj.id);
+        }
+
+        if (item.visibility === 'hidden') {
+          return false;
+        }
+
+        return true;
+      }
+
+      return true; // Admin
+    };
+
     // CASE 1: Fetching resources inside a specific folder (folderId query parameter provided)
     if (folderId) {
       const targetFolderId = parseInt(folderId, 10);
-      const extrasFolder = await ClassroomFolder.findOne({
-        where: { classroom_id: classroomId, name: 'Extras' }
-      });
 
       const whereCondition = {
         classroom_id: classroomId,
-        [Op.or]: [
-          { folder_id: targetFolderId },
-          ...(extrasFolder && extrasFolder.id === targetFolderId ? [{ folder_id: null }] : [])
-        ]
+        folder_id: targetFolderId
       };
 
-      let resources = [];
-      if (req.user.role === 'admin' || req.user.role === 'teacher') {
-        resources = await ClassroomResource.findAll({
-          where: whereCondition,
-          include: [{
-            model: User,
-            as: 'uploader',
-            attributes: ['id', 'name', 'email']
-          }],
-          order: [['created_at', 'DESC']]
-        });
-      } else {
-        const allResources = await ClassroomResource.findAll({
-          where: whereCondition,
-          include: [{
-            model: User,
-            as: 'uploader',
-            attributes: ['id', 'name', 'email']
-          }],
-          order: [['created_at', 'DESC']]
-        });
-
-        const student = await User.findByPk(req.user.id);
-        const studentBatch = student ? student.batch : null;
-
-        resources = allResources.filter(resrc => {
-          const assignedIds = resrc.assigned_student_ids || [];
-          if (assignedIds.length > 0) {
-            return assignedIds.includes(req.user.id);
-          }
-          if (resrc.visibility === 'specific_batch') {
-            return resrc.batch === studentBatch;
-          }
-          if (resrc.visibility === 'hidden') {
-            return false;
-          }
-          return true;
-        });
-      }
-
-      resources = resources.map(resrc => {
-        if (!resrc.folder_id && extrasFolder) {
-          const item = resrc.toJSON ? resrc.toJSON() : resrc;
-          return { ...item, folder_id: extrasFolder.id };
-        }
-        return resrc;
+      const allResources = await ClassroomResource.findAll({
+        where: whereCondition,
+        include: [{
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }],
+        order: [['created_at', 'DESC']]
       });
 
-      // Cost effective: Return ONLY resources for this folder, do NOT query or return all other folders!
+      const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
+      const studentBatch = student ? student.batch : null;
+
+      const resources = allResources.filter(resrc => isAccessible(resrc, req.user, studentBatch));
+
       return res.json({ resources });
     }
 
     // CASE 2: Fetching root Study Materials view (no folderId query parameter)
-    let folders = await ClassroomFolder.findAll({
+    const allFolders = await ClassroomFolder.findAll({
       where: { classroom_id: classroomId },
       order: [['created_at', 'ASC']]
     });
 
-    if (folders.length === 0) {
-      const defaultFolders = ['Notes', 'PPT', 'Recordings', 'Assignments', 'Extras'];
-      folders = await Promise.all(
-        defaultFolders.map(folderName => 
-          ClassroomFolder.create({
-            classroom_id: classroomId,
-            name: folderName
-          })
-        )
-      );
-    }
+    const whereCondition = {
+      classroom_id: classroomId,
+      folder_id: null
+    };
 
-    // Return ONLY folders for the root view, 0 resources fetched!
-    return res.json({ folders, resources: [] });
+    const allRootResources = await ClassroomResource.findAll({
+      where: whereCondition,
+      include: [{
+        model: User,
+        as: 'uploader',
+        attributes: ['id', 'name', 'email']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+
+    const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
+    const studentBatch = student ? student.batch : null;
+
+    const folders = allFolders.filter(f => isAccessible(f, req.user, studentBatch));
+    const rootResources = allRootResources.filter(resrc => isAccessible(resrc, req.user, studentBatch));
+
+    return res.json({ folders, resources: rootResources });
 
   } catch (error) {
     console.error('Error in getClassroomResources:', error);
@@ -341,7 +339,8 @@ export const createFolder = async (req, res) => {
 
     const folder = await ClassroomFolder.create({
       classroom_id: classroomId,
-      name
+      name,
+      visibility: 'hidden'
     });
 
     return res.status(201).json({
@@ -390,7 +389,13 @@ export const deleteFolder = async (req, res) => {
 
     for (const resrc of resources) {
       if (resrc.drive_file_id) {
-        await deleteFile(resrc.drive_file_id, resrc.drive_link);
+        const usedInBank = await MaterialBankItem.findOne({ where: { drive_file_id: resrc.drive_file_id } });
+        const otherRefs = await ClassroomResource.findOne({
+          where: { drive_file_id: resrc.drive_file_id, id: { [Op.ne]: resrc.id } }
+        });
+        if (!usedInBank && !otherRefs) {
+          await deleteFile(resrc.drive_file_id, resrc.drive_link);
+        }
       }
     }
 
@@ -435,9 +440,15 @@ export const deleteResource = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Delete from Google Drive / local filesystem if it's a file
+    // Safely delete from Google Drive / S3 / local filesystem only if not referenced anywhere else
     if (resource.drive_file_id) {
-      await deleteFile(resource.drive_file_id, resource.drive_link);
+      const usedInBank = await MaterialBankItem.findOne({ where: { drive_file_id: resource.drive_file_id } });
+      const otherRefs = await ClassroomResource.findOne({
+        where: { drive_file_id: resource.drive_file_id, id: { [Op.ne]: resource.id } }
+      });
+      if (!usedInBank && !otherRefs) {
+        await deleteFile(resource.drive_file_id, resource.drive_link);
+      }
     }
 
     // Delete database entry
@@ -457,7 +468,7 @@ export const deleteResource = async (req, res) => {
 export const assignResource = async (req, res) => {
   try {
     const { resourceId } = req.params;
-    const { visibility, batch, assignedStudentIds } = req.body;
+    const { visibility, batch, assignedStudentIds, assignedTeacherIds, scheduledAt, expiryAt } = req.body;
 
     const resource = await ClassroomResource.findByPk(resourceId);
     if (!resource) {
@@ -467,12 +478,161 @@ export const assignResource = async (req, res) => {
     resource.visibility = visibility || 'all_students';
     resource.batch = batch || null;
     resource.assigned_student_ids = assignedStudentIds || null;
+    resource.assigned_teacher_ids = assignedTeacherIds || null;
+    resource.scheduled_at = scheduledAt ? new Date(scheduledAt) : null;
+    resource.expiry_at = expiryAt ? new Date(expiryAt) : null;
     await resource.save();
 
     return res.json({ message: 'Resource assignments updated successfully.', resource });
   } catch (error) {
     console.error('Error in assignResource:', error);
     return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+export const assignFolder = async (req, res) => {
+  try {
+    const { folderId } = req.params;
+    const { visibility, batch, assignedStudentIds, assignedTeacherIds, scheduledAt, expiryAt } = req.body;
+
+    const folder = await ClassroomFolder.findByPk(folderId);
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found.' });
+    }
+
+    folder.visibility = visibility || 'all_students';
+    folder.batch = batch || null;
+    folder.assigned_student_ids = assignedStudentIds || null;
+    folder.assigned_teacher_ids = assignedTeacherIds || null;
+    folder.scheduled_at = scheduledAt ? new Date(scheduledAt) : null;
+    folder.expiry_at = expiryAt ? new Date(expiryAt) : null;
+    await folder.save();
+
+    return res.json({ message: 'Folder assignments updated successfully.', folder });
+  } catch (error) {
+    console.error('Error in assignFolder:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+// Import materials/folders from Material Bank into Classroom Study Materials (reuses file keys without re-uploading)
+export const importFromMaterialBank = async (req, res) => {
+  try {
+    const { classroomId, targetFolderId, itemIds = [], folderIds = [] } = req.body;
+
+    if (!classroomId) {
+      return res.status(400).json({ message: 'Classroom ID is required.' });
+    }
+
+    // Verify classroom authorization
+    const classroom = await Classroom.findOne({
+      where: {
+        id: classroomId,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: classroomId,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    }
+
+    let destFolderId = targetFolderId ? parseInt(targetFolderId, 10) : null;
+    const createdResources = [];
+
+    // 1. Import individual selected items directly to target classroom folder (or root)
+    if (Array.isArray(itemIds) && itemIds.length > 0) {
+      const bankItems = await MaterialBankItem.findAll({
+        where: {
+          id: itemIds,
+          organization_id: req.user.organizationId
+        }
+      });
+
+      for (const item of bankItems) {
+        const resource = await ClassroomResource.create({
+          classroom_id: classroomId,
+          name: item.name,
+          drive_file_id: item.drive_file_id,
+          drive_link: item.file_url,
+          mime_type: item.mime_type || (item.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
+          uploaded_by: req.user.id,
+          folder_id: destFolderId,
+          visibility: 'hidden'
+        });
+        createdResources.push(resource);
+      }
+    }
+
+    // 2. Import entire selected Material Bank folders (recursively copy folders & items)
+    if (Array.isArray(folderIds) && folderIds.length > 0) {
+      const importFolderRecursively = async (bankFolderId, parentClassroomFolderId) => {
+        const bankFolder = await MaterialBankFolder.findByPk(bankFolderId);
+        if (!bankFolder) return;
+
+        // Create matching ClassroomFolder
+        const newClassroomFolder = await ClassroomFolder.create({
+          classroom_id: classroomId,
+          name: bankFolder.name
+        });
+
+        // Copy items inside bankFolder
+        const folderItems = await MaterialBankItem.findAll({
+          where: { folder_id: bankFolderId }
+        });
+
+        for (const item of folderItems) {
+          const resource = await ClassroomResource.create({
+            classroom_id: classroomId,
+            name: item.name,
+            drive_file_id: item.drive_file_id,
+            drive_link: item.file_url,
+            mime_type: item.mime_type || (item.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
+            uploaded_by: req.user.id,
+            folder_id: newClassroomFolder.id,
+            visibility: 'hidden'
+          });
+          createdResources.push(resource);
+        }
+
+        // Copy subfolders recursively
+        const subfolders = await MaterialBankFolder.findAll({
+          where: { parent_id: bankFolderId }
+        });
+
+        for (const sf of subfolders) {
+          await importFolderRecursively(sf.id, newClassroomFolder.id);
+        }
+      };
+
+      for (const fId of folderIds) {
+        await importFolderRecursively(fId, destFolderId);
+      }
+    }
+
+    return res.json({
+      message: 'Successfully imported materials into classroom.',
+      importedCount: createdResources.length
+    });
+
+  } catch (error) {
+    console.error('Error in importFromMaterialBank:', error);
+    return res.status(500).json({
+      message: 'Failed to import materials from Material Bank.',
+      error: error.message
+    });
   }
 };
 

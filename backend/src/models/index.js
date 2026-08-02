@@ -13,6 +13,8 @@ import PracticalSubmission from './practical-submission.model.js';
 import ClassroomModule from './classroom-module.model.js';
 import ModuleSession from './module-session.model.js';
 import SessionAttendance from './session-attendance.model.js';
+import MaterialBankFolder from './material-bank-folder.model.js';
+import MaterialBankItem from './material-bank-item.model.js';
 
 const db = {
   sequelize,
@@ -29,7 +31,9 @@ const db = {
   PracticalSubmission,
   ClassroomModule,
   ModuleSession,
-  SessionAttendance
+  SessionAttendance,
+  MaterialBankFolder,
+  MaterialBankItem
 };
 
 // Establish relationships
@@ -109,6 +113,24 @@ User.hasMany(SessionAttendance, { foreignKey: 'student_id', as: 'sessionAttendan
 SessionAttendance.belongsTo(User, { foreignKey: 'student_id', as: 'student' });
 SessionAttendance.belongsTo(User, { foreignKey: 'marked_by', as: 'marker' });
 
+// Material Bank relationships
+Organization.hasMany(MaterialBankFolder, { foreignKey: 'organization_id', as: 'materialBankFolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+User.hasMany(MaterialBankFolder, { foreignKey: 'created_by', as: 'materialBankFolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+
+MaterialBankFolder.hasMany(MaterialBankFolder, { foreignKey: 'parent_id', as: 'subfolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(MaterialBankFolder, { foreignKey: 'parent_id', as: 'parent' });
+
+Organization.hasMany(MaterialBankItem, { foreignKey: 'organization_id', as: 'materialBankItems', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+MaterialBankFolder.hasMany(MaterialBankItem, { foreignKey: 'folder_id', as: 'items', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(MaterialBankFolder, { foreignKey: 'folder_id', as: 'folder' });
+
+User.hasMany(MaterialBankItem, { foreignKey: 'uploaded_by', as: 'materialBankItems', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -131,6 +153,9 @@ export {
   PracticalSubmission,
   ClassroomModule,
   ModuleSession,
-  SessionAttendance
+  SessionAttendance,
+  MaterialBankFolder,
+  MaterialBankItem
 };
 export default db;
+

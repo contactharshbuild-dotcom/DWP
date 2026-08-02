@@ -19,6 +19,31 @@ const ClassroomFolder = sequelize.define('ClassroomFolder', {
   name: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  visibility: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'all_students'
+  },
+  batch: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  assigned_student_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  assigned_teacher_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  scheduled_at: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  expiry_at: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   tableName: 'classroom_folders',

@@ -14,6 +14,7 @@ import masteradminRoutes from "./routes/masteradmin.routes.js";
 import sessionRoutes from "./routes/session.routes.js";
 import quizBuilderRoutes from "./quiz-builder/quiz-builder.routes.js";
 import organizationRoutes from "./routes/organization.routes.js";
+import materialBankRoutes from "./routes/material-bank.routes.js";
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/masteradmin", masteradminRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/quiz-builder", quizBuilderRoutes);
 app.use("/api/organization", organizationRoutes);
+app.use("/api/material-bank", materialBankRoutes);
 
 app.get("/", (req, res) => {
     res.send("LMS Backend is running");

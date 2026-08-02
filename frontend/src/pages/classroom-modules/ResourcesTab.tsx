@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   FiChevronRight, FiPlus, FiYoutube, FiFolderPlus, FiUploadCloud, 
-  FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink 
+  FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud 
 } from 'react-icons/fi';
 import { getServerUrl } from '../../services/api';
 
@@ -46,11 +46,12 @@ interface ResourcesTabProps {
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDeleteFolder: (folderId: number, e: React.MouseEvent) => void;
   handleDeleteResource: (resourceId: number) => void;
-  openAssignModal: (type: 'material', item: Resource) => void;
+  openAssignModal: (type: 'material' | 'folder', item: any) => void;
   isPreviewable: (res: Resource) => boolean;
   setPreviewResource: (res: Resource) => void;
   onOpenAddModal: (type: 'file' | 'link') => void;
   onOpenFolderModal: () => void;
+  onOpenImportBankModal?: () => void;
 }
 
 export const ResourcesTab: React.FC<ResourcesTabProps> = ({
@@ -72,7 +73,8 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   isPreviewable,
   setPreviewResource,
   onOpenAddModal,
-  onOpenFolderModal
+  onOpenFolderModal,
+  onOpenImportBankModal
 }) => {
   return (
     <div>
@@ -118,6 +120,17 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
             <FiFolderPlus size={16} />
             <span>New Folder</span>
           </button>
+
+          {onOpenImportBankModal && (
+            <button 
+              className="btn-ld btn-ld-secondary" 
+              onClick={onOpenImportBankModal}
+              style={{ color: 'var(--light-primary)', borderColor: 'var(--light-primary)' }}
+            >
+              <FiDownloadCloud size={16} />
+              <span>Import from Material Bank</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -149,21 +162,24 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
           />
           <label 
             htmlFor="resource-file-upload" 
-            style={{ cursor: 'pointer', display: 'block' }}
+            style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <FiUploadCloud size={40} style={{ color: 'var(--light-primary)' }} />
-              <h4 style={{ fontWeight: '600', color: 'var(--light-text)' }}>Drag and drop files here, or <span style={{ color: 'var(--light-primary)', textDecoration: 'underline' }}>browse</span></h4>
-              <p style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>Supports PDF, PPT, Word, Excel, ZIP, MP4, WebM (Max 50MB)</p>
-            </div>
+            <FiUploadCloud size={32} style={{ color: 'var(--light-primary)' }} />
+            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--light-text)' }}>
+              Drag & drop files here, or <span style={{ color: 'var(--light-primary)' }}>browse</span>
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--light-text-muted)' }}>
+              Supports PDF, PPT, Word, Excel, ZIP, Videos (up to 5MB)
+            </span>
           </label>
         </div>
       )}
 
-      {/* Folders and Files Display */}
+      {/* Content Table / List */}
       {resourcesLoading ? (
-        <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-          <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--light-text-secondary)' }}>
+          <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)' }}></span>
+          <p style={{ marginTop: '10px', fontSize: '13px' }}>Loading materials...</p>
         </div>
       ) : currentFolders.length === 0 && currentResources.length === 0 ? (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
@@ -210,14 +226,23 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   </td>
                   <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     {user?.role !== 'student' && (
-                      <button
-                        className="btn-ld btn-ld-danger btn-ld-small"
-                        onClick={(e) => handleDeleteFolder(folder.id, e)}
-                        title="Delete folder"
-                      >
-                        <FiTrash2 size={13} />
-                        <span>Delete</span>
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn-ld btn-ld-secondary btn-ld-small"
+                          onClick={(e) => { e.stopPropagation(); openAssignModal('folder', folder); }}
+                          title="Assign folder"
+                        >
+                          <span>Assign</span>
+                        </button>
+                        <button
+                          className="btn-ld btn-ld-danger btn-ld-small"
+                          onClick={(e) => handleDeleteFolder(folder.id, e)}
+                          title="Delete folder"
+                        >
+                          <FiTrash2 size={13} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -244,7 +269,11 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   : res.drive_link;
 
                 return (
-                  <tr key={`resource-${res.id}`}>
+                  <tr 
+                    key={`resource-${res.id}`}
+                    onClick={() => setPreviewResource(res)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td style={{ fontWeight: '600' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {isYouTube ? (
@@ -297,26 +326,16 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                     )}
                     <td>{res.uploader?.name}</td>
                     <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>{uploadDate}</td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        {isPreviewable(res) && (
-                          <button
-                            onClick={() => setPreviewResource(res)}
-                            className="btn-ld btn-ld-secondary btn-ld-small"
-                          >
-                            <span>Preview</span>
-                          </button>
-                        )}
-                        <a 
-                          href={fullLink} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => setPreviewResource(res)}
                           className="btn-ld btn-ld-secondary btn-ld-small"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                          title="Open material inside app"
                         >
-                          <FiExternalLink size={12} />
+                          <FiVideo size={12} />
                           <span>Open</span>
-                        </a>
+                        </button>
                         {(user?.role === 'admin' || user?.role === 'teacher') && (
                           <button
                             className="btn-ld btn-ld-primary btn-ld-small"

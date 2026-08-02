@@ -29,6 +29,8 @@ import { SessionsTab } from './classroom-modules/SessionsTab';
 import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
 import { quizBuilderService } from '../quiz-builder/services/quizBuilderService';
 import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
+import { ImportMaterialBankModal } from './classroom-modules/modals/ImportMaterialBankModal';
+import { materialBankService } from '../material-bank/services/materialBankService';
 
 interface Teacher {
   id: number;
@@ -340,19 +342,23 @@ const ClassroomDetails: React.FC = () => {
 
   // Add Material Modal / Form State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addType, setAddType] = useState<'file' | 'link'>('file');
+  const [addType, setAddType] = useState<'file' | 'link' | 'bank'>('file');
   const [materialName, setMaterialName] = useState('');
   const [materialLink, setMaterialLink] = useState('');
   const [materialModuleSession, setMaterialModuleSession] = useState('');
-  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'specific_students' | 'hidden'>('all_students');
+  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'specific_students' | 'hidden'>('hidden');
   const [materialBatch, setMaterialBatch] = useState('');
   const [materialSelectedStudentIds, setMaterialSelectedStudentIds] = useState<number[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('root');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [bankItemsList, setBankItemsList] = useState<any[]>([]);
+  const [selectedBankItem, setSelectedBankItem] = useState<any | null>(null);
+  const [loadingBankItems, setLoadingBankItems] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // Create Folder Modal State
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [showImportBankModal, setShowImportBankModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderCreating, setFolderCreating] = useState(false);
 
@@ -461,11 +467,16 @@ const ClassroomDetails: React.FC = () => {
 
   // Post-hoc Assignment Modal States
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignTargetType, setAssignTargetType] = useState<'material' | 'mcq' | 'practical' | null>(null);
+  const [assignTargetType, setAssignTargetType] = useState<'material' | 'folder' | 'mcq' | 'practical' | null>(null);
   const [assignTargetId, setAssignTargetId] = useState<number | null>(null);
   const [assignBatches, setAssignBatches] = useState('');
+  const [assignVisibility, setAssignVisibility] = useState<'all_students' | 'specific_students' | 'hidden'>('hidden');
   const [assignToSpecificStudents, setAssignToSpecificStudents] = useState(false);
   const [assignSelectedStudentIds, setAssignSelectedStudentIds] = useState<number[]>([]);
+  const [assignToSpecificTeachers, setAssignToSpecificTeachers] = useState(false);
+  const [assignSelectedTeacherIds, setAssignSelectedTeacherIds] = useState<number[]>([]);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [expiryAt, setExpiryAt] = useState('');
   const [assignSaving, setAssignSaving] = useState(false);
 
   // Student Submission state
@@ -767,7 +778,19 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  // Submit link or upload file
+  const fetchBankItems = async () => {
+    setLoadingBankItems(true);
+    try {
+      const data = await materialBankService.getContents();
+      setBankItemsList(data.items || []);
+    } catch (err) {
+      console.error('Failed to fetch Material Bank items:', err);
+    } finally {
+      setLoadingBankItems(false);
+    }
+  };
+
+  // Submit link, file, or Material Bank item
   const handleAddMaterialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (addType === 'link' && (!materialName || !materialLink)) {
@@ -776,6 +799,10 @@ const ClassroomDetails: React.FC = () => {
     }
     if (addType === 'file' && !selectedFile) {
       alert('Please select a file to upload.');
+      return;
+    }
+    if (addType === 'bank' && !selectedBankItem) {
+      alert('Please select an item from the Material Bank.');
       return;
     }
 
@@ -799,6 +826,21 @@ const ClassroomDetails: React.FC = () => {
         });
         setResources(prev => [response.data.resource, ...prev]);
         alert('File uploaded successfully!');
+      } else if (addType === 'bank' && selectedBankItem) {
+        const response = await api.post('/resources/link', {
+          classroomId: id,
+          name: materialName || selectedBankItem.name,
+          link: selectedBankItem.file_url,
+          driveFileId: selectedBankItem.drive_file_id,
+          mimeType: selectedBankItem.mime_type || (selectedBankItem.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
+          folderId: folderVal,
+          moduleSession: materialModuleSession,
+          visibility: materialVisibility,
+          batch: materialBatch,
+          assignedStudentIds: materialVisibility === 'specific_students' ? materialSelectedStudentIds : []
+        });
+        setResources(prev => [response.data.resource, ...prev]);
+        alert('Material added from Material Bank successfully!');
       } else {
         // Link Upload
         const response = await api.post('/resources/link', {
@@ -817,11 +859,12 @@ const ClassroomDetails: React.FC = () => {
 
       setShowAddModal(false);
       setSelectedFile(null);
+      setSelectedBankItem(null);
       setMaterialName('');
       setMaterialLink('');
       setMaterialModuleSession('');
       setMaterialBatch('');
-      setMaterialVisibility('all_students');
+      setMaterialVisibility('hidden');
       setMaterialSelectedStudentIds([]);
     } catch (err: any) {
       console.error(err);
@@ -857,19 +900,30 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  const openAssignModal = (type: 'material' | 'mcq' | 'practical', item: any) => {
+  const openAssignModal = (type: 'material' | 'folder' | 'mcq' | 'practical', item: any) => {
     setAssignTargetType(type);
     setAssignTargetId(item.id);
     
-    if (type === 'material') {
-      setAssignToSpecificStudents(item.visibility === 'specific_students');
+    if (type === 'material' || type === 'folder') {
+      const vis = item.visibility || 'hidden';
+      setAssignVisibility(vis);
+      setAssignToSpecificStudents(vis === 'specific_students' || (item.assigned_student_ids && item.assigned_student_ids.length > 0));
       setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignToSpecificTeachers(item.assigned_teacher_ids && item.assigned_teacher_ids.length > 0);
+      setAssignSelectedTeacherIds(item.assigned_teacher_ids || []);
       setAssignBatches(item.batch || '');
+      setScheduledAt(item.scheduled_at ? new Date(item.scheduled_at).toISOString().slice(0, 16) : '');
+      setExpiryAt(item.expiry_at ? new Date(item.expiry_at).toISOString().slice(0, 16) : '');
     } else {
       const hasIndStudents = item.assigned_student_ids && item.assigned_student_ids.length > 0;
+      setAssignVisibility(hasIndStudents ? 'specific_students' : 'all_students');
       setAssignToSpecificStudents(hasIndStudents);
       setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignToSpecificTeachers(false);
+      setAssignSelectedTeacherIds([]);
       setAssignBatches(item.batches ? item.batches.join(', ') : '');
+      setScheduledAt('');
+      setExpiryAt('');
     }
     
     setShowAssignModal(true);
@@ -884,17 +938,14 @@ const ClassroomDetails: React.FC = () => {
       const batchesList = assignBatches ? assignBatches.split(',').map(b => b.trim()) : [];
       
       let payload: any = {};
-      if (assignTargetType === 'material') {
-        let visibilityVal = 'all_students';
-        if (assignToSpecificStudents) {
-          visibilityVal = 'specific_students';
-        } else if (batchesList.length > 0) {
-          visibilityVal = 'specific_batch';
-        }
+      if (assignTargetType === 'material' || assignTargetType === 'folder') {
         payload = {
-          visibility: visibilityVal,
-          batch: visibilityVal === 'specific_batch' ? assignBatches : null,
-          assignedStudentIds: assignToSpecificStudents ? assignSelectedStudentIds : []
+          visibility: assignVisibility,
+          batch: null,
+          assignedStudentIds: assignVisibility === 'specific_students' ? assignSelectedStudentIds : [],
+          assignedTeacherIds: assignToSpecificTeachers ? assignSelectedTeacherIds : [],
+          scheduledAt: scheduledAt || null,
+          expiryAt: expiryAt || null
         };
       } else {
         payload = {
@@ -906,6 +957,8 @@ const ClassroomDetails: React.FC = () => {
       let url = '';
       if (assignTargetType === 'material') {
         url = `/resources/${assignTargetId}/assign`;
+      } else if (assignTargetType === 'folder') {
+        url = `/resources/folders/${assignTargetId}/assign`;
       } else if (assignTargetType === 'mcq') {
         url = `/mcq/tests/${assignTargetId}/assign`;
       } else {
@@ -916,6 +969,8 @@ const ClassroomDetails: React.FC = () => {
 
       if (assignTargetType === 'material') {
         setResources(prev => prev.map(r => r.id === assignTargetId ? { ...r, ...response.data.resource } : r));
+      } else if (assignTargetType === 'folder') {
+        setFolders(prev => prev.map(f => f.id === assignTargetId ? { ...f, ...response.data.folder } : f));
       } else if (assignTargetType === 'mcq') {
         setMcqTests(prev => prev.map(t => t.id === assignTargetId ? { ...t, ...response.data.test } : t));
       } else {
@@ -987,6 +1042,9 @@ const ClassroomDetails: React.FC = () => {
   const activeStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
   const pendingStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
 
+  const myMember = classroom?.teachers?.find(t => t.id === user?.id);
+  const isStudentUser = user?.role === 'student' || myMember?.role === 'student' || myMember?.ClassroomTeacher?.role === 'student';
+
   // Generate generic shareable link for this classroom ID
   const inviteLink = classroom ? `${window.location.origin}/join-classroom/${classroom.classroom_id}` : '';
 
@@ -994,12 +1052,8 @@ const ClassroomDetails: React.FC = () => {
   const currentFolders = currentFolderId === null ? folders : [];
   const currentResources = currentFolderId === null ? [] : resources.filter(resrc => resrc.folder_id === currentFolderId);
 
-  // Check if resource is previewable
-  const isPreviewable = (resrc: Resource): boolean => {
-    const isPDF = resrc.mime_type === 'application/pdf' || resrc.name.toLowerCase().endsWith('.pdf');
-    const isVideo = resrc.mime_type.startsWith('video/') || resrc.mime_type === 'youtube' || resrc.name.toLowerCase().endsWith('.mp4') || resrc.name.toLowerCase().endsWith('.webm');
-    return isPDF || isVideo;
-  };
+  // Check if resource is previewable (all materials open in-app modal)
+  const isPreviewable = (_resrc: Resource): boolean => true;
 
 
   // ----------------------------------------------------
@@ -2244,7 +2298,7 @@ const ClassroomDetails: React.FC = () => {
         <div className="ld-card">
           {/* Tabs header */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '24px' }}>
-            {user?.role !== 'student' && (
+            {!isStudentUser && (
               <>
                 <button
                   onClick={() => handleTabChange('active')}
@@ -2425,7 +2479,7 @@ const ClassroomDetails: React.FC = () => {
           </div>
 
           {/* Active Teachers Tab */}
-          {activeTab === 'active' && (
+          {activeTab === 'active' && !isStudentUser && (
             <TeachersTab
               activeTeachers={activeTeachers}
               user={user}
@@ -2488,7 +2542,7 @@ const ClassroomDetails: React.FC = () => {
                   setAddType('file');
                   setSelectedFile(null);
                   setMaterialName('');
-                  setMaterialVisibility('all_students');
+                  setMaterialVisibility('hidden');
                   setMaterialBatch('');
                   setMaterialModuleSession('');
                   setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
@@ -2497,7 +2551,7 @@ const ClassroomDetails: React.FC = () => {
                   setAddType('link');
                   setMaterialName('');
                   setMaterialLink('');
-                  setMaterialVisibility('all_students');
+                  setMaterialVisibility('hidden');
                   setMaterialBatch('');
                   setMaterialModuleSession('');
                   setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
@@ -2508,6 +2562,7 @@ const ClassroomDetails: React.FC = () => {
                 setNewFolderName('');
                 setShowFolderModal(true);
               }}
+              onOpenImportBankModal={() => setShowImportBankModal(true)}
             />
           )}
 
@@ -2823,6 +2878,17 @@ const ClassroomDetails: React.FC = () => {
         </div>
       )}
 
+      {/* Import from Material Bank Modal */}
+      {showImportBankModal && classroom && (
+        <ImportMaterialBankModal
+          isOpen={showImportBankModal}
+          classroomId={classroom.id}
+          targetFolderId={currentFolderId}
+          onClose={() => setShowImportBankModal(false)}
+          onSuccess={() => fetchResources(currentFolderId)}
+        />
+      )}
+
       {/* Add Study Material Modal (Unified File & Link) */}
       {showAddModal && (
         <div className="modal-overlay-ld" onClick={() => setShowAddModal(false)}>
@@ -2833,7 +2899,7 @@ const ClassroomDetails: React.FC = () => {
             <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '16px' }}>
               <button
                 type="button"
-                onClick={() => { setAddType('file'); setMaterialName(''); }}
+                onClick={() => { setAddType('file'); setMaterialName(''); setSelectedBankItem(null); }}
                 style={{
                   flex: 1,
                   padding: '10px',
@@ -2842,14 +2908,15 @@ const ClassroomDetails: React.FC = () => {
                   borderBottom: addType === 'file' ? '2px solid var(--light-primary)' : '2px solid transparent',
                   color: addType === 'file' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
               >
                 File Upload
               </button>
               <button
                 type="button"
-                onClick={() => { setAddType('link'); setMaterialName(''); }}
+                onClick={() => { setAddType('link'); setMaterialName(''); setSelectedBankItem(null); }}
                 style={{
                   flex: 1,
                   padding: '10px',
@@ -2858,15 +2925,73 @@ const ClassroomDetails: React.FC = () => {
                   borderBottom: addType === 'link' ? '2px solid var(--light-primary)' : '2px solid transparent',
                   color: addType === 'link' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
               >
-                YouTube / Web Link
+                YouTube / Link
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddType('bank'); fetchBankItems(); }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: addType === 'bank' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                  color: addType === 'bank' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                From Material Bank
               </button>
             </div>
 
             <form onSubmit={handleAddMaterialSubmit}>
-              {addType === 'file' ? (
+              {addType === 'bank' ? (
+                <>
+                  <div className="form-group-ld">
+                    <label className="form-label-ld">Select Material Bank Item *</label>
+                    <select
+                      className="form-input-ld"
+                      value={selectedBankItem ? String(selectedBankItem.id) : ''}
+                      onChange={(e) => {
+                        const item = bankItemsList.find(b => String(b.id) === e.target.value);
+                        setSelectedBankItem(item || null);
+                        if (item) {
+                          setMaterialName(item.name);
+                        }
+                      }}
+                      required
+                    >
+                      <option value="">-- Choose from Material Bank --</option>
+                      {bankItemsList.map(b => (
+                        <option key={b.id} value={b.id}>
+                          [{b.type === 'youtube' ? 'YouTube' : 'File'}] {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingBankItems && (
+                      <span style={{ fontSize: '11px', color: 'var(--light-text-muted)', marginTop: '4px', display: 'block' }}>Loading items...</span>
+                    )}
+                  </div>
+
+                  <div className="form-group-ld">
+                    <label className="form-label-ld">Material Title *</label>
+                    <input 
+                      type="text" 
+                      className="form-input-ld" 
+                      placeholder="e.g. Organic Chemistry Video"
+                      value={materialName}
+                      onChange={(e) => setMaterialName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </>
+              ) : addType === 'file' ? (
                 <div className="form-group-ld">
                   <label className="form-label-ld">Select File *</label>
                   <input 
@@ -2940,10 +3065,9 @@ const ClassroomDetails: React.FC = () => {
                   value={materialVisibility}
                   onChange={(e) => setMaterialVisibility(e.target.value as any)}
                 >
-                  <option value="all_students">All Students</option>
-                  <option value="specific_batch">Specific Batch</option>
-                  <option value="specific_students">Specific Students</option>
-                  <option value="hidden">Hidden</option>
+                  <option value="hidden">🔒 Hidden / Unassigned (Default)</option>
+                  <option value="all_students">👥 All Students</option>
+                  <option value="specific_students">🎯 Specific Students</option>
                 </select>
               </div>
 
@@ -4513,31 +4637,32 @@ const ClassroomDetails: React.FC = () => {
 
             <div style={{ minHeight: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: '8px', overflow: 'hidden' }}>
               {(() => {
+                const link = previewResource.drive_link || '';
+                const isYouTube = previewResource.mime_type === 'youtube' || link.includes('youtube.com') || link.includes('youtu.be');
                 const isPDF = previewResource.mime_type === 'application/pdf' || previewResource.name.toLowerCase().endsWith('.pdf');
+                const isImage = previewResource.mime_type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(previewResource.name);
                 const isVideo = previewResource.mime_type.startsWith('video/') || previewResource.name.toLowerCase().endsWith('.mp4') || previewResource.name.toLowerCase().endsWith('.webm');
-                const isYouTube = previewResource.mime_type === 'youtube';
+                const isOfficeDoc = /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(previewResource.name);
 
-                const fullLink = previewResource.drive_link.startsWith('/uploads/') 
-                  ? `${getServerUrl()}${previewResource.drive_link}` 
-                  : previewResource.drive_link;
+                const fullLink = link.startsWith('/uploads/') 
+                  ? `${getServerUrl()}${link}` 
+                  : link;
 
                 if (isYouTube) {
-                  const ytId = getYouTubeId(previewResource.drive_link);
+                  const ytId = getYouTubeId(link);
                   if (ytId) {
                     return (
                       <iframe 
                         width="100%" 
-                        height="450" 
-                        src={`https://www.youtube.com/embed/${ytId}`} 
+                        height="480" 
+                        src={`https://www.youtube.com/embed/${ytId}?autoplay=1`} 
                         title="YouTube video player" 
                         frameBorder="0" 
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                         allowFullScreen
-                        style={{ width: '100%', border: 'none' }}
+                        style={{ width: '100%', border: 'none', borderRadius: '8px' }}
                       />
                     );
-                  } else {
-                    return <p style={{ padding: '20px', color: 'red' }}>Invalid YouTube link.</p>;
                   }
                 }
 
@@ -4546,9 +4671,19 @@ const ClassroomDetails: React.FC = () => {
                     <iframe 
                       src={fullLink} 
                       width="100%" 
-                      height="550px" 
+                      height="580px" 
                       style={{ border: 'none' }} 
                       title="PDF Preview" 
+                    />
+                  );
+                }
+
+                if (isImage) {
+                  return (
+                    <img 
+                      src={fullLink} 
+                      alt={previewResource.name}
+                      style={{ maxWidth: '100%', maxHeight: '550px', objectFit: 'contain' }}
                     />
                   );
                 }
@@ -4560,12 +4695,33 @@ const ClassroomDetails: React.FC = () => {
                       controls 
                       autoPlay
                       width="100%" 
-                      style={{ maxHeight: '500px', outline: 'none' }} 
+                      style={{ maxHeight: '520px', outline: 'none' }} 
                     />
                   );
                 }
 
-                return <p style={{ padding: '20px' }}>Preview not available for this file type.</p>;
+                if (isOfficeDoc) {
+                  const officeViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(fullLink)}&embedded=true`;
+                  return (
+                    <iframe 
+                      src={officeViewerUrl} 
+                      width="100%" 
+                      height="580px" 
+                      style={{ border: 'none' }} 
+                      title="Document Preview" 
+                    />
+                  );
+                }
+
+                return (
+                  <iframe 
+                    src={fullLink} 
+                    width="100%" 
+                    height="550px" 
+                    style={{ border: 'none' }} 
+                    title="Web Link" 
+                  />
+                );
               })()}
             </div>
             
@@ -4586,9 +4742,20 @@ const ClassroomDetails: React.FC = () => {
         setAssignBatches={setAssignBatches}
         assignToSpecificStudents={assignToSpecificStudents}
         setAssignToSpecificStudents={setAssignToSpecificStudents}
-        activeStudents={activeStudents}
+        activeStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
         assignSelectedStudentIds={assignSelectedStudentIds}
         setAssignSelectedStudentIds={setAssignSelectedStudentIds}
+        assignVisibility={assignVisibility}
+        setAssignVisibility={setAssignVisibility}
+        activeTeachers={activeTeachers.map(t => ({ id: t.id, name: t.name, email: t.email }))}
+        assignToSpecificTeachers={assignToSpecificTeachers}
+        setAssignToSpecificTeachers={setAssignToSpecificTeachers}
+        assignSelectedTeacherIds={assignSelectedTeacherIds}
+        setAssignSelectedTeacherIds={setAssignSelectedTeacherIds}
+        scheduledAt={scheduledAt}
+        setScheduledAt={setScheduledAt}
+        expiryAt={expiryAt}
+        setExpiryAt={setExpiryAt}
         assignSaving={assignSaving}
         onAssignSubmit={handleAssignSubmit}
       />

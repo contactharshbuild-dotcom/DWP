@@ -55,7 +55,7 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
   visibility: {
     type: DataTypes.STRING,
     allowNull: false,
-    defaultValue: 'all_students'
+    defaultValue: 'hidden'
   },
   batch: {
     type: DataTypes.STRING,
@@ -63,6 +63,18 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
   },
   assigned_student_ids: {
     type: DataTypes.JSON,
+    allowNull: true
+  },
+  assigned_teacher_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  scheduled_at: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  expiry_at: {
+    type: DataTypes.DATE,
     allowNull: true
   }
 }, {

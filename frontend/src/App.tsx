@@ -15,6 +15,7 @@ const JoinClassroom = lazy(() => import('./pages/JoinClassroom'));
 const MasterAdminLogin = lazy(() => import('./pages/MasterAdminLogin'));
 const MasterAdminDashboard = lazy(() => import('./pages/MasterAdminDashboard'));
 const QuizBuilderPage = lazy(() => import('./quiz-builder/QuizBuilderPage').then(module => ({ default: module.QuizBuilderPage })));
+const MaterialBankPage = lazy(() => import('./material-bank/MaterialBankPage').then(module => ({ default: module.MaterialBankPage })));
 
 // Protected Route wrapper component
 interface ProtectedRouteProps {
@@ -136,6 +137,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <QuizBuilderPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/material-bank"
+              element={
+                <ProtectedRoute>
+                  <MaterialBankPage />
                 </ProtectedRoute>
               }
             />
