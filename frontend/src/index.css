@@ -482,14 +482,40 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.02);
 }
 
 .ld-sidebar-top {
-  padding: 24px;
+  padding: 24px 20px 12px 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ld-sidebar-top::-webkit-scrollbar,
+.ld-sidebar-classrooms::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ld-sidebar-top::-webkit-scrollbar-track,
+.ld-sidebar-classrooms::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ld-sidebar-top::-webkit-scrollbar-thumb,
+.ld-sidebar-classrooms::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ld-sidebar-top::-webkit-scrollbar-thumb:hover,
+.ld-sidebar-classrooms::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .ld-logo-section {
@@ -539,6 +565,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
 .ld-nav-label {
@@ -577,7 +605,9 @@ body {
 
 /* Classrooms Sidebar List */
 .ld-sidebar-classrooms {
-  max-height: 240px;
+  flex: 1;
+  min-height: 80px;
+  max-height: 200px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -609,12 +639,13 @@ body {
 
 /* Sidebar Footer User profile */
 .ld-sidebar-footer {
-  padding: 20px;
+  padding: 16px 20px;
   border-top: 1px solid var(--light-border);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   background-color: #fafbfc;
+  flex-shrink: 0;
 }
 
 .ld-user-card {

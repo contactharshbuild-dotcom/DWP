@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
-import { User, Organization } from '../models/index.js';
+import { User, Organization, ClassroomTeacher } from '../models/index.js';
 
 // Helper to generate JWT Token
 const generateToken = (user) => {
@@ -133,15 +133,33 @@ export const acceptInvite = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Check if user has an approved classroom membership
+    const approvedMembership = await ClassroomTeacher.findOne({
+      where: {
+        user_id: user.id,
+        status: 'approved'
+      }
+    });
+
+    const isPendingTeacher = (user.role === 'teacher' && !approvedMembership);
+
     // Update user status, password, phone, and clear invite token
     await user.update({
       password: hashedPassword,
       phone: user.role === 'student' ? phone : user.phone,
       username,
-      status: 'active',
+      status: isPendingTeacher ? 'pending' : 'active',
       invite_token: null,
       invite_expires: null
     });
+
+    if (isPendingTeacher) {
+      return res.json({
+        success: true,
+        pendingApproval: true,
+        message: 'Invitation accepted! Your teacher account is pending approval by an administrator. You will be able to log in once an admin approves your request.'
+      });
+    }
 
     // Generate JWT Token for login
     const loginToken = generateToken(user);

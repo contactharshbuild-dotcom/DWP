@@ -7,24 +7,43 @@ import {
   FiArrowRight, 
   FiActivity, 
   FiAlertCircle,
-  FiAward
+  FiAward,
+  FiTrash2,
+  FiX
 } from 'react-icons/fi';
 import type { RootState } from '../store';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 import { useClassrooms } from '../components/ClassroomContext';
 
-
-
-
-
 const Dashboard: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const { classrooms, loadingClassrooms } = useClassrooms();
+  const { classrooms, loadingClassrooms, fetchClassrooms } = useClassrooms();
   const [teachersCount, setTeachersCount] = useState(0);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Delete Classroom Modal State
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteClassroom = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/classrooms/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      await fetchClassrooms();
+    } catch (err: any) {
+      console.error(err);
+      setDeleteError(err.response?.data?.message || 'Failed to delete classroom.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTeachersCount = async () => {
@@ -157,13 +176,29 @@ const Dashboard: React.FC = () => {
                       )}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <Link 
-                        to={`/classrooms/${cls.id}`} 
-                        className="btn-ld btn-ld-secondary btn-ld-small"
-                      >
-                        <span>Manage</span>
-                        <FiArrowRight size={14} />
-                      </Link>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                        <Link 
+                          to={`/classrooms/${cls.id}`} 
+                          className="btn-ld btn-ld-secondary btn-ld-small"
+                        >
+                          <span>Manage</span>
+                          <FiArrowRight size={14} />
+                        </Link>
+                        {user?.role === 'admin' && (
+                          <button 
+                            type="button"
+                            className="btn-ld btn-ld-small"
+                            style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px' }}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget({ id: cls.id, name: cls.name });
+                            }}
+                            title="Delete Classroom"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -172,6 +207,57 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Delete Classroom Modal */}
+      {deleteTarget && (
+        <div className="modal-overlay-ld" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiAlertCircle size={22} />
+                <span>Delete Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setDeleteTarget(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '16px', fontSize: '14px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete <strong>{deleteTarget.name}</strong>? All associated modules, resources, and test data will be removed.
+            </p>
+
+            {deleteError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn-ld btn-ld-secondary" 
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-ld" 
+                style={{ backgroundColor: '#dc2626', color: 'white', border: 'none' }}
+                onClick={handleDeleteClassroom}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Classroom'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };

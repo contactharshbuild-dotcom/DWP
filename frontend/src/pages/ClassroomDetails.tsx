@@ -16,7 +16,9 @@ import {
   FiClock,
   FiShield,
   FiActivity,
-  FiCalendar
+  FiCalendar,
+  FiUserPlus,
+  FiChevronDown
 } from 'react-icons/fi';
 import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -296,32 +298,6 @@ const ClassroomDetails: React.FC = () => {
   };
   const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
 
-  useEffect(() => {
-    // Only fetch pending quiz count for student badge calculation when quiz tab is active
-    if (id && user?.role === 'student' && activeTab === 'assign_quiz') {
-      quizBuilderService.getClassroomQuizzes(Number(id), { limit: 100 })
-        .then((res: any) => {
-          const quizList = Array.isArray(res) ? res : (res?.quizzes || []);
-          const now = new Date();
-          const count = quizList.filter((quiz: any) => {
-            const start = quiz.start_window ? new Date(quiz.start_window) : null;
-            const end = quiz.end_window ? new Date(quiz.end_window) : null;
-            const isWindowActive = (!start || now >= start) && (!end || now <= end);
-            const isExpired = !!end && now > end;
-            const isScheduled = quiz.status === 'scheduled';
-            const isActive = (quiz.status === 'active' || isWindowActive) && !isExpired;
-
-            const attempts = quiz.attempts || [];
-            const hasAttempt = user ? attempts.some((a: any) => a.user_id === user.id) : false;
-
-            return (isActive || isScheduled) && !hasAttempt;
-          }).length;
-          setPendingQuizCount(count);
-        })
-        .catch((err) => console.error('Failed to fetch pending quiz count:', err));
-    }
-  }, [id, user, activeTab]);
-
   // Student Invitation States
   const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
   const [inviteStudentName, setInviteStudentName] = useState('');
@@ -333,6 +309,110 @@ const ClassroomDetails: React.FC = () => {
   // Share Modal State
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Delete Classroom Modal State
+  const [showDeleteClassroomModal, setShowDeleteClassroomModal] = useState(false);
+  const [deleteClassroomLoading, setDeleteClassroomLoading] = useState(false);
+  const [deleteClassroomError, setDeleteClassroomError] = useState<string | null>(null);
+
+  const handleDeleteCurrentClassroom = async () => {
+    if (!id || !classroom) return;
+    setDeleteClassroomLoading(true);
+    setDeleteClassroomError(null);
+    try {
+      await api.delete(`/classrooms/${id}`);
+      setShowDeleteClassroomModal(false);
+      navigate('/');
+    } catch (err: any) {
+      console.error(err);
+      setDeleteClassroomError(err.response?.data?.message || 'Failed to delete classroom.');
+    } finally {
+      setDeleteClassroomLoading(false);
+    }
+  };
+
+  // Assign Teacher Modal State
+  const [showAssignTeacherModal, setShowAssignTeacherModal] = useState(false);
+  const [availableOrgTeachers, setAvailableOrgTeachers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+  const [loadingOrgTeachers, setLoadingOrgTeachers] = useState(false);
+  const [selectedTeacherIdsToAssign, setSelectedTeacherIdsToAssign] = useState<number[]>([]);
+  const [selectedAssignRole, setSelectedAssignRole] = useState<'co-teacher' | 'teacher'>('co-teacher');
+  const [assignTeacherLoading, setAssignTeacherLoading] = useState(false);
+  const [assignTeacherError, setAssignTeacherError] = useState<string | null>(null);
+
+  // Multi-select dropdown menu state
+  const [isTeacherDropdownOpen, setIsTeacherDropdownOpen] = useState(false);
+  const teacherDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (teacherDropdownRef.current && !teacherDropdownRef.current.contains(event.target as Node)) {
+        setIsTeacherDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleOpenAssignTeacherModal = async () => {
+    setShowAssignTeacherModal(true);
+    setLoadingOrgTeachers(true);
+    setAssignTeacherError(null);
+    setSelectedTeacherIdsToAssign([]);
+    setSelectedAssignRole('co-teacher');
+    setIsTeacherDropdownOpen(false);
+    try {
+      const res = await api.get('/teachers');
+      const allTeachers: Array<{ id: number; name: string; email: string }> = res.data.teachers || [];
+      const currentTeacherIds = (classroom?.teachers || []).map(t => t.id);
+      const unassigned = allTeachers.filter(t => !currentTeacherIds.includes(t.id));
+      setAvailableOrgTeachers(unassigned);
+    } catch (err: any) {
+      console.error(err);
+      setAssignTeacherError('Failed to load organization teachers.');
+    } finally {
+      setLoadingOrgTeachers(false);
+    }
+  };
+
+  const handleToggleTeacherSelection = (teacherId: number) => {
+    setSelectedTeacherIdsToAssign(prev => 
+      prev.includes(teacherId) 
+        ? prev.filter(id => id !== teacherId) 
+        : [...prev, teacherId]
+    );
+  };
+
+  const handleSelectAllTeachers = () => {
+    if (selectedTeacherIdsToAssign.length === availableOrgTeachers.length) {
+      setSelectedTeacherIdsToAssign([]);
+    } else {
+      setSelectedTeacherIdsToAssign(availableOrgTeachers.map(t => t.id));
+    }
+  };
+
+  const handleAssignTeacherSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || selectedTeacherIdsToAssign.length === 0) {
+      setAssignTeacherError('Please select at least one teacher to assign.');
+      return;
+    }
+    setAssignTeacherLoading(true);
+    setAssignTeacherError(null);
+    try {
+      await api.post(`/classrooms/${id}/teachers/assign`, {
+        teacherIds: selectedTeacherIdsToAssign,
+        role: selectedAssignRole
+      });
+      setShowAssignTeacherModal(false);
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      setAssignTeacherError(err.response?.data?.message || 'Failed to assign teachers.');
+    } finally {
+      setAssignTeacherLoading(false);
+    }
+  };
 
   // Folders and Resources State
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -582,7 +662,7 @@ const ClassroomDetails: React.FC = () => {
     if (activeTab === 'resources' && !resourcesLoaded) {
       fetchResources();
       setResourcesLoaded(true);
-    } else if ((activeTab === 'assign_quiz' || activeTab === 'mcqs') && !mcqLoaded) {
+    } else if (activeTab === 'mcqs' && !mcqLoaded) {
       fetchMcqTests();
       setMcqLoaded(true);
     } else if (activeTab === 'practicals' && !practicalsLoaded) {
@@ -2276,10 +2356,23 @@ const ClassroomDetails: React.FC = () => {
         </div>
 
         {classroom && user?.role === 'admin' && (
-          <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
-            <FiPlus size={18} />
-            <span>Invite Teacher</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              className="btn-ld" 
+              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
+              onClick={() => {
+                setDeleteClassroomError(null);
+                setShowDeleteClassroomModal(true);
+              }}
+            >
+              <FiTrash2 size={16} />
+              <span>Delete Classroom</span>
+            </button>
+            <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
+              <FiPlus size={18} />
+              <span>Invite Teacher</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -2485,6 +2578,7 @@ const ClassroomDetails: React.FC = () => {
               user={user}
               onUpgradeTeacher={handleUpgradeTeacher}
               onRejectTeacher={handleRejectTeacher}
+              onOpenAssignModal={handleOpenAssignTeacherModal}
             />
           )}
 
@@ -2766,6 +2860,249 @@ const ClassroomDetails: React.FC = () => {
                     disabled={inviteStudentLoading}
                   >
                     {inviteStudentLoading ? 'Generating...' : 'Invite Student'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Classroom Modal */}
+      {showDeleteClassroomModal && classroom && (
+        <div className="modal-overlay-ld" onClick={() => setShowDeleteClassroomModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiAlertCircle size={22} />
+                <span>Delete Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setShowDeleteClassroomModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '16px', fontSize: '14px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete <strong>{classroom.name}</strong>? All associated modules, resources, and tests will be removed.
+            </p>
+
+            {deleteClassroomError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteClassroomError}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn-ld btn-ld-secondary" 
+                onClick={() => setShowDeleteClassroomModal(false)}
+                disabled={deleteClassroomLoading}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-ld" 
+                style={{ backgroundColor: '#dc2626', color: 'white', border: 'none' }}
+                onClick={handleDeleteCurrentClassroom}
+                disabled={deleteClassroomLoading}
+              >
+                {deleteClassroomLoading ? 'Deleting...' : 'Delete Classroom'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Teacher Modal */}
+      {showAssignTeacherModal && (
+        <div className="modal-overlay-ld" onClick={() => setShowAssignTeacherModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiUserPlus style={{ color: 'var(--light-primary)' }} />
+                <span>Assign Teacher to Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setShowAssignTeacherModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+              Select an existing teacher from your organization to assign to <strong>{classroom?.name}</strong>. Teachers are assigned as <strong>Co-Teacher</strong> by default.
+            </p>
+
+            {assignTeacherError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{assignTeacherError}</span>
+              </div>
+            )}
+
+            {loadingOrgTeachers ? (
+              <div style={{ padding: '30px', display: 'flex', justifyContent: 'center' }}>
+                <span className="spinner" style={{ width: '28px', height: '28px' }}></span>
+              </div>
+            ) : availableOrgTeachers.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--light-text-secondary)', background: 'var(--light-bg-subtle)', borderRadius: '8px' }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>All organization teachers are already assigned to this classroom, or no teachers exist.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleAssignTeacherSubmit}>
+                <div className="form-group-ld">
+                  <label className="form-label-ld">Select Teacher(s) *</label>
+
+                  {/* Multi-Select Dropdown Menu Trigger */}
+                  <div ref={teacherDropdownRef} style={{ position: 'relative' }}>
+                    <div 
+                      onClick={() => setIsTeacherDropdownOpen(!isTeacherDropdownOpen)}
+                      className="form-input-ld"
+                      style={{
+                        display: 'flex',
+                        justify: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        background: '#fff',
+                        borderColor: isTeacherDropdownOpen ? 'var(--light-primary)' : 'var(--light-border)'
+                      }}
+                    >
+                      <span style={{ 
+                        color: selectedTeacherIdsToAssign.length === 0 ? 'var(--light-text-muted)' : 'var(--light-text-main)', 
+                        fontSize: '13px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {selectedTeacherIdsToAssign.length === 0 
+                          ? 'Select Teachers...' 
+                          : selectedTeacherIdsToAssign.length === availableOrgTeachers.length
+                            ? `All Teachers Selected (${availableOrgTeachers.length})`
+                            : availableOrgTeachers
+                                .filter(t => selectedTeacherIdsToAssign.includes(t.id))
+                                .map(t => t.name)
+                                .join(', ')
+                        }
+                      </span>
+                      <FiChevronDown 
+                        size={18} 
+                        style={{ 
+                          transform: isTeacherDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
+                          transition: 'transform 0.2s', 
+                          flexShrink: 0,
+                          color: 'var(--light-text-muted)' 
+                        }} 
+                      />
+                    </div>
+
+                    {/* Floating Dropdown Options Menu */}
+                    {isTeacherDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#fff',
+                        border: '1px solid var(--light-border)',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                        zIndex: 1000,
+                        padding: '6px',
+                        maxHeight: '220px',
+                        overflowY: 'auto'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--light-border)', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--light-text-muted)' }}>
+                            {selectedTeacherIdsToAssign.length} of {availableOrgTeachers.length} selected
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSelectAllTeachers}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--light-primary)',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          >
+                            {selectedTeacherIdsToAssign.length === availableOrgTeachers.length ? 'Deselect All' : 'Select All'}
+                          </button>
+                        </div>
+
+                        {availableOrgTeachers.map((t) => {
+                          const isSelected = selectedTeacherIdsToAssign.includes(t.id);
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => handleToggleTeacherSelection(t.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                                transition: 'background-color 0.15s',
+                                marginBottom: '2px'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                              />
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--light-text-main)' }}>{t.name}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--light-text-muted)' }}>{t.email}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px', marginTop: '16px' }}>
+                  <label className="form-label-ld">Assign Role *</label>
+                  <select
+                    className="form-input-ld"
+                    value={selectedAssignRole}
+                    onChange={(e) => setSelectedAssignRole(e.target.value as any)}
+                    required
+                  >
+                    <option value="co-teacher">Co-Teacher (Default)</option>
+                    <option value="teacher">Full Teacher</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn-ld btn-ld-secondary"
+                    onClick={() => setShowAssignTeacherModal(false)}
+                    disabled={assignTeacherLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-ld btn-ld-primary"
+                    disabled={assignTeacherLoading || selectedTeacherIdsToAssign.length === 0}
+                  >
+                    {assignTeacherLoading ? 'Assigning...' : `Assign ${selectedTeacherIdsToAssign.length} Teacher(s)`}
                   </button>
                 </div>
               </form>

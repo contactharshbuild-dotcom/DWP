@@ -14,6 +14,8 @@ const ClassroomDetails = lazy(() => import('./pages/ClassroomDetails'));
 const JoinClassroom = lazy(() => import('./pages/JoinClassroom'));
 const MasterAdminLogin = lazy(() => import('./pages/MasterAdminLogin'));
 const MasterAdminDashboard = lazy(() => import('./pages/MasterAdminDashboard'));
+const UserProfile = lazy(() => import('./pages/UserProfile'));
+const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
 const QuizBuilderPage = lazy(() => import('./quiz-builder/QuizBuilderPage').then(module => ({ default: module.QuizBuilderPage })));
 const MaterialBankPage = lazy(() => import('./material-bank/MaterialBankPage').then(module => ({ default: module.MaterialBankPage })));
 
@@ -129,6 +131,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Teachers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <UserProfile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/about"
+              element={
+                <ProtectedRoute>
+                  <OrganizationProfile />
                 </ProtectedRoute>
               }
             />

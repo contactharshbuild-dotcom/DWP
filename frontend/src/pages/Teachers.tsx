@@ -9,7 +9,7 @@ import {
 } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
-import { RootState } from '../store';
+import type { RootState } from '../store';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 

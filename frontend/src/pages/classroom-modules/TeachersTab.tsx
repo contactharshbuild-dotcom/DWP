@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiUsers, FiUserCheck, FiTrash2 } from 'react-icons/fi';
+import { FiUsers, FiUserCheck, FiTrash2, FiUserPlus } from 'react-icons/fi';
 
 interface TeacherUser {
   id: number;
@@ -16,13 +16,15 @@ interface TeachersTabProps {
   user: { id: number; role: string } | null;
   onUpgradeTeacher: (teacherId: number) => Promise<void>;
   onRejectTeacher: (teacherId: number, isPending: boolean) => Promise<void>;
+  onOpenAssignModal?: () => void;
 }
 
 export const TeachersTab: React.FC<TeachersTabProps> = ({
   activeTeachers,
   user,
   onUpgradeTeacher,
-  onRejectTeacher
+  onRejectTeacher,
+  onOpenAssignModal
 }) => {
   return (
     <div>
@@ -31,6 +33,17 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
           <FiUsers style={{ color: 'var(--light-primary)' }} />
           <span>Active Teachers</span>
         </h3>
+
+        {user?.role === 'admin' && onOpenAssignModal && (
+          <button 
+            className="btn-ld btn-ld-primary"
+            onClick={onOpenAssignModal}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <FiUserPlus size={16} />
+            <span>Assign Teacher</span>
+          </button>
+        )}
       </div>
 
       {activeTeachers.length === 0 ? (

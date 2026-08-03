@@ -61,6 +61,9 @@ const AcceptInvite: React.FC = () => {
     dispatch(setError(null));
   }, [token, dispatch]);
  
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
  
@@ -92,6 +95,13 @@ const AcceptInvite: React.FC = () => {
         phone: invitedRole === 'student' ? phone : undefined
       });
  
+      if (response.data.pendingApproval) {
+        setIsPendingApproval(true);
+        setPendingMessage(response.data.message || 'Account setup complete! Your request is pending approval by the administrator.');
+        dispatch(setLoading(false));
+        return;
+      }
+
       const { token: loginToken, user, organization } = response.data;
  
       // Set credentials to authenticate user
@@ -102,6 +112,35 @@ const AcceptInvite: React.FC = () => {
       dispatch(setError(msg));
     }
   };
+
+  if (isPendingApproval) {
+    return (
+      <div className="auth-page-wrapper">
+        <div className="glass-card" style={{ textAlign: 'center' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            borderRadius: '50%', 
+            background: 'rgba(245, 158, 11, 0.15)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            color: 'var(--warning)',
+            margin: '0 auto 20px'
+          }}>
+            <FiUserCheck size={32} />
+          </div>
+          <h3 className="form-title" style={{ fontSize: '24px' }}>Setup Complete!</h3>
+          <p className="form-subtitle" style={{ marginBottom: '24px', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+            {pendingMessage}
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/login')}>
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (validatingToken) {
     return (
