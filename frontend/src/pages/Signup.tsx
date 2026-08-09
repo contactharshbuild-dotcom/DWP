@@ -106,7 +106,7 @@ const Signup: React.FC = () => {
       const { token: userToken, user, organization } = response.data;
 
       dispatch(setCredentials({ token: userToken, user, organization }));
-      navigate('/');
+      navigate('/select-plan');
     } catch (err: any) {
       const errMsg = err.response?.data?.message || 'Registration failed. Please check details.';
       dispatch(setError(errMsg));

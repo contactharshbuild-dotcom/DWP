@@ -15,6 +15,7 @@ import ModuleSession from './module-session.model.js';
 import SessionAttendance from './session-attendance.model.js';
 import MaterialBankFolder from './material-bank-folder.model.js';
 import MaterialBankItem from './material-bank-item.model.js';
+import SubscriptionPlan from './subscription-plan.model.js';
 
 const db = {
   sequelize,
@@ -33,12 +34,17 @@ const db = {
   ModuleSession,
   SessionAttendance,
   MaterialBankFolder,
-  MaterialBankItem
+  MaterialBankItem,
+  SubscriptionPlan
 };
 
 // Establish relationships
 Organization.hasMany(User, { foreignKey: 'organization_id', as: 'users' });
 User.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+// SubscriptionPlan relationships
+Organization.belongsTo(SubscriptionPlan, { foreignKey: 'subscription_plan_id', as: 'subscriptionPlan' });
+SubscriptionPlan.hasMany(Organization, { foreignKey: 'subscription_plan_id', as: 'organizations' });
 
 Classroom.hasMany(ClassroomModule, { foreignKey: 'classroom_id', as: 'modules', onDelete: 'CASCADE' });
 ClassroomModule.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
@@ -155,7 +161,8 @@ export {
   ModuleSession,
   SessionAttendance,
   MaterialBankFolder,
-  MaterialBankItem
+  MaterialBankItem,
+  SubscriptionPlan
 };
 export default db;
 

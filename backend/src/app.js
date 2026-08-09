@@ -15,6 +15,7 @@ import sessionRoutes from "./routes/session.routes.js";
 import quizBuilderRoutes from "./quiz-builder/quiz-builder.routes.js";
 import organizationRoutes from "./routes/organization.routes.js";
 import materialBankRoutes from "./routes/material-bank.routes.js";
+import subscriptionPlanRoutes from "./routes/subscription-plan.routes.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/resources", resourceRoutes);
 app.use("/api/mcq", mcqRoutes);
 app.use("/api/practical", practicalRoutes);
 app.use("/api/masteradmin", masteradminRoutes);
+app.use("/api/subscription-plans", subscriptionPlanRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/quiz-builder", quizBuilderRoutes);
 app.use("/api/organization", organizationRoutes);

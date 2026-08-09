@@ -16,16 +16,18 @@ const MasterAdminLogin = lazy(() => import('./pages/MasterAdminLogin'));
 const MasterAdminDashboard = lazy(() => import('./pages/MasterAdminDashboard'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
 const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
+const SelectPlan = lazy(() => import('./pages/SelectPlan'));
 const QuizBuilderPage = lazy(() => import('./quiz-builder/QuizBuilderPage').then(module => ({ default: module.QuizBuilderPage })));
 const MaterialBankPage = lazy(() => import('./material-bank/MaterialBankPage').then(module => ({ default: module.MaterialBankPage })));
 
 // Protected Route wrapper component
 interface ProtectedRouteProps {
   children: React.ReactElement;
+  allowNoSubscription?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token, user } = useSelector((state: RootState) => state.auth);
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowNoSubscription = false }) => {
+  const { token, user, organization } = useSelector((state: RootState) => state.auth);
   
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -33,6 +35,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
   if (user?.role === 'masteradmin') {
     return <Navigate to="/master-admin" replace />;
+  }
+
+  // Enforce subscription plan selection for client organization users
+  const hasPlan = Boolean(organization?.subscription_plan_id || organization?.subscriptionPlan);
+  if (!hasPlan && !allowNoSubscription) {
+    return <Navigate to="/select-plan" replace />;
   }
   
   return children;
@@ -44,12 +52,18 @@ interface PublicRouteProps {
 }
 
 const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
-  const { token, user } = useSelector((state: RootState) => state.auth);
+  const { token, user, organization } = useSelector((state: RootState) => state.auth);
   
   if (token) {
     if (user?.role === 'masteradmin') {
       return <Navigate to="/master-admin" replace />;
     }
+
+    const hasPlan = Boolean(organization?.subscription_plan_id || organization?.subscriptionPlan);
+    if (!hasPlan) {
+      return <Navigate to="/select-plan" replace />;
+    }
+
     return <Navigate to="/" replace />;
   }
   
@@ -147,6 +161,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <OrganizationProfile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/select-plan"
+              element={
+                <ProtectedRoute allowNoSubscription={true}>
+                  <SelectPlan />
                 </ProtectedRoute>
               }
             />

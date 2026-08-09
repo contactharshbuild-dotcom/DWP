@@ -20,6 +20,10 @@ export interface Organization {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  subscription_plan_id?: number | null;
+  subscriptionPlan?: any;
+  billing_cycle?: string | null;
+  subscription_status?: string | null;
 }
 
 interface AuthState {

@@ -94,7 +94,11 @@ export const signup = async (req, res) => {
         name: organization.name,
         slug: organization.slug,
         logo_url: organization.logo_url,
-        logoUrl: organization.logo_url
+        logoUrl: organization.logo_url,
+        subscription_plan_id: organization.subscription_plan_id || null,
+        billing_cycle: organization.billing_cycle || 'monthly',
+        subscription_status: organization.subscription_status || null,
+        subscriptionPlan: null
       },
       user: {
         id: user.id,
@@ -125,7 +129,9 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: 'Email or phone and password are required.' });
     }
 
-    // Find user and include organization details (search email, phone, or username)
+    const { SubscriptionPlan } = await import('../models/index.js');
+
+    // Find user and include organization details & subscription plan
     const user = await User.findOne({
       where: {
         [Op.or]: [
@@ -137,7 +143,10 @@ export const login = async (req, res) => {
       include: [{
         model: Organization,
         as: 'organization',
-        attributes: ['id', 'name', 'slug', 'status', 'logo_url', 'email', 'phone', 'address']
+        include: [{
+          model: SubscriptionPlan,
+          as: 'subscriptionPlan'
+        }]
       }]
     });
 

@@ -1,15 +1,21 @@
-import { Organization, User } from '../models/index.js';
+import { Organization, User, SubscriptionPlan } from '../models/index.js';
 
 export const getOrganizations = async (req, res) => {
   try {
     const organizations = await Organization.findAll({
-      include: [{
-        model: User,
-        as: 'users',
-        where: { role: 'admin' },
-        required: false,
-        attributes: ['name', 'email', 'phone']
-      }],
+      include: [
+        {
+          model: User,
+          as: 'users',
+          where: { role: 'admin' },
+          required: false,
+          attributes: ['name', 'email', 'phone']
+        },
+        {
+          model: SubscriptionPlan,
+          as: 'subscriptionPlan'
+        }
+      ],
       order: [['created_at', 'DESC']]
     });
 
@@ -27,7 +33,12 @@ export const getOrganizations = async (req, res) => {
         createdAt: org.created_at,
         adminName: admin ? admin.name : 'N/A',
         adminEmail: admin ? admin.email : 'N/A',
-        adminPhone: admin ? admin.phone : 'N/A'
+        adminPhone: admin ? admin.phone : 'N/A',
+        subscription_plan_id: org.subscription_plan_id,
+        subscriptionPlan: org.subscriptionPlan,
+        billing_cycle: org.billing_cycle || 'monthly',
+        subscription_status: org.subscription_status || 'active',
+        subscription_expires_at: org.subscription_expires_at
       };
     });
 
