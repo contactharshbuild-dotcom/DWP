@@ -20,7 +20,7 @@ export const authenticate = async (req, res, next) => {
       include: [{
         model: Organization,
         as: 'organization',
-        attributes: ['id', 'name', 'status']
+        attributes: ['id', 'name', 'slug', 'status', 'logo_url']
       }]
     });
 
@@ -39,10 +39,12 @@ export const authenticate = async (req, res, next) => {
     // Attach decoded info and user to request object
     req.user = {
       id: user.id,
-      organizationId: user.organization_id,
+      organizationId: user.organization_id || user.organization?.id,
+      organization_id: user.organization_id || user.organization?.id,
       role: user.role,
       email: user.email,
-      name: user.name
+      name: user.name,
+      organization: user.organization
     };
 
     next();

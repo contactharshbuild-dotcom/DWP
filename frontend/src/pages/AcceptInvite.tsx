@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { FiLock, FiUserCheck, FiAlertCircle, FiUser, FiMail } from 'react-icons/fi';
+import { FiLock, FiUserCheck, FiAlertCircle, FiUser, FiMail, FiPhone } from 'react-icons/fi';
 import type { RootState } from '../store';
 import { setLoading, setError, setCredentials, logout } from '../store/authSlice';
 import api from '../services/api';
@@ -14,24 +14,26 @@ const AcceptInvite: React.FC = () => {
   const [teacherName, setTeacherName] = useState('');
   const [teacherEmail, setTeacherEmail] = useState('');
   const [orgName, setOrgName] = useState('');
+  const [invitedRole, setInvitedRole] = useState('');
   
   // Form state
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validatingToken, setValidatingToken] = useState(true);
   const [tokenValidationError, setTokenValidationError] = useState<string | null>(null);
-
+ 
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { token: authSessionToken, loading, error } = useSelector((state: RootState) => state.auth);
-
+ 
   // If already logged in, log out to allow accepting invitation
   useEffect(() => {
     if (authSessionToken) {
       dispatch(logout());
     }
   }, [authSessionToken, dispatch]);
-
+ 
   // Validate token on mount
   useEffect(() => {
     const validateToken = async () => {
@@ -40,11 +42,12 @@ const AcceptInvite: React.FC = () => {
         setValidatingToken(false);
         return;
       }
-
+ 
       try {
         const response = await api.get(`/invitations/details?token=${token}`);
         setTeacherName(response.data.name);
         setTeacherEmail(response.data.email);
+        setInvitedRole(response.data.role || 'teacher');
         setOrgName(response.data.organizationName);
       } catch (err: any) {
         const msg = err.response?.data?.message || 'Invalid or expired invitation link.';
@@ -53,38 +56,54 @@ const AcceptInvite: React.FC = () => {
         setValidatingToken(false);
       }
     };
-
+ 
     validateToken();
     dispatch(setError(null));
   }, [token, dispatch]);
+ 
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+ 
     if (!password || !confirmPassword) {
       dispatch(setError('Please enter and confirm your password.'));
       return;
     }
-
+ 
     if (password !== confirmPassword) {
       dispatch(setError('Passwords do not match.'));
       return;
     }
-
+ 
     if (password.length < 6) {
       dispatch(setError('Password must be at least 6 characters long.'));
       return;
     }
 
+    if (invitedRole === 'student' && !phone) {
+      dispatch(setError('Phone number is required.'));
+      return;
+    }
+ 
     dispatch(setLoading(true));
     try {
       const response = await api.post('/invitations/accept', {
         token,
-        password
+        password,
+        phone: invitedRole === 'student' ? phone : undefined
       });
+ 
+      if (response.data.pendingApproval) {
+        setIsPendingApproval(true);
+        setPendingMessage(response.data.message || 'Account setup complete! Your request is pending approval by the administrator.');
+        dispatch(setLoading(false));
+        return;
+      }
 
       const { token: loginToken, user, organization } = response.data;
-
+ 
       // Set credentials to authenticate user
       dispatch(setCredentials({ token: loginToken, user, organization }));
       navigate('/');
@@ -93,6 +112,35 @@ const AcceptInvite: React.FC = () => {
       dispatch(setError(msg));
     }
   };
+
+  if (isPendingApproval) {
+    return (
+      <div className="auth-page-wrapper">
+        <div className="glass-card" style={{ textAlign: 'center' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            borderRadius: '50%', 
+            background: 'rgba(245, 158, 11, 0.15)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            color: 'var(--warning)',
+            margin: '0 auto 20px'
+          }}>
+            <FiUserCheck size={32} />
+          </div>
+          <h3 className="form-title" style={{ fontSize: '24px' }}>Setup Complete!</h3>
+          <p className="form-subtitle" style={{ marginBottom: '24px', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+            {pendingMessage}
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/login')}>
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (validatingToken) {
     return (
@@ -135,7 +183,11 @@ const AcceptInvite: React.FC = () => {
     <div className="auth-page-wrapper">
       <div className="glass-card">
         <h2 className="form-title">Join {orgName}</h2>
-        <p className="form-subtitle">Create your teacher account password to get started</p>
+        <p className="form-subtitle">
+          {invitedRole === 'student' 
+            ? 'Create your student account to get started' 
+            : 'Create your teacher account password to get started'}
+        </p>
 
         {error && (
           <div className="alert alert-error">
@@ -172,6 +224,24 @@ const AcceptInvite: React.FC = () => {
               <FiMail className="input-icon" />
             </div>
           </div>
+
+          {invitedRole === 'student' && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="phone">Phone Number *</label>
+              <div className="input-wrapper">
+                <input
+                  className="form-input"
+                  type="tel"
+                  id="phone"
+                  placeholder="e.g. +1234567890"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                />
+                <FiPhone className="input-icon" />
+              </div>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label" htmlFor="password">Set Password *</label>

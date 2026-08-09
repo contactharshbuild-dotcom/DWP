@@ -10,6 +10,12 @@ import McqQuestion from './mcq-question.model.js';
 import McqAttempt from './mcq-attempt.model.js';
 import PracticalExam from './practical-exam.model.js';
 import PracticalSubmission from './practical-submission.model.js';
+import ClassroomModule from './classroom-module.model.js';
+import ModuleSession from './module-session.model.js';
+import SessionAttendance from './session-attendance.model.js';
+import MaterialBankFolder from './material-bank-folder.model.js';
+import MaterialBankItem from './material-bank-item.model.js';
+import SubscriptionPlan from './subscription-plan.model.js';
 
 const db = {
   sequelize,
@@ -23,12 +29,28 @@ const db = {
   McqQuestion,
   McqAttempt,
   PracticalExam,
-  PracticalSubmission
+  PracticalSubmission,
+  ClassroomModule,
+  ModuleSession,
+  SessionAttendance,
+  MaterialBankFolder,
+  MaterialBankItem,
+  SubscriptionPlan
 };
 
 // Establish relationships
 Organization.hasMany(User, { foreignKey: 'organization_id', as: 'users' });
 User.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+// SubscriptionPlan relationships
+Organization.belongsTo(SubscriptionPlan, { foreignKey: 'subscription_plan_id', as: 'subscriptionPlan' });
+SubscriptionPlan.hasMany(Organization, { foreignKey: 'subscription_plan_id', as: 'organizations' });
+
+Classroom.hasMany(ClassroomModule, { foreignKey: 'classroom_id', as: 'modules', onDelete: 'CASCADE' });
+ClassroomModule.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
+ClassroomModule.hasMany(ModuleSession, { foreignKey: 'module_id', as: 'sessions', onDelete: 'CASCADE' });
+ModuleSession.belongsTo(ClassroomModule, { foreignKey: 'module_id', as: 'module' });
 
 Organization.hasMany(Classroom, { foreignKey: 'organization_id', as: 'classrooms' });
 Classroom.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
@@ -47,6 +69,9 @@ User.belongsToMany(Classroom, {
   as: 'classrooms' 
 });
 
+ClassroomTeacher.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+ClassroomTeacher.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
+
 // Resources relationships
 Classroom.hasMany(ClassroomResource, { foreignKey: 'classroom_id', as: 'resources', onDelete: 'CASCADE' });
 ClassroomResource.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
@@ -61,6 +86,9 @@ ClassroomFolder.hasMany(ClassroomResource, { foreignKey: 'folder_id', as: 'resou
 ClassroomResource.belongsTo(ClassroomFolder, { foreignKey: 'folder_id', as: 'folder' });
 
 // MCQ relationships
+Organization.hasMany(McqTest, { foreignKey: 'organization_id', as: 'organizationQuizzes', onDelete: 'CASCADE' });
+McqTest.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
 Classroom.hasMany(McqTest, { foreignKey: 'classroom_id', as: 'mcqTests', onDelete: 'CASCADE' });
 McqTest.belongsTo(Classroom, { foreignKey: 'classroom_id', as: 'classroom' });
 
@@ -83,6 +111,32 @@ PracticalSubmission.belongsTo(PracticalExam, { foreignKey: 'practical_id', as: '
 User.hasMany(PracticalSubmission, { foreignKey: 'user_id', as: 'practicalSubmissions', onDelete: 'CASCADE' });
 PracticalSubmission.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// Session Attendance relationships
+ModuleSession.hasMany(SessionAttendance, { foreignKey: 'session_id', as: 'attendances', onDelete: 'CASCADE' });
+SessionAttendance.belongsTo(ModuleSession, { foreignKey: 'session_id', as: 'session' });
+
+User.hasMany(SessionAttendance, { foreignKey: 'student_id', as: 'sessionAttendances', onDelete: 'CASCADE' });
+SessionAttendance.belongsTo(User, { foreignKey: 'student_id', as: 'student' });
+SessionAttendance.belongsTo(User, { foreignKey: 'marked_by', as: 'marker' });
+
+// Material Bank relationships
+Organization.hasMany(MaterialBankFolder, { foreignKey: 'organization_id', as: 'materialBankFolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+User.hasMany(MaterialBankFolder, { foreignKey: 'created_by', as: 'materialBankFolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+
+MaterialBankFolder.hasMany(MaterialBankFolder, { foreignKey: 'parent_id', as: 'subfolders', onDelete: 'CASCADE' });
+MaterialBankFolder.belongsTo(MaterialBankFolder, { foreignKey: 'parent_id', as: 'parent' });
+
+Organization.hasMany(MaterialBankItem, { foreignKey: 'organization_id', as: 'materialBankItems', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+MaterialBankFolder.hasMany(MaterialBankItem, { foreignKey: 'folder_id', as: 'items', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(MaterialBankFolder, { foreignKey: 'folder_id', as: 'folder' });
+
+User.hasMany(MaterialBankItem, { foreignKey: 'uploaded_by', as: 'materialBankItems', onDelete: 'CASCADE' });
+MaterialBankItem.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -102,6 +156,13 @@ export {
   McqQuestion,
   McqAttempt,
   PracticalExam,
-  PracticalSubmission
+  PracticalSubmission,
+  ClassroomModule,
+  ModuleSession,
+  SessionAttendance,
+  MaterialBankFolder,
+  MaterialBankItem,
+  SubscriptionPlan
 };
 export default db;
+

@@ -11,7 +11,8 @@ import {
   getMcqAttemptDetails, 
   getMcqTestAnalytics, 
   getQuestionBank, 
-  addQuestionToBank 
+  addQuestionToBank,
+  assignMcqTest 
 } from '../controllers/mcq.controller.js';
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.use(authenticate);
 router.post('/tests', authorizeRoles('admin', 'teacher'), createMcqTest);
 router.post('/tests/:testId/clone', authorizeRoles('admin', 'teacher'), cloneMcqTest);
 router.get('/tests/:testId/analytics', authorizeRoles('admin', 'teacher'), getMcqTestAnalytics);
+router.put('/tests/:testId/assign', authorizeRoles('admin', 'teacher'), assignMcqTest);
 
 // Question Bank CRUD (Teachers/Admins)
 router.get('/bank', authorizeRoles('admin', 'teacher'), getQuestionBank);

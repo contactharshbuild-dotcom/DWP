@@ -7,7 +7,10 @@ import {
   deleteResource,
   addLinkResource,
   createFolder,
-  deleteFolder
+  deleteFolder,
+  assignResource,
+  assignFolder,
+  importFromMaterialBank
 } from '../controllers/resource.controller.js';
 
 const router = express.Router();
@@ -17,12 +20,15 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB file limit (FR-MAT-04)
+    fileSize: 5 * 1024 * 1024 // 5MB server-side limit
   }
 });
 
 // Guard all resource endpoints with authentication
 router.use(authenticate);
+
+// Import from Material Bank (reuses file keys without re-uploading)
+router.post('/import-material-bank', importFromMaterialBank);
 
 // Upload resource
 router.post('/upload', upload.single('file'), uploadResource);
@@ -36,8 +42,12 @@ router.get('/classroom/:classroomId', getClassroomResources);
 // Delete a resource
 router.delete('/:resourceId', deleteResource);
 
+// Assign resource
+router.put('/:resourceId/assign', assignResource);
+
 // Folders endpoints
 router.post('/folders', createFolder);
 router.delete('/folders/:folderId', deleteFolder);
+router.put('/folders/:folderId/assign', assignFolder);
 
 export default router;

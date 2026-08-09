@@ -106,7 +106,7 @@ const Signup: React.FC = () => {
       const { token: userToken, user, organization } = response.data;
 
       dispatch(setCredentials({ token: userToken, user, organization }));
-      navigate('/');
+      navigate('/select-plan');
     } catch (err: any) {
       const errMsg = err.response?.data?.message || 'Registration failed. Please check details.';
       dispatch(setError(errMsg));
@@ -116,8 +116,16 @@ const Signup: React.FC = () => {
   return (
     <div className="auth-page-wrapper">
       <div className="glass-card wide">
-        <h2 className="form-title">Create LMS Organization</h2>
-        <p className="form-subtitle">Set up your multi-tenant portal and owner account</p>
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <img 
+            src="/dwp-logo.png" 
+            alt="DWP Logo" 
+            className="dwp-auth-header-logo" 
+            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
+          <h2 className="form-title" style={{ margin: 0 }}>Create LMS Organization</h2>
+          <p className="form-subtitle">Set up your multi-tenant portal and owner account</p>
+        </div>
 
         {error && (
           <div className="alert alert-error">
@@ -161,8 +169,8 @@ const Signup: React.FC = () => {
                 />
                 <FiLink className="input-icon" />
               </div>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                Your URL: localhost:5173/org/{slug || 'slug'}
+              <span style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                Your URL: {typeof window !== 'undefined' ? window.location.host : 'localhost:5173'}/org/{slug || 'slug'}
               </span>
             </div>
           </div>

@@ -73,6 +73,12 @@ if (!isS3Configured && !isDriveConfigured) {
  * @returns {Promise<{ fileId: string, webViewLink: string }>}
  */
 export const uploadFile = async (fileBuffer, fileName, mimeType) => {
+  // Enforce server-side 5MB limit for uploads (S3/Drive/Local)
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB Limit
+  if (fileBuffer && fileBuffer.length > MAX_FILE_SIZE) {
+    throw new Error('File size exceeds the maximum server-side limit of 5MB.');
+  }
+
   // 1. Try AWS S3
   if (isS3Configured && s3Client) {
     try {
@@ -157,16 +163,24 @@ export const uploadFile = async (fileBuffer, fileName, mimeType) => {
  * @returns {Promise<void>}
  */
 export const deleteFile = async (fileId, driveLink) => {
+  const targetUrl = driveLink || (typeof fileId === 'string' && (fileId.startsWith('http://') || fileId.startsWith('https://') || fileId.startsWith('/uploads/')) ? fileId : null);
+
   // 1. Handle S3 deletion
-  if (driveLink && driveLink.includes('.s3.') && driveLink.includes('amazonaws.com')) {
+  if (targetUrl && targetUrl.includes('.s3.') && targetUrl.includes('amazonaws.com')) {
     if (isS3Configured && s3Client) {
       try {
-        await s3Client.send(new DeleteObjectCommand({
-          Bucket: s3BucketName,
-          Key: fileId
-        }));
-        console.log(`[Storage Service] Deleted from S3: ${fileId}`);
-        return;
+        let key = fileId;
+        if (!key || key.startsWith('http://') || key.startsWith('https://')) {
+          key = targetUrl.split('.amazonaws.com/')[1];
+        }
+        if (key) {
+          await s3Client.send(new DeleteObjectCommand({
+            Bucket: s3BucketName,
+            Key: key
+          }));
+          console.log(`[Storage Service] Deleted from S3: ${key}`);
+          return;
+        }
       } catch (error) {
         console.error('[Storage Service] Failed to delete from S3:', error.message);
       }
@@ -174,7 +188,7 @@ export const deleteFile = async (fileId, driveLink) => {
   }
 
   // 2. Handle Google Drive deletion
-  if (driveClient && !fileId.startsWith('mock_') && (!driveLink || (!driveLink.includes('.s3.') && !driveLink.startsWith('/uploads/')))) {
+  if (driveClient && fileId && !fileId.startsWith('mock_') && (!targetUrl || (!targetUrl.includes('.s3.') && !targetUrl.startsWith('/uploads/')))) {
     try {
       await driveClient.files.delete({ fileId });
       console.log(`[Storage Service] Deleted from Google Drive: ${fileId}`);
@@ -186,8 +200,9 @@ export const deleteFile = async (fileId, driveLink) => {
 
   // 3. Handle local deletion
   try {
-    if (driveLink && driveLink.startsWith('/uploads/')) {
-      const localFileName = path.basename(driveLink);
+    const localUrl = targetUrl || driveLink;
+    if (localUrl && localUrl.startsWith('/uploads/')) {
+      const localFileName = path.basename(localUrl);
       const localFilePath = path.join(uploadDir, localFileName);
       if (fs.existsSync(localFilePath)) {
         fs.unlinkSync(localFilePath);
@@ -196,6 +211,24 @@ export const deleteFile = async (fileId, driveLink) => {
     }
   } catch (error) {
     console.error('[Storage Service] Failed to delete local file:', error.message);
+  }
+};
+
+/**
+ * Safely delete an old image file (S3, Drive, or Local) given its URL
+ * @param {string} oldUrl 
+ * @returns {Promise<void>}
+ */
+export const deleteOldImage = async (oldUrl) => {
+  if (!oldUrl || typeof oldUrl !== 'string' || !oldUrl.trim()) return;
+  try {
+    let key = null;
+    if (oldUrl.includes('.s3.') && oldUrl.includes('.amazonaws.com/')) {
+      key = oldUrl.split('.amazonaws.com/')[1];
+    }
+    await deleteFile(key, oldUrl);
+  } catch (err) {
+    console.error('[Storage Service] Error deleting old image:', err.message);
   }
 };
 

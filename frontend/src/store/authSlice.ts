@@ -1,18 +1,29 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-interface User {
+export interface User {
   id: number;
   name: string;
   email: string;
   role: string;
   batch?: string | null;
+  profile_url?: string | null;
+  profileUrl?: string | null;
 }
 
-interface Organization {
+export interface Organization {
   id: number;
   name: string;
   slug: string;
   status: string;
+  logo_url?: string | null;
+  logoUrl?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  subscription_plan_id?: number | null;
+  subscriptionPlan?: any;
+  billing_cycle?: string | null;
+  subscription_status?: string | null;
 }
 
 interface AuthState {
@@ -62,6 +73,18 @@ const authSlice = createSlice({
       localStorage.setItem('user', JSON.stringify(user));
       localStorage.setItem('organization', JSON.stringify(organization));
     },
+    updateOrganization(state, action: PayloadAction<Partial<Organization>>) {
+      if (state.organization) {
+        state.organization = { ...state.organization, ...action.payload };
+        localStorage.setItem('organization', JSON.stringify(state.organization));
+      }
+    },
+    updateUserProfile(state, action: PayloadAction<Partial<User>>) {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+        localStorage.setItem('user', JSON.stringify(state.user));
+      }
+    },
     logout(state) {
       state.token = null;
       state.user = null;
@@ -76,5 +99,13 @@ const authSlice = createSlice({
   }
 });
 
-export const { setLoading, setError, setCredentials, logout } = authSlice.actions;
+export const { 
+  setLoading, 
+  setError, 
+  setCredentials, 
+  updateOrganization, 
+  updateUserProfile, 
+  logout 
+} = authSlice.actions;
+
 export default authSlice.reducer;

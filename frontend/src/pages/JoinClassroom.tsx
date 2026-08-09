@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
   FiBookOpen, 
@@ -23,6 +23,10 @@ const JoinClassroom: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { token, user } = useSelector((state: RootState) => state.auth);
+ 
+  // Read search params for role override
+  const [searchParams] = useSearchParams();
+  const queryRole = searchParams.get('role');
 
   // General States
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +56,9 @@ const JoinClassroom: React.FC = () => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
   // Step 4: Role Selection
-  const [selectedRole, setSelectedRole] = useState<'teacher' | 'student' | null>('teacher');
+  const [selectedRole, setSelectedRole] = useState<'teacher' | 'student' | null>(
+    queryRole === 'student' || queryRole === 'teacher' ? queryRole : 'teacher'
+  );
 
   // Step 5: Profile Info
   const [profileName, setProfileName] = useState('');
@@ -61,7 +67,9 @@ const JoinClassroom: React.FC = () => {
   const [profileBatch, setProfileBatch] = useState('');
 
   // Login states
-  const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
+  const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>(
+    queryRole === 'student' ? 'password' : 'otp'
+  );
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginPhone, setLoginPhone] = useState('');
@@ -79,7 +87,7 @@ const JoinClassroom: React.FC = () => {
   // Status check for authenticated teachers on mount/token change
   useEffect(() => {
     const checkEnrollmentStatus = async () => {
-      if (!token || !classroomId || user?.role !== 'teacher') return;
+      if (!token || !classroomId || (user?.role !== 'teacher' && user?.role !== 'student')) return;
 
       setCheckingStatus(true);
       setError(null);
@@ -108,8 +116,8 @@ const JoinClassroom: React.FC = () => {
   const handleJoinRequest = async () => {
     if (!token) return;
 
-    if (user?.role !== 'teacher') {
-      setError('Only accounts with the "teacher" role are allowed to join classrooms.');
+    if (user?.role !== 'teacher' && user?.role !== 'student') {
+      setError('Only teachers and students are allowed to join classrooms.');
       return;
     }
 
@@ -210,7 +218,13 @@ const JoinClassroom: React.FC = () => {
         phone: regPhone,
         password: regPassword
       });
-      setWizardStep(4);
+      
+      if (queryRole === 'student' || queryRole === 'teacher') {
+        setSelectedRole(queryRole);
+        setWizardStep(5);
+      } else {
+        setWizardStep(4);
+      }
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Password registration failed.';
       setError(msg);
@@ -392,8 +406,8 @@ const JoinClassroom: React.FC = () => {
         </div>
 
         <h3 className="form-title" style={{ fontSize: '22px', marginBottom: '4px' }}>Classroom Join Request</h3>
-        <p className="form-subtitle" style={{ fontSize: '13px', marginBottom: '24px' }}>
-          Classroom ID: <strong style={{ color: 'var(--text-primary)' }}>{classroomId}</strong>
+        <p className="form-subtitle" style={{ fontSize: '13px', marginBottom: '24px', color: '#64748b' }}>
+          Classroom ID: <strong style={{ color: '#4f46e5', fontWeight: '700' }}>{classroomId}</strong>
         </p>
 
         {error && (
@@ -417,10 +431,10 @@ const JoinClassroom: React.FC = () => {
               <span className="spinner" style={{ width: '32px', height: '32px', borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--primary)' }}></span>
               <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Checking enrollment status...</span>
             </div>
-          ) : user?.role !== 'teacher' ? (
+          ) : (user?.role !== 'teacher' && user?.role !== 'student') ? (
             <div style={{ marginTop: '20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                You are currently logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role})</strong>. Only teachers can join classrooms.
+                You are currently logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role})</strong>. Only teachers and students can join classrooms.
               </p>
               <button className="btn btn-secondary" onClick={() => navigate('/')}>
                 <FiArrowLeft size={18} />
@@ -444,7 +458,7 @@ const JoinClassroom: React.FC = () => {
               </div>
               <h4 style={{ color: 'white', marginBottom: '8px' }}>Request Approved!</h4>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                Your join request has been accepted. You are now an active teacher in this classroom.
+                Your join request has been accepted. You are now an active {user?.role} in this classroom.
               </p>
               <button className="btn" onClick={() => navigate(`/classrooms/${resolvedClassroomDbId}`)}>
                 <span>Go to Classroom</span>
@@ -477,7 +491,7 @@ const JoinClassroom: React.FC = () => {
           ) : (
             <div style={{ marginTop: '20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                Logged in as <strong style={{ color: 'white' }}>{user?.name} (Teacher)</strong>. Click the button below to submit a join request.
+                Logged in as <strong style={{ color: 'white' }}>{user?.name} ({user?.role === 'teacher' ? 'Teacher' : 'Student'})</strong>. Click the button below to submit a join request.
               </p>
               <button className="btn" onClick={handleJoinRequest} disabled={submitting}>
                 {submitting ? <span className="spinner"></span> : <span>Request to Join Classroom</span>}
@@ -538,7 +552,7 @@ const JoinClassroom: React.FC = () => {
                   <button 
                     type="button" 
                     className="form-link"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: 0, color: '#4f46e5', fontWeight: 600 }}
                     onClick={() => setAuthTab('login')}
                   >
                     I already have an account
@@ -774,7 +788,19 @@ const JoinClassroom: React.FC = () => {
                 )}
 
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setWizardStep(4)} disabled={submitting}>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    style={{ flex: 1 }} 
+                    onClick={() => {
+                      if (queryRole === 'student' || queryRole === 'teacher') {
+                        setWizardStep(3);
+                      } else {
+                        setWizardStep(4);
+                      }
+                    }} 
+                    disabled={submitting}
+                  >
                     Back
                   </button>
                   <button className="btn" type="submit" style={{ flex: 2 }} disabled={submitting}>
@@ -827,20 +853,22 @@ const JoinClassroom: React.FC = () => {
         {/* Unauthenticated Login Flow */}
         {!token && authTab === 'login' && (
           <div>
-            {/* Tabsselectors (signup vs login toggle) */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px' }}>
+            {/* Main Tabs (Create Account vs Log In) */}
+            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px', marginBottom: '24px' }}>
               <button
                 type="button"
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  background: 'transparent',
+                  padding: '8px 16px',
+                  background: authTab === 'signup' ? '#ffffff' : 'transparent',
                   border: 'none',
-                  borderBottom: 'none',
-                  color: 'var(--text-secondary)',
+                  borderRadius: '8px',
+                  color: authTab === 'signup' ? '#4f46e5' : '#64748b',
                   fontWeight: '600',
                   cursor: 'pointer',
-                  fontSize: '14px'
+                  fontSize: '13.5px',
+                  boxShadow: authTab === 'signup' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                  transition: 'all 0.2s ease'
                 }}
                 onClick={() => { setError(null); setSuccessMsg(null); setAuthTab('signup'); setWizardStep(1); }}
               >
@@ -850,70 +878,76 @@ const JoinClassroom: React.FC = () => {
                 type="button"
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  background: 'transparent',
+                  padding: '8px 16px',
+                  background: authTab === 'login' ? '#ffffff' : 'transparent',
                   border: 'none',
-                  borderBottom: '2px solid var(--primary)',
-                  color: 'white',
+                  borderRadius: '8px',
+                  color: authTab === 'login' ? '#4f46e5' : '#64748b',
                   fontWeight: '600',
                   cursor: 'pointer',
-                  fontSize: '14px'
+                  fontSize: '13.5px',
+                  boxShadow: authTab === 'login' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                  transition: 'all 0.2s ease'
                 }}
               >
                 Log In
               </button>
             </div>
 
-            {/* Segmented controls for Login Methods */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '20px', backgroundColor: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '8px' }}>
-              <button
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: '6px 12px',
-                  background: loginMethod === 'otp' ? 'var(--primary)' : 'transparent',
-                  border: 'none',
-                  color: 'white',
-                  borderRadius: '6px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-                onClick={() => { setError(null); setSuccessMsg(null); setLoginMethod('otp'); }}
-              >
-                Teacher OTP Login
-              </button>
-              <button
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: '6px 12px',
-                  background: loginMethod === 'password' ? 'var(--primary)' : 'transparent',
-                  border: 'none',
-                  color: 'white',
-                  borderRadius: '6px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-                onClick={() => { setError(null); setSuccessMsg(null); setLoginMethod('password'); }}
-              >
-                Password Login
-              </button>
-            </div>
+            {/* Segmented controls for Login Methods (only show toggle if not student invite link) */}
+            {queryRole !== 'student' && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: loginMethod === 'otp' ? '#4f46e5' : 'transparent',
+                    border: 'none',
+                    color: loginMethod === 'otp' ? '#ffffff' : '#64748b',
+                    borderRadius: '6px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onClick={() => { setError(null); setSuccessMsg(null); setLoginMethod('otp'); }}
+                >
+                  Teacher OTP Login
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: loginMethod === 'password' ? '#4f46e5' : 'transparent',
+                    border: 'none',
+                    color: loginMethod === 'password' ? '#ffffff' : '#64748b',
+                    borderRadius: '6px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onClick={() => { setError(null); setSuccessMsg(null); setLoginMethod('password'); }}
+                >
+                  Password Login
+                </button>
+              </div>
+            )}
 
             {/* OTP Login Form */}
             {loginMethod === 'otp' && (
               <form onSubmit={handleVerifyLoginOtpAndJoin} style={{ textAlign: 'left' }}>
                 <div className="form-group">
                   <label className="form-label" htmlFor="loginPhone">Phone Number *</label>
-                  <div className="input-wrapper" style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div className="input-wrapper" style={{ flex: 1 }}>
                       <input
                         className="form-input"
                         type="tel"
                         id="loginPhone"
-                        placeholder="+1234567890"
+                        placeholder="e.g. +1234567890"
                         value={loginPhone}
                         onChange={(e) => setLoginPhone(e.target.value)}
                         required
@@ -925,7 +959,15 @@ const JoinClassroom: React.FC = () => {
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        style={{ flexShrink: 0, padding: '0 16px', margin: 0, height: '42px' }}
+                        style={{ 
+                          width: 'auto', 
+                          flexShrink: 0, 
+                          padding: '0 20px', 
+                          margin: 0, 
+                          height: '44px',
+                          whiteSpace: 'nowrap',
+                          fontSize: '13px'
+                        }}
                         onClick={handleSendLoginOtp}
                         disabled={submitting || !loginPhone}
                       >
@@ -952,8 +994,8 @@ const JoinClassroom: React.FC = () => {
                       <FiKey className="input-icon" />
                     </div>
                     {loginOtpHelp && (
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>
-                        🧪 Testing OTP: <strong style={{ color: 'white' }}>{loginOtpHelp}</strong>
+                      <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '6px' }}>
+                        🧪 Testing OTP: <strong style={{ color: '#4f46e5' }}>{loginOtpHelp}</strong>
                       </span>
                     )}
                   </div>

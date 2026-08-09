@@ -37,29 +37,34 @@ const McqQuestion = sequelize.define('McqQuestion', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  question_type: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'mcq'
+  },
   question_text: {
     type: DataTypes.TEXT,
     allowNull: false
   },
   option_a: {
     type: DataTypes.TEXT,
-    allowNull: false
+    allowNull: true
   },
   option_b: {
     type: DataTypes.TEXT,
-    allowNull: false
+    allowNull: true
   },
   option_c: {
     type: DataTypes.TEXT,
-    allowNull: false
+    allowNull: true
   },
   option_d: {
     type: DataTypes.TEXT,
-    allowNull: false
+    allowNull: true
   },
   correct_answer: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   explanation: {
     type: DataTypes.TEXT,

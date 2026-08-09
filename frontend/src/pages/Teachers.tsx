@@ -7,6 +7,9 @@ import {
   FiUser,
   FiClock
 } from 'react-icons/fi';
+import { useSelector } from 'react-redux';
+import { Navigate } from 'react-router-dom';
+import type { RootState } from '../store';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 
@@ -17,9 +20,17 @@ interface Teacher {
   status: string;
   created_at: string;
   invite_token: string | null;
+  profile_url?: string | null;
+  profileUrl?: string | null;
 }
 
 const Teachers: React.FC = () => {
+  const { user } = useSelector((state: RootState) => state.auth);
+
+  if (user?.role === 'student') {
+    return <Navigate to="/" replace />;
+  }
+
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +172,21 @@ const Teachers: React.FC = () => {
               <tbody>
                 {teachers.map((teacher) => (
                   <tr key={teacher.id}>
-                    <td style={{ fontWeight: '600' }}>{teacher.name}</td>
+                    <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {teacher.profile_url || teacher.profileUrl ? (
+                        <img 
+                          src={teacher.profile_url || teacher.profileUrl || ''} 
+                          alt={teacher.name} 
+                          className="teacher-avatar-thumb"
+                          onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
+                          {teacher.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                        </div>
+                      )}
+                      <span>{teacher.name}</span>
+                    </td>
                     <td>{teacher.email}</td>
                     <td>
                       {teacher.status === 'active' ? (
@@ -177,7 +202,7 @@ const Teachers: React.FC = () => {
                       {teacher.status === 'pending' && teacher.invite_token && (
                         <button 
                           className="btn-ld btn-ld-secondary btn-ld-small" 
-                          onClick={() => copyToClipboard(`http://localhost:5173/accept-invite?token=${teacher.invite_token}`)}
+                          onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
                         >
                           <FiCopy size={13} />
                           <span>Copy Link</span>

@@ -1,6 +1,7 @@
 import app from "./app.js";
 import sequelize from "./config/database.js";
 import dotenv from "dotenv";
+import { QuizCronService } from "./quiz-builder/quiz-cron.service.js";
 
 dotenv.config();
 
@@ -13,6 +14,7 @@ const startServer = async () =>{
 
   app.listen(PORT , () => {
     console.log(`Server is running on ${PORT}`);
+    QuizCronService.startCronJob();
   });
  }
  catch (error) {

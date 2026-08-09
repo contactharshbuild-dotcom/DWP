@@ -32,6 +32,14 @@ const PracticalExam = sequelize.define('PracticalExam', {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 100
+  },
+  batches: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  assigned_student_ids: {
+    type: DataTypes.JSON,
+    allowNull: true
   }
 }, {
   tableName: 'practical_exams',

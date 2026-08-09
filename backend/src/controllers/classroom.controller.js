@@ -50,6 +50,46 @@ export const createClassroom = async (req, res) => {
   }
 };
 
+// Delete a classroom (Admin only)
+export const deleteClassroom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organization_id = req.user?.organizationId;
+
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Only admins can delete classrooms.' });
+    }
+
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Clean up ClassroomTeacher junction table records first
+    await ClassroomTeacher.destroy({ where: { classroom_id: classroom.id } });
+
+    // Destroy the classroom record
+    await classroom.destroy();
+
+    return res.json({
+      success: true,
+      message: 'Classroom deleted successfully.'
+    });
+  } catch (error) {
+    console.error('Error in deleteClassroom:', error);
+    return res.status(500).json({
+      message: 'Internal server error while deleting classroom.',
+      error: error.message
+    });
+  }
+};
+
 // Get all classrooms for organization (accessible by admin and teacher)
 export const getClassrooms = async (req, res) => {
   try {
@@ -58,7 +98,7 @@ export const getClassrooms = async (req, res) => {
       include: [{
         model: User,
         as: 'teachers',
-        attributes: ['id', 'name', 'email', 'status'],
+        attributes: ['id', 'name', 'email', 'status', 'role', 'batch'],
         through: { attributes: ['status', 'role'] }
       }],
       order: [['created_at', 'DESC']]
@@ -109,7 +149,7 @@ export const getClassroomById = async (req, res) => {
       include: [{
         model: User,
         as: 'teachers',
-        attributes: ['id', 'name', 'email', 'status'],
+        attributes: ['id', 'name', 'email', 'status', 'batch', 'role'],
         through: { attributes: ['status', 'role'] } // Include join table status & role
       }]
     });
@@ -169,7 +209,8 @@ export const joinClassroom = async (req, res) => {
     await ClassroomTeacher.create({
       classroom_id: classroom.id,
       user_id: req.user.id,
-      status: 'pending'
+      status: 'pending',
+      role: req.user.role === 'teacher' ? 'co-teacher' : req.user.role
     });
 
     return res.status(201).json({
@@ -226,6 +267,9 @@ export const approveTeacher = async (req, res) => {
     // Update status to approved
     await relation.update({ status: 'approved' });
 
+    // Also activate User account status
+    await User.update({ status: 'active' }, { where: { id: teacherId } });
+
     return res.json({ message: 'Teacher approved successfully.' });
   } catch (error) {
     console.error('Error in approveTeacher:', error);
@@ -263,6 +307,18 @@ export const rejectTeacher = async (req, res) => {
 
     if (deletedCount === 0) {
       return res.status(404).json({ message: 'Teacher association not found.' });
+    }
+
+    // Check if teacher has any remaining approved classrooms
+    const remainingApproved = await ClassroomTeacher.findOne({
+      where: {
+        user_id: teacherId,
+        status: 'approved'
+      }
+    });
+
+    if (!remainingApproved) {
+      await User.update({ status: 'pending' }, { where: { id: teacherId } });
     }
 
     return res.json({ message: 'Teacher removed/rejected successfully.' });
@@ -315,14 +371,94 @@ export const upgradeTeacherRole = async (req, res) => {
     // Update role to teacher
     await relation.update({ role: 'teacher' });
 
-    return res.json({ 
-      message: 'Teacher role upgraded successfully.', 
-      relation 
-    });
+    return res.json({ message: 'Teacher upgraded to full Teacher role successfully.' });
   } catch (error) {
     console.error('Error in upgradeTeacherRole:', error);
     return res.status(500).json({
       message: 'Internal server error while upgrading teacher role.',
+      error: error.message
+    });
+  }
+};
+
+// Assign existing organization teacher(s) to classroom (Admin only)
+export const assignTeacherToClassroom = async (req, res) => {
+  try {
+    const { id } = req.params; // classroom PK
+    let { teacherId, teacherIds, role } = req.body; // target teacher user ID(s) & assigned role (default: co-teacher)
+
+    // Normalize teacherIds array
+    let idsToAssign = [];
+    if (Array.isArray(teacherIds) && teacherIds.length > 0) {
+      idsToAssign = teacherIds.map(tId => parseInt(tId)).filter(Boolean);
+    } else if (teacherId) {
+      idsToAssign = [parseInt(teacherId)];
+    }
+
+    if (idsToAssign.length === 0) {
+      return res.status(400).json({ message: 'At least one Teacher ID is required.' });
+    }
+
+    // 1. Verify classroom belongs to admin's organization
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // 2. Verify target users exist in admin's organization and are teachers
+    const teacherUsers = await User.findAll({
+      where: {
+        id: idsToAssign,
+        organization_id: req.user.organizationId,
+        role: 'teacher'
+      }
+    });
+
+    if (teacherUsers.length === 0) {
+      return res.status(404).json({ message: 'No valid teachers found in your organization.' });
+    }
+
+    // 3. Process each teacher assignment
+    for (const teacherUser of teacherUsers) {
+      const [relation, created] = await ClassroomTeacher.findOrCreate({
+        where: {
+          classroom_id: id,
+          user_id: teacherUser.id
+        },
+        defaults: {
+          classroom_id: id,
+          user_id: teacherUser.id,
+          status: 'approved',
+          role: role || 'co-teacher'
+        }
+      });
+
+      if (!created) {
+        await relation.update({
+          status: 'approved',
+          role: role || relation.role || 'co-teacher'
+        });
+      }
+
+      if (teacherUser.status !== 'active') {
+        await teacherUser.update({ status: 'active' });
+      }
+    }
+
+    return res.json({
+      message: `${teacherUsers.length} teacher(s) assigned to classroom successfully as ${role || 'co-teacher'}.`
+    });
+
+  } catch (error) {
+    console.error('Error in assignTeacherToClassroom:', error);
+    return res.status(500).json({
+      message: 'Internal server error while assigning teachers to classroom.',
       error: error.message
     });
   }
@@ -543,13 +679,15 @@ export const signupStep4Profile = async (req, res) => {
       return res.status(404).json({ message: 'Classroom not found.' });
     }
 
+    const isPendingTeacher = (role === 'teacher');
+
     // Update user status, profile details, role, and batch
     await user.update({
       name,
       username,
       email,
       role,
-      status: 'active',
+      status: isPendingTeacher ? 'pending' : 'active',
       batch: batch || null
     });
 
@@ -566,10 +704,18 @@ export const signupStep4Profile = async (req, res) => {
         await ClassroomTeacher.create({
           classroom_id: classroom.id,
           user_id: user.id,
-          status: role === 'student' ? 'approved' : 'pending',
-          role: role
+          status: 'pending',
+          role: role === 'teacher' ? 'co-teacher' : role
         });
       }
+    }
+
+    if (isPendingTeacher) {
+      return res.status(201).json({
+        success: true,
+        pendingApproval: true,
+        message: 'Onboarding details submitted! Your request to join the classroom is pending approval by the administrator. You will be able to log in once an admin approves your request.'
+      });
     }
 
     // Generate JWT token for immediate login
@@ -653,5 +799,240 @@ export const getClassroomJoinStatus = async (req, res) => {
       message: 'Internal server error while checking join status.',
       error: error.message
     });
+  }
+};
+
+// Invite Student to Classroom
+export const inviteStudent = async (req, res) => {
+  try {
+    const { id } = req.params; // classroom primary key ID
+    const { name, email, batch } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ message: 'Name and email are required.' });
+    }
+
+    // Verify classroom exists
+    const classroom = await Classroom.findByPk(id);
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Check if user is teacher, verify they are in this classroom
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    // Check if user with this email already exists
+    let user = await User.findOne({ where: { email } });
+    let inviteToken = null;
+    let inviteLink = '';
+
+    if (user) {
+      // If user exists, they must be a student to join
+      if (user.role !== 'student') {
+        return res.status(400).json({ message: 'This email is already registered as a non-student account.' });
+      }
+
+      // Check if they are already in the classroom
+      const existingRelation = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: user.id }
+      });
+
+      if (existingRelation) {
+        return res.status(400).json({ message: 'Student is already enrolled in this classroom.' });
+      }
+
+      // Link to classroom directly (auto-approved since invited)
+      await ClassroomTeacher.create({
+        classroom_id: id,
+        user_id: user.id,
+        status: 'approved',
+        role: 'student'
+      });
+
+      // Update their batch if specified
+      if (batch) {
+        await user.update({ batch });
+      }
+    } else {
+      // User doesn't exist. Generate invite token and expiry (7 days)
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      // Create a dummy password since it's required
+      const randomDummyPass = crypto.randomBytes(16).toString('hex');
+      const salt = await bcrypt.genSalt(10);
+      const hashedDummyPassword = await bcrypt.hash(randomDummyPass, salt);
+
+      // Create pending student user
+      user = await User.create({
+        organization_id: classroom.organization_id,
+        name,
+        email,
+        password: hashedDummyPassword,
+        role: 'student',
+        status: 'pending',
+        batch: batch || null,
+        invite_token: token,
+        invite_expires: expiry
+      });
+
+      // Create ClassroomTeacher approved mapping
+      await ClassroomTeacher.create({
+        classroom_id: id,
+        user_id: user.id,
+        status: 'approved',
+        role: 'student'
+      });
+
+      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+      inviteToken = token;
+      inviteLink = `${frontendUrl}/accept-invite?token=${token}`;
+    }
+
+    return res.status(201).json({
+      message: 'Student invited successfully.',
+      student: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+        batch: user.batch
+      },
+      inviteLink
+    });
+
+  } catch (error) {
+    console.error('Error in inviteStudent:', error);
+    return res.status(500).json({
+      message: 'Internal server error while inviting student.',
+      error: error.message
+    });
+  }
+};
+
+// Remove Student from Classroom
+export const removeStudent = async (req, res) => {
+  try {
+    const { id, studentId } = req.params;
+
+    // Verify classroom exists
+    const classroom = await Classroom.findByPk(id);
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Verify user authorization: admin, or approved teacher of this classroom
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    // Delete association
+    const deletedCount = await ClassroomTeacher.destroy({
+      where: {
+        classroom_id: id,
+        user_id: studentId,
+        role: 'student'
+      }
+    });
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ message: 'Student not found in this classroom.' });
+    }
+
+    return res.json({ message: 'Student removed successfully.' });
+  } catch (error) {
+    console.error('Error in removeStudent:', error);
+    return res.status(500).json({
+      message: 'Internal server error while removing student.',
+      error: error.message
+    });
+  }
+};
+
+export const approveStudent = async (req, res) => {
+  try {
+    const { id, studentId } = req.params;
+
+    // Verify classroom
+    const classroom = await Classroom.findByPk(id);
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Verify user authorization: admin, or approved teacher of this classroom
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    const relation = await ClassroomTeacher.findOne({
+      where: { classroom_id: id, user_id: studentId, role: 'student' }
+    });
+
+    if (!relation) {
+      return res.status(404).json({ message: 'Student join request not found.' });
+    }
+
+    await relation.update({ status: 'approved' });
+
+    return res.json({ message: 'Student join request approved successfully.' });
+  } catch (error) {
+    console.error('Error in approveStudent:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+  }
+};
+
+export const rejectStudent = async (req, res) => {
+  try {
+    const { id, studentId } = req.params;
+
+    // Verify classroom
+    const classroom = await Classroom.findByPk(id);
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Verify authorization
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    const deletedCount = await ClassroomTeacher.destroy({
+      where: {
+        classroom_id: id,
+        user_id: studentId,
+        role: 'student'
+      }
+    });
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ message: 'Student request not found.' });
+    }
+
+    return res.json({ message: 'Student request rejected successfully.' });
+  } catch (error) {
+    console.error('Error in rejectStudent:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };

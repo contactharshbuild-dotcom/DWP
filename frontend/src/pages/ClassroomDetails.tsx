@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import { 
+import {
   FiArrowLeft, 
   FiPlus, 
   FiTrash2, 
@@ -10,36 +10,37 @@ import {
   FiCheck, 
   FiCopy, 
   FiBookOpen, 
-  FiUserPlus,
-  FiUserCheck,
   FiX,
-  FiFileText,
-  FiImage,
-  FiUploadCloud,
-  FiExternalLink,
   FiPaperclip,
-  FiFolder,
-  FiFolderPlus,
-  FiYoutube,
-  FiLink,
-  FiVideo,
-  FiChevronRight,
-  FiUsers,
   FiAward,
   FiClock,
   FiShield,
-  FiFile,
-  FiTrendingUp,
-  FiActivity
+  FiActivity,
+  FiCalendar,
+  FiUserPlus,
+  FiChevronDown
 } from 'react-icons/fi';
-import api from '../services/api';
+import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
+import { TeachersTab } from './classroom-modules/TeachersTab';
+import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
+import { StudentsTab } from './classroom-modules/StudentsTab';
+import { ResourcesTab } from './classroom-modules/ResourcesTab';
+import { PracticalsTab } from './classroom-modules/PracticalsTab';
+import { SessionsTab } from './classroom-modules/SessionsTab';
+import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
+import { quizBuilderService } from '../quiz-builder/services/quizBuilderService';
+import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
+import { ImportMaterialBankModal } from './classroom-modules/modals/ImportMaterialBankModal';
+import { materialBankService } from '../material-bank/services/materialBankService';
 
 interface Teacher {
   id: number;
   name: string;
   email: string;
   status: string; // user account status (active/pending)
+  batch?: string | null;
+  invite_token?: string | null;
   ClassroomTeacher: {
     status: string; // join status (pending/approved)
     role: string;   // classroom role (co-teacher/teacher/student)
@@ -63,6 +64,7 @@ interface Resource {
   module_session: string | null;
   visibility: string;
   batch: string | null;
+  assigned_student_ids?: number[];
   uploader?: {
     id: number;
     name: string;
@@ -83,8 +85,9 @@ interface Classroom {
 // MCQ & Practical Types
 // ----------------------------------------------------
 
-interface MCQQuestionInput {
+export interface MCQQuestionInput {
   id?: number;
+  question_type?: string;
   course?: string;
   module?: string;
   session?: string;
@@ -101,7 +104,7 @@ interface MCQQuestionInput {
   options?: Array<{ key: string; text: string }>;
 }
 
-interface MCQTest {
+export interface MCQTest {
   id: number;
   classroom_id: number;
   title: string;
@@ -115,6 +118,7 @@ interface MCQTest {
   start_window: string;
   end_window: string;
   batches: string[];
+  assigned_student_ids?: number[];
   security_tab_switch_behavior: 'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit';
   security_max_warnings: number;
   security_force_fullscreen: boolean;
@@ -123,7 +127,7 @@ interface MCQTest {
   created_at: string;
 }
 
-interface MCQAttempt {
+export interface MCQAttempt {
   id: number;
   test_id: number;
   user_id: number;
@@ -148,18 +152,19 @@ interface MCQAttempt {
   test?: MCQTest;
 }
 
-interface PracticalExam {
+export interface PracticalExam {
   id: number;
   classroom_id: number;
   title: string;
   instructions: string;
   due_date: string;
   total_marks: number;
+  batches?: string[];
   submissions?: PracticalSubmission[];
   created_at: string;
 }
 
-interface PracticalSubmission {
+export interface PracticalSubmission {
   id: number;
   practical_id: number;
   user_id: number;
@@ -243,9 +248,22 @@ function parseCSV(text: string): Record<string, string>[] {
   return results;
 }
 
+// Helper to shuffle an array (Fisher-Yates)
+function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+const validTabs = ['active', 'pending', 'students', 'resources', 'mcqs', 'practicals', 'sessions', 'assign_quiz'];
+
 const ClassroomDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
 
   // Classroom Detail State
@@ -253,12 +271,148 @@ const ClassroomDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Tabs state
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'resources' | 'mcqs' | 'practicals'>('active');
+  // Tabs state from URL query parameter
+  const tabParam = searchParams.get('tab');
+  const initialTab = (tabParam && validTabs.includes(tabParam))
+    ? tabParam
+    : (user?.role === 'student' ? 'resources' : 'active');
+
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions' | 'assign_quiz'>(initialTab as any);
+
+  // Loaded tab flags for lazy on-demand data fetching
+  const [resourcesLoaded, setResourcesLoaded] = useState(false);
+  const [mcqLoaded, setMcqLoaded] = useState(false);
+  const [practicalsLoaded, setPracticalsLoaded] = useState(false);
+
+  // Sync activeTab with URL search params when user navigates (e.g. browser Back/Forward)
+  useEffect(() => {
+    const currentTabInUrl = searchParams.get('tab');
+    if (currentTabInUrl && validTabs.includes(currentTabInUrl) && currentTabInUrl !== activeTab) {
+      setActiveTab(currentTabInUrl as any);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab as any);
+    setSearchParams({ tab: newTab });
+  };
+  const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
+
+  // Student Invitation States
+  const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
+  const [inviteStudentName, setInviteStudentName] = useState('');
+  const [inviteStudentEmail, setInviteStudentEmail] = useState('');
+  const [inviteStudentBatch, setInviteStudentBatch] = useState('');
+  const [inviteStudentLoading, setInviteStudentLoading] = useState(false);
+  const [studentInviteLink, setStudentInviteLink] = useState<string | null>(null);
 
   // Share Modal State
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Delete Classroom Modal State
+  const [showDeleteClassroomModal, setShowDeleteClassroomModal] = useState(false);
+  const [deleteClassroomLoading, setDeleteClassroomLoading] = useState(false);
+  const [deleteClassroomError, setDeleteClassroomError] = useState<string | null>(null);
+
+  const handleDeleteCurrentClassroom = async () => {
+    if (!id || !classroom) return;
+    setDeleteClassroomLoading(true);
+    setDeleteClassroomError(null);
+    try {
+      await api.delete(`/classrooms/${id}`);
+      setShowDeleteClassroomModal(false);
+      navigate('/');
+    } catch (err: any) {
+      console.error(err);
+      setDeleteClassroomError(err.response?.data?.message || 'Failed to delete classroom.');
+    } finally {
+      setDeleteClassroomLoading(false);
+    }
+  };
+
+  // Assign Teacher Modal State
+  const [showAssignTeacherModal, setShowAssignTeacherModal] = useState(false);
+  const [availableOrgTeachers, setAvailableOrgTeachers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+  const [loadingOrgTeachers, setLoadingOrgTeachers] = useState(false);
+  const [selectedTeacherIdsToAssign, setSelectedTeacherIdsToAssign] = useState<number[]>([]);
+  const [selectedAssignRole, setSelectedAssignRole] = useState<'co-teacher' | 'teacher'>('co-teacher');
+  const [assignTeacherLoading, setAssignTeacherLoading] = useState(false);
+  const [assignTeacherError, setAssignTeacherError] = useState<string | null>(null);
+
+  // Multi-select dropdown menu state
+  const [isTeacherDropdownOpen, setIsTeacherDropdownOpen] = useState(false);
+  const teacherDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (teacherDropdownRef.current && !teacherDropdownRef.current.contains(event.target as Node)) {
+        setIsTeacherDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleOpenAssignTeacherModal = async () => {
+    setShowAssignTeacherModal(true);
+    setLoadingOrgTeachers(true);
+    setAssignTeacherError(null);
+    setSelectedTeacherIdsToAssign([]);
+    setSelectedAssignRole('co-teacher');
+    setIsTeacherDropdownOpen(false);
+    try {
+      const res = await api.get('/teachers');
+      const allTeachers: Array<{ id: number; name: string; email: string }> = res.data.teachers || [];
+      const currentTeacherIds = (classroom?.teachers || []).map(t => t.id);
+      const unassigned = allTeachers.filter(t => !currentTeacherIds.includes(t.id));
+      setAvailableOrgTeachers(unassigned);
+    } catch (err: any) {
+      console.error(err);
+      setAssignTeacherError('Failed to load organization teachers.');
+    } finally {
+      setLoadingOrgTeachers(false);
+    }
+  };
+
+  const handleToggleTeacherSelection = (teacherId: number) => {
+    setSelectedTeacherIdsToAssign(prev => 
+      prev.includes(teacherId) 
+        ? prev.filter(id => id !== teacherId) 
+        : [...prev, teacherId]
+    );
+  };
+
+  const handleSelectAllTeachers = () => {
+    if (selectedTeacherIdsToAssign.length === availableOrgTeachers.length) {
+      setSelectedTeacherIdsToAssign([]);
+    } else {
+      setSelectedTeacherIdsToAssign(availableOrgTeachers.map(t => t.id));
+    }
+  };
+
+  const handleAssignTeacherSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || selectedTeacherIdsToAssign.length === 0) {
+      setAssignTeacherError('Please select at least one teacher to assign.');
+      return;
+    }
+    setAssignTeacherLoading(true);
+    setAssignTeacherError(null);
+    try {
+      await api.post(`/classrooms/${id}/teachers/assign`, {
+        teacherIds: selectedTeacherIdsToAssign,
+        role: selectedAssignRole
+      });
+      setShowAssignTeacherModal(false);
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      setAssignTeacherError(err.response?.data?.message || 'Failed to assign teachers.');
+    } finally {
+      setAssignTeacherLoading(false);
+    }
+  };
 
   // Folders and Resources State
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -268,18 +422,23 @@ const ClassroomDetails: React.FC = () => {
 
   // Add Material Modal / Form State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addType, setAddType] = useState<'file' | 'link'>('file');
+  const [addType, setAddType] = useState<'file' | 'link' | 'bank'>('file');
   const [materialName, setMaterialName] = useState('');
   const [materialLink, setMaterialLink] = useState('');
   const [materialModuleSession, setMaterialModuleSession] = useState('');
-  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'hidden'>('all_students');
+  const [materialVisibility, setMaterialVisibility] = useState<'all_students' | 'specific_batch' | 'specific_students' | 'hidden'>('hidden');
   const [materialBatch, setMaterialBatch] = useState('');
+  const [materialSelectedStudentIds, setMaterialSelectedStudentIds] = useState<number[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('root');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [bankItemsList, setBankItemsList] = useState<any[]>([]);
+  const [selectedBankItem, setSelectedBankItem] = useState<any | null>(null);
+  const [loadingBankItems, setLoadingBankItems] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // Create Folder Modal State
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [showImportBankModal, setShowImportBankModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderCreating, setFolderCreating] = useState(false);
 
@@ -293,7 +452,7 @@ const ClassroomDetails: React.FC = () => {
   // MCQ Examination States
   // ----------------------------------------------------
   const [mcqTests, setMcqTests] = useState<MCQTest[]>([]);
-  const [mcqLoading, setMcqLoading] = useState(false);
+  const [_mcqLoading, setMcqLoading] = useState(false);
 
   // Test builder
   const [showTestBuilderModal, setShowTestBuilderModal] = useState(false);
@@ -307,6 +466,8 @@ const ClassroomDetails: React.FC = () => {
   const [testStartWindow, setTestStartWindow] = useState('');
   const [testEndWindow, setTestEndWindow] = useState('');
   const [testBatches, setTestBatches] = useState('');
+  const [testAssignToSpecificStudents, setTestAssignToSpecificStudents] = useState(false);
+  const [testSelectedStudentIds, setTestSelectedStudentIds] = useState<number[]>([]);
   const [testSecTabSwitch, setTestSecTabSwitch] = useState<'warning' | 'auto_submit_n_warnings' | 'immediate_auto_submit'>('warning');
   const [testSecMaxWarnings, setTestSecMaxWarnings] = useState(3);
   const [testSecForceFullscreen, setTestSecForceFullscreen] = useState(false);
@@ -342,16 +503,22 @@ const ClassroomDetails: React.FC = () => {
   const [activeTest, setActiveTest] = useState<MCQTest | null>(null);
   const [activeAttempt, setActiveAttempt] = useState<MCQAttempt | null>(null);
   const [activePledgeChecked, setActivePledgeChecked] = useState(false);
+  const [pledgeConfirmed, setPledgeConfirmed] = useState(false);
   const [attemptTimeRemaining, setAttemptTimeRemaining] = useState(0); // in seconds
   const [studentResponses, setStudentResponses] = useState<Record<number, string>>({});
   const [proctorWarningMsg, setProctorWarningMsg] = useState<string | null>(null);
   const [proctorWarningCount, setProctorWarningCount] = useState(0);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [visitedQuestionIndexes, setVisitedQuestionIndexes] = useState<number[]>([0]);
+  const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
 
   // Analytics State
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [analyticsTest, setAnalyticsTest] = useState<MCQTest | null>(null);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'leaderboard'>('overview');
 
   // Student Attempt Result View
   const [showResultModal, setShowResultModal] = useState(false);
@@ -373,7 +540,24 @@ const ClassroomDetails: React.FC = () => {
   const [pracInstructions, setPracInstructions] = useState('');
   const [pracDueDate, setPracDueDate] = useState('');
   const [pracTotalMarks, setPracTotalMarks] = useState(100);
+  const [pracBatches, setPracBatches] = useState('');
+  const [pracAssignToSpecificStudents, setPracAssignToSpecificStudents] = useState(false);
+  const [pracSelectedStudentIds, setPracSelectedStudentIds] = useState<number[]>([]);
   const [pracSubmitting, setPracSubmitting] = useState(false);
+
+  // Post-hoc Assignment Modal States
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignTargetType, setAssignTargetType] = useState<'material' | 'folder' | 'mcq' | 'practical' | null>(null);
+  const [assignTargetId, setAssignTargetId] = useState<number | null>(null);
+  const [assignBatches, setAssignBatches] = useState('');
+  const [assignVisibility, setAssignVisibility] = useState<'all_students' | 'specific_students' | 'hidden'>('hidden');
+  const [assignToSpecificStudents, setAssignToSpecificStudents] = useState(false);
+  const [assignSelectedStudentIds, setAssignSelectedStudentIds] = useState<number[]>([]);
+  const [assignToSpecificTeachers, setAssignToSpecificTeachers] = useState(false);
+  const [assignSelectedTeacherIds, setAssignSelectedTeacherIds] = useState<number[]>([]);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [expiryAt, setExpiryAt] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
 
   // Student Submission state
   const [selectedPrac, setSelectedPrac] = useState<PracticalExam | null>(null);
@@ -419,12 +603,19 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  const fetchResources = async () => {
+  const fetchResources = async (targetFolderId?: number | null) => {
     setResourcesLoading(true);
     try {
-      const response = await api.get(`/resources/classroom/${id}`);
-      setResources(response.data.resources);
-      setFolders(response.data.folders || []);
+      const url = targetFolderId 
+        ? `/resources/classroom/${id}?folderId=${targetFolderId}` 
+        : `/resources/classroom/${id}`;
+      const response = await api.get(url);
+      if (targetFolderId) {
+        setResources(response.data.resources || []);
+      } else {
+        setFolders(response.data.folders || []);
+        setResources([]);
+      }
     } catch (err) {
       console.error('Failed to fetch resources:', err);
     } finally {
@@ -456,21 +647,36 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  // Initial page mount: ONLY fetch basic classroom details
   useEffect(() => {
     fetchClassroomDetails();
-    fetchResources();
-    fetchMcqTests();
-    fetchPracticals();
-    // Reset folder view
     setCurrentFolderId(null);
+    setResourcesLoaded(false);
+    setMcqLoaded(false);
+    setPracticalsLoaded(false);
   }, [id]);
 
-  // Handle setting default tab based on role
+  // Lazy / On-Demand Data Fetching (only fetch tab data when that tab becomes active!)
   useEffect(() => {
-    if (user?.role === 'student') {
-      setActiveTab('resources');
+    if (!id) return;
+    if (activeTab === 'resources' && !resourcesLoaded) {
+      fetchResources();
+      setResourcesLoaded(true);
+    } else if (activeTab === 'mcqs' && !mcqLoaded) {
+      fetchMcqTests();
+      setMcqLoaded(true);
+    } else if (activeTab === 'practicals' && !practicalsLoaded) {
+      fetchPracticals();
+      setPracticalsLoaded(true);
     }
-  }, [user]);
+  }, [id, activeTab, resourcesLoaded, mcqLoaded, practicalsLoaded]);
+
+  // Fetch folder-specific resources on-demand ONLY when user opens a folder
+  useEffect(() => {
+    if (id && currentFolderId !== null) {
+      fetchResources(currentFolderId);
+    }
+  }, [id, currentFolderId]);
 
   const handleApproveTeacher = async (teacherId: number) => {
     try {
@@ -497,6 +703,81 @@ const ClassroomDetails: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to remove/reject teacher.');
+    }
+  };
+
+  const handleInviteStudentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteStudentName.trim() || !inviteStudentEmail.trim()) {
+      alert('Student name and email are required.');
+      return;
+    }
+
+    setInviteStudentLoading(true);
+    setStudentInviteLink(null);
+    try {
+      const response = await api.post(`/classrooms/${id}/students/invite`, {
+        name: inviteStudentName.trim(),
+        email: inviteStudentEmail.trim(),
+        batch: inviteStudentBatch.trim() || undefined
+      });
+
+      if (response.data.inviteLink) {
+        setStudentInviteLink(response.data.inviteLink);
+      } else {
+        alert('Student linked to classroom successfully!');
+        setShowStudentInviteModal(false);
+        setInviteStudentName('');
+        setInviteStudentEmail('');
+        setInviteStudentBatch('');
+      }
+
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to invite student.');
+    } finally {
+      setInviteStudentLoading(false);
+    }
+  };
+
+  const handleRemoveStudent = async (studentId: number) => {
+    if (!window.confirm('Are you sure you want to remove this student from this classroom?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/classrooms/${id}/students/${studentId}`);
+      alert('Student removed successfully.');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to remove student.');
+    }
+  };
+
+  const handleApproveStudentRequest = async (studentId: number) => {
+    try {
+      await api.post(`/classrooms/${id}/students/${studentId}/approve`);
+      alert('Student request approved!');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to approve student request.');
+    }
+  };
+
+  const handleRejectStudentRequest = async (studentId: number) => {
+    if (!window.confirm('Are you sure you want to reject this student request?')) {
+      return;
+    }
+    try {
+      await api.delete(`/classrooms/${id}/students/${studentId}/reject`);
+      alert('Student request rejected.');
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to reject student request.');
     }
   };
 
@@ -577,7 +858,19 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  // Submit link or upload file
+  const fetchBankItems = async () => {
+    setLoadingBankItems(true);
+    try {
+      const data = await materialBankService.getContents();
+      setBankItemsList(data.items || []);
+    } catch (err) {
+      console.error('Failed to fetch Material Bank items:', err);
+    } finally {
+      setLoadingBankItems(false);
+    }
+  };
+
+  // Submit link, file, or Material Bank item
   const handleAddMaterialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (addType === 'link' && (!materialName || !materialLink)) {
@@ -586,6 +879,10 @@ const ClassroomDetails: React.FC = () => {
     }
     if (addType === 'file' && !selectedFile) {
       alert('Please select a file to upload.');
+      return;
+    }
+    if (addType === 'bank' && !selectedBankItem) {
+      alert('Please select an item from the Material Bank.');
       return;
     }
 
@@ -602,12 +899,28 @@ const ClassroomDetails: React.FC = () => {
         formData.append('moduleSession', materialModuleSession);
         formData.append('visibility', materialVisibility);
         formData.append('batch', materialBatch);
+        formData.append('assignedStudentIds', materialVisibility === 'specific_students' ? JSON.stringify(materialSelectedStudentIds) : '[]');
 
         const response = await api.post('/resources/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         setResources(prev => [response.data.resource, ...prev]);
         alert('File uploaded successfully!');
+      } else if (addType === 'bank' && selectedBankItem) {
+        const response = await api.post('/resources/link', {
+          classroomId: id,
+          name: materialName || selectedBankItem.name,
+          link: selectedBankItem.file_url,
+          driveFileId: selectedBankItem.drive_file_id,
+          mimeType: selectedBankItem.mime_type || (selectedBankItem.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
+          folderId: folderVal,
+          moduleSession: materialModuleSession,
+          visibility: materialVisibility,
+          batch: materialBatch,
+          assignedStudentIds: materialVisibility === 'specific_students' ? materialSelectedStudentIds : []
+        });
+        setResources(prev => [response.data.resource, ...prev]);
+        alert('Material added from Material Bank successfully!');
       } else {
         // Link Upload
         const response = await api.post('/resources/link', {
@@ -617,7 +930,8 @@ const ClassroomDetails: React.FC = () => {
           folderId: folderVal,
           moduleSession: materialModuleSession,
           visibility: materialVisibility,
-          batch: materialBatch
+          batch: materialBatch,
+          assignedStudentIds: materialVisibility === 'specific_students' ? materialSelectedStudentIds : []
         });
         setResources(prev => [response.data.resource, ...prev]);
         alert('Link added successfully!');
@@ -625,11 +939,13 @@ const ClassroomDetails: React.FC = () => {
 
       setShowAddModal(false);
       setSelectedFile(null);
+      setSelectedBankItem(null);
       setMaterialName('');
       setMaterialLink('');
       setMaterialModuleSession('');
       setMaterialBatch('');
-      setMaterialVisibility('all_students');
+      setMaterialVisibility('hidden');
+      setMaterialSelectedStudentIds([]);
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to add study material.');
@@ -661,6 +977,93 @@ const ClassroomDetails: React.FC = () => {
       alert(err.response?.data?.message || 'Failed to create folder.');
     } finally {
       setFolderCreating(false);
+    }
+  };
+
+  const openAssignModal = (type: 'material' | 'folder' | 'mcq' | 'practical', item: any) => {
+    setAssignTargetType(type);
+    setAssignTargetId(item.id);
+    
+    if (type === 'material' || type === 'folder') {
+      const vis = item.visibility || 'hidden';
+      setAssignVisibility(vis);
+      setAssignToSpecificStudents(vis === 'specific_students' || (item.assigned_student_ids && item.assigned_student_ids.length > 0));
+      setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignToSpecificTeachers(item.assigned_teacher_ids && item.assigned_teacher_ids.length > 0);
+      setAssignSelectedTeacherIds(item.assigned_teacher_ids || []);
+      setAssignBatches(item.batch || '');
+      setScheduledAt(item.scheduled_at ? new Date(item.scheduled_at).toISOString().slice(0, 16) : '');
+      setExpiryAt(item.expiry_at ? new Date(item.expiry_at).toISOString().slice(0, 16) : '');
+    } else {
+      const hasIndStudents = item.assigned_student_ids && item.assigned_student_ids.length > 0;
+      setAssignVisibility(hasIndStudents ? 'specific_students' : 'all_students');
+      setAssignToSpecificStudents(hasIndStudents);
+      setAssignSelectedStudentIds(item.assigned_student_ids || []);
+      setAssignToSpecificTeachers(false);
+      setAssignSelectedTeacherIds([]);
+      setAssignBatches(item.batches ? item.batches.join(', ') : '');
+      setScheduledAt('');
+      setExpiryAt('');
+    }
+    
+    setShowAssignModal(true);
+  };
+
+  const handleAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignTargetType || !assignTargetId) return;
+
+    setAssignSaving(true);
+    try {
+      const batchesList = assignBatches ? assignBatches.split(',').map(b => b.trim()) : [];
+      
+      let payload: any = {};
+      if (assignTargetType === 'material' || assignTargetType === 'folder') {
+        payload = {
+          visibility: assignVisibility,
+          batch: null,
+          assignedStudentIds: assignVisibility === 'specific_students' ? assignSelectedStudentIds : [],
+          assignedTeacherIds: assignToSpecificTeachers ? assignSelectedTeacherIds : [],
+          scheduledAt: scheduledAt || null,
+          expiryAt: expiryAt || null
+        };
+      } else {
+        payload = {
+          batches: batchesList,
+          assignedStudentIds: assignToSpecificStudents ? assignSelectedStudentIds : []
+        };
+      }
+
+      let url = '';
+      if (assignTargetType === 'material') {
+        url = `/resources/${assignTargetId}/assign`;
+      } else if (assignTargetType === 'folder') {
+        url = `/resources/folders/${assignTargetId}/assign`;
+      } else if (assignTargetType === 'mcq') {
+        url = `/mcq/tests/${assignTargetId}/assign`;
+      } else {
+        url = `/practical/${assignTargetId}/assign`;
+      }
+
+      const response = await api.put(url, payload);
+
+      if (assignTargetType === 'material') {
+        setResources(prev => prev.map(r => r.id === assignTargetId ? { ...r, ...response.data.resource } : r));
+      } else if (assignTargetType === 'folder') {
+        setFolders(prev => prev.map(f => f.id === assignTargetId ? { ...f, ...response.data.folder } : f));
+      } else if (assignTargetType === 'mcq') {
+        setMcqTests(prev => prev.map(t => t.id === assignTargetId ? { ...t, ...response.data.test } : t));
+      } else {
+        setPracticals(prev => prev.map(p => p.id === assignTargetId ? { ...p, ...response.data.practical } : p));
+      }
+
+      setShowAssignModal(false);
+      alert('Assignments updated successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to update assignments.');
+    } finally {
+      setAssignSaving(false);
     }
   };
 
@@ -710,23 +1113,27 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  // Partition teachers by join status
-  const activeTeachers = classroom?.teachers.filter(t => t.ClassroomTeacher?.status === 'approved') || [];
-  const pendingRequests = classroom?.teachers.filter(t => t.ClassroomTeacher?.status === 'pending') || [];
+  // Partition teachers and students by role & status (checks both user.role and ClassroomTeacher.role)
+  const isStudentMember = (t: any) => t.role === 'student' || t.ClassroomTeacher?.role === 'student';
+  const isTeacherMember = (t: any) => !isStudentMember(t);
+
+  const activeTeachers = classroom?.teachers.filter(t => isTeacherMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingRequests = classroom?.teachers.filter(t => isTeacherMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
+  const activeStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
+  const pendingStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
+
+  const myMember = classroom?.teachers?.find(t => t.id === user?.id);
+  const isStudentUser = user?.role === 'student' || myMember?.role === 'student' || myMember?.ClassroomTeacher?.role === 'student';
 
   // Generate generic shareable link for this classroom ID
-  const inviteLink = classroom ? `http://localhost:5173/join-classroom/${classroom.classroom_id}` : '';
+  const inviteLink = classroom ? `${window.location.origin}/join-classroom/${classroom.classroom_id}` : '';
 
-  // Filter resources and folders for display
+  // Filter resources and folders for display (show ONLY folders at root level; show resources ONLY inside opened folder)
   const currentFolders = currentFolderId === null ? folders : [];
-  const currentResources = resources.filter(resrc => resrc.folder_id === currentFolderId);
+  const currentResources = currentFolderId === null ? [] : resources.filter(resrc => resrc.folder_id === currentFolderId);
 
-  // Check if resource is previewable
-  const isPreviewable = (resrc: Resource): boolean => {
-    const isPDF = resrc.mime_type === 'application/pdf' || resrc.name.toLowerCase().endsWith('.pdf');
-    const isVideo = resrc.mime_type.startsWith('video/') || resrc.mime_type === 'youtube' || resrc.name.toLowerCase().endsWith('.mp4') || resrc.name.toLowerCase().endsWith('.webm');
-    return isPDF || isVideo;
-  };
+  // Check if resource is previewable (all materials open in-app modal)
+  const isPreviewable = (_resrc: Resource): boolean => true;
 
 
   // ----------------------------------------------------
@@ -756,6 +1163,7 @@ const ClassroomDetails: React.FC = () => {
         startWindow: testStartWindow,
         endWindow: testEndWindow,
         batches: batchesList,
+        assignedStudentIds: testAssignToSpecificStudents ? testSelectedStudentIds : [],
         securityTabSwitchBehavior: testSecTabSwitch,
         securityMaxWarnings: testSecMaxWarnings,
         securityForceFullscreen: testSecForceFullscreen,
@@ -768,6 +1176,8 @@ const ClassroomDetails: React.FC = () => {
       setTestDescription('');
       setTestTimeLimit(30);
       setTestQuestions([]);
+      setTestAssignToSpecificStudents(false);
+      setTestSelectedStudentIds([]);
       alert('MCQ Test created successfully!');
     } catch (err: any) {
       console.error(err);
@@ -973,16 +1383,60 @@ const ClassroomDetails: React.FC = () => {
     alert(`Imported ${selected.length} questions from Bank!`);
   };
 
-  // Clone MCQ Test
-  const handleCloneTest = async (testId: number) => {
-    if (!window.confirm('Clone this test?')) return;
+
+
+  // Preview MCQ Test
+  const handlePreviewTest = async (test: MCQTest) => {
     try {
-      const response = await api.post(`/mcq/tests/${testId}/clone`);
-      setMcqTests(prev => [response.data.test, ...prev]);
-      alert('Test cloned successfully!');
+      const response = await api.get(`/mcq/tests/${test.id}`);
+      const fullTest = response.data.test;
+      
+      const processedQuestions = (fullTest.questions || []).map((q: any) => {
+        const options = [
+          { key: 'A', text: q.option_a },
+          { key: 'B', text: q.option_b },
+          { key: 'C', text: q.option_c },
+          { key: 'D', text: q.option_d }
+        ];
+        const finalOptions = fullTest.shuffle_options ? shuffleArray(options) : options;
+        return {
+          ...q,
+          options: finalOptions
+        };
+      });
+      
+      const finalQuestions = fullTest.shuffle_questions ? shuffleArray(processedQuestions) : processedQuestions;
+      
+      setActiveTest({
+        ...fullTest,
+        questions: finalQuestions
+      });
+      setIsPreviewMode(true);
+      setActivePledgeChecked(false);
+      setPledgeConfirmed(false);
+      setActiveAttempt({
+        id: 0,
+        test_id: test.id,
+        user_id: 0,
+        score: 0,
+        percentage: 0,
+        time_taken: 0,
+        responses: {},
+        tab_switch_count: 0,
+        tab_switch_log: [],
+        fullscreen_exit_count: 0,
+        fullscreen_exit_log: [],
+        start_time: new Date().toISOString(),
+        submit_type: 'manual',
+        status: 'started'
+      });
+      setStudentResponses({});
+      setProctorWarningCount(0);
+      setProctorWarningMsg(null);
+      setAttemptTimeRemaining(test.time_limit * 60);
     } catch (err: any) {
       console.error(err);
-      alert('Failed to clone test.');
+      alert('Failed to load test details for preview.');
     }
   };
 
@@ -1002,10 +1456,13 @@ const ClassroomDetails: React.FC = () => {
       
       setActiveTest(testDetailsRes.data.test);
       setActiveAttempt(attempt);
+      setPledgeConfirmed(true);
       setStudentResponses({});
       setProctorWarningCount(0);
       setProctorWarningMsg(null);
       setAttemptTimeRemaining(test.time_limit * 60);
+      setCurrentQuestionIndex(0);
+      setVisitedQuestionIndexes([0]);
 
       // Force Fullscreen if configured
       if (test.security_force_fullscreen) {
@@ -1023,10 +1480,35 @@ const ClassroomDetails: React.FC = () => {
 
   // Submit Attempt (Manual or Auto)
   const handleAttemptSubmit = async (isAuto = false) => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
 
     // Clear active timers
     if (timerRef.current) clearInterval(timerRef.current);
+
+    if (isPreviewMode) {
+      // Exit fullscreen if active
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.error(err));
+      }
+
+      // Calculate preview score locally
+      let score = 0;
+      activeTest.questions?.forEach(q => {
+        const correctAns = q.correct_answer;
+        const studentAns = studentResponses[q.id!];
+        if (correctAns && studentAns === correctAns) {
+          score += q.marks;
+        }
+      });
+      const totalMarks = activeTest.questions?.reduce((acc, q) => acc + q.marks, 0) || 0;
+      const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
+
+      alert(`[PREVIEW MODE] MCQ Exam submitted successfully!\n\nYour Mock Score: ${score} / ${totalMarks} (${percentage}%)\n\n(No data was saved to the database)`);
+      setActiveAttempt(null);
+      setActiveTest(null);
+      setIsPreviewMode(false);
+      return;
+    }
 
     try {
       await api.post(`/mcq/attempts/${activeAttempt.id}/submit`, {
@@ -1069,7 +1551,22 @@ const ClassroomDetails: React.FC = () => {
 
   // Tab switch hook for security
   const handleTabSwitch = async () => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
+
+    if (isPreviewMode) {
+      const count = proctorWarningCount + 1;
+      setProctorWarningCount(count);
+      if (activeTest.security_tab_switch_behavior !== 'warning' && count >= activeTest.security_max_warnings) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        alert('[PREVIEW MODE] EXAM TERMINATED: Too many tab switches detected. (In real exam, student attempt would be auto-submitted)');
+        setActiveAttempt(null);
+        setActiveTest(null);
+        setIsPreviewMode(false);
+      } else {
+        setProctorWarningMsg(`[PREVIEW MODE] WARNING: Tab switch detected! Switch count: ${count} / ${activeTest.security_max_warnings}.`);
+      }
+      return;
+    }
 
     try {
       const response = await api.post(`/mcq/attempts/${activeAttempt.id}/log-event`, {
@@ -1097,14 +1594,18 @@ const ClassroomDetails: React.FC = () => {
 
   // Fullscreen exit hook for security
   const handleFullscreenExit = async () => {
-    if (!activeAttempt || !activeTest) return;
+    if (!activeAttempt || !activeAttempt.id || !activeTest) return;
+
+    setShowFullscreenWarning(true);
+
+    if (isPreviewMode) {
+      return;
+    }
 
     try {
       await api.post(`/mcq/attempts/${activeAttempt.id}/log-event`, {
         eventType: 'fullscreen_exit'
       });
-
-      alert('FULLSCREEN EXIT DETECTED: This exit has been logged in your proctor report.');
     } catch (err) {
       console.error('Failed to log proctor fullscreen event:', err);
     }
@@ -1140,6 +1641,8 @@ const ClassroomDetails: React.FC = () => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
         handleFullscreenExit();
+      } else {
+        setShowFullscreenWarning(false);
       }
     };
 
@@ -1149,9 +1652,19 @@ const ClassroomDetails: React.FC = () => {
     };
   }, [activeAttempt, activeTest]);
 
+  // Track visited question indexes for question palette
+  useEffect(() => {
+    if (activeAttempt && activeTest) {
+      if (!visitedQuestionIndexes.includes(currentQuestionIndex)) {
+        setVisitedQuestionIndexes(prev => [...prev, currentQuestionIndex]);
+      }
+    }
+  }, [currentQuestionIndex, activeAttempt, activeTest]);
+
   // Open attempt analytics
   const handleOpenAnalytics = async (testId: number) => {
     setAnalyticsLoading(true);
+    setAnalyticsTab('overview');
     setShowAnalyticsModal(true);
     try {
       const response = await api.get(`/mcq/tests/${testId}/analytics`);
@@ -1198,12 +1711,15 @@ const ClassroomDetails: React.FC = () => {
 
     setPracSubmitting(true);
     try {
+      const batchesList = pracBatches ? pracBatches.split(',').map(b => b.trim()) : [];
       const response = await api.post('/practical', {
         classroomId: id,
         title: pracTitle,
         instructions: pracInstructions,
         dueDate: pracDueDate,
-        totalMarks: pracTotalMarks
+        totalMarks: pracTotalMarks,
+        batches: batchesList,
+        assignedStudentIds: pracAssignToSpecificStudents ? pracSelectedStudentIds : []
       });
 
       setPracticals(prev => [...prev, response.data.practical]);
@@ -1211,6 +1727,9 @@ const ClassroomDetails: React.FC = () => {
       setPracTitle('');
       setPracInstructions('');
       setPracDueDate('');
+      setPracBatches('');
+      setPracAssignToSpecificStudents(false);
+      setPracSelectedStudentIds([]);
       alert('Practical Exam created successfully!');
     } catch (err: any) {
       console.error(err);
@@ -1347,8 +1866,106 @@ const ClassroomDetails: React.FC = () => {
           padding: '24px 16px',
           fontFamily: 'system-ui, sans-serif'
         }}>
+          {/* Fullscreen Required Warning Modal Overlay */}
+          {showFullscreenWarning && activeTest.security_force_fullscreen && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 20000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px'
+            }}>
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                padding: '36px',
+                maxWidth: '520px',
+                width: '100%',
+                textAlign: 'center',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+              }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fef2f2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 20px'
+                }}>
+                  <FiShield size={34} />
+                </div>
+
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>
+                  Full-Screen Mode Required
+                </h3>
+
+                <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '24px' }}>
+                  You have exited full-screen mode. To maintain academic integrity, this examination requires active full-screen mode. Your exit has been logged in your proctor report.
+                </p>
+
+                <button
+                  type="button"
+                  className="btn-ld btn-ld-primary"
+                  style={{ width: '100%', padding: '14px 20px', fontSize: '15px', fontWeight: '700', justifyContent: 'center' }}
+                  onClick={async () => {
+                    try {
+                      await document.documentElement.requestFullscreen();
+                      setShowFullscreenWarning(false);
+                    } catch (err) {
+                      console.error('Failed to re-enter fullscreen:', err);
+                    }
+                  }}
+                >
+                  Re-enter Full Screen to Resume Exam
+                </button>
+              </div>
+            </div>
+          )}
+          {isPreviewMode && (
+            <div style={{
+              maxWidth: '850px',
+              margin: '0 auto 16px',
+              backgroundColor: 'var(--light-primary)',
+              color: 'white',
+              textAlign: 'center',
+              padding: '10px 16px',
+              fontSize: '14px',
+              fontWeight: '700',
+              borderRadius: '8px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)'
+            }}>
+              <span>👁️ MCQ Exam Preview Mode — No attempts or scores will be saved.</span>
+              <button 
+                onClick={() => {
+                  if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(err => console.error(err));
+                  }
+                  setActiveAttempt(null);
+                  setActiveTest(null);
+                  setIsPreviewMode(false);
+                }}
+                className="btn-ld btn-ld-danger btn-ld-small"
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Exit Preview
+              </button>
+            </div>
+          )}
           {/* Pledge Screen */}
-          {activeAttempt.status === 'started' && !activePledgeChecked ? (
+          {activeAttempt.status === 'started' && !pledgeConfirmed ? (
             <div style={{ maxWidth: '600px', margin: '80px auto', backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 10px 25px rgba(0,0,0,0.08)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <FiShield size={48} style={{ color: 'var(--light-primary)' }} />
@@ -1379,6 +1996,7 @@ const ClassroomDetails: React.FC = () => {
                   onClick={() => {
                     setActiveAttempt(null);
                     setActiveTest(null);
+                    setIsPreviewMode(false);
                   }}
                 >
                   Cancel
@@ -1387,7 +2005,22 @@ const ClassroomDetails: React.FC = () => {
                   className="btn-ld btn-ld-primary" 
                   style={{ flex: 2 }}
                   disabled={!activePledgeChecked}
-                  onClick={() => handleStartAttempt(activeTest)}
+                  onClick={() => {
+                    if (isPreviewMode) {
+                      setActivePledgeChecked(true);
+                      setPledgeConfirmed(true);
+                      setAttemptTimeRemaining(activeTest.time_limit * 60);
+                      if (activeTest.security_force_fullscreen) {
+                        try {
+                          document.documentElement.requestFullscreen();
+                        } catch (fErr) {
+                          console.error('Failed to trigger fullscreen:', fErr);
+                        }
+                      }
+                    } else {
+                      handleStartAttempt(activeTest);
+                    }
+                  }}
                 >
                   Start Exam
                 </button>
@@ -1395,22 +2028,34 @@ const ClassroomDetails: React.FC = () => {
             </div>
           ) : (
             /* Active questions panel */
-            <div style={{ maxWidth: '850px', margin: '0 auto' }}>
-              {/* Header bar */}
+            <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+              {/* Sticky Header Bar with Live Clock Timer */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px', position: 'sticky', top: 0, zIndex: 10 }}>
                 <div>
-                  <h3 style={{ margin: 0, fontWeight: 700 }}>{activeTest.title}</h3>
+                  <h3 style={{ margin: '0 0 4px 0', fontWeight: 700, fontSize: '18px', color: '#0f172a' }}>{activeTest.title}</h3>
                   <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                    Total Questions: {activeTest.total_questions} • Time Limit: {activeTest.time_limit} mins
+                    Total Questions: {activeTest.questions?.length || activeTest.total_questions}
                     {proctorWarningCount > 0 && ` • Warnings: ${proctorWarningCount}/${activeTest.security_max_warnings}`}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: attemptTimeRemaining < 60 ? '#ef4444' : 'var(--light-primary)', fontWeight: 700, fontSize: '18px' }}>
-                    <FiClock />
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: attemptTimeRemaining < 180 ? '#dc2626' : 'var(--light-primary)',
+                    backgroundColor: attemptTimeRemaining < 180 ? '#fef2f2' : '#eef2ff',
+                    border: attemptTimeRemaining < 180 ? '1px solid #fca5a5' : '1px solid #c7d2fe',
+                    padding: '8px 16px',
+                    borderRadius: '30px',
+                    fontWeight: 800,
+                    fontSize: '18px'
+                  }}>
+                    <FiClock size={20} />
                     <span>
-                      {Math.floor(attemptTimeRemaining / 60)}:
+                      {Math.floor(attemptTimeRemaining / 3600) > 0 && `${Math.floor(attemptTimeRemaining / 3600)}:`}
+                      {Math.floor((attemptTimeRemaining % 3600) / 60).toString().padStart(2, '0')}:
                       {String(attemptTimeRemaining % 60).padStart(2, '0')}
                     </span>
                   </div>
@@ -1437,54 +2082,252 @@ const ClassroomDetails: React.FC = () => {
                 </div>
               )}
 
-              {/* Questions list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
-                {activeTest.questions?.map((q, idx) => (
-                  <div key={q.id} style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <span style={{ fontWeight: '700', color: 'var(--light-primary)' }}>Question {idx + 1}</span>
-                      <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)', fontWeight: '600' }}>{q.marks} Marks</span>
+              {/* Main 2-Column Grid Layout */}
+              {(() => {
+                const questions = activeTest.questions || [];
+                const safeIndex = Math.min(Math.max(0, currentQuestionIndex), Math.max(0, questions.length - 1));
+                const currentQuestion = questions[safeIndex];
+
+                if (!currentQuestion) {
+                  return (
+                    <div style={{ padding: '40px', backgroundColor: '#fff', borderRadius: '12px', textAlign: 'center' }}>
+                      No questions found in this examination.
+                    </div>
+                  );
+                }
+
+                const isSubjective = currentQuestion.question_type === 'subjective';
+                const options = (currentQuestion.options && currentQuestion.options.length > 0)
+                  ? currentQuestion.options
+                  : [
+                      { key: 'A', text: (currentQuestion as any).option_a },
+                      { key: 'B', text: (currentQuestion as any).option_b },
+                      { key: 'C', text: (currentQuestion as any).option_c },
+                      { key: 'D', text: (currentQuestion as any).option_d }
+                    ].filter(opt => opt.text);
+
+                // Palette status counts
+                const answeredCount = questions.filter(q => studentResponses[q.id!] !== undefined && studentResponses[q.id!] !== '').length;
+                const visitedCount = visitedQuestionIndexes.length;
+                const skippedCount = visitedQuestionIndexes.filter(idx => {
+                  const q = questions[idx];
+                  return q && (!studentResponses[q.id!] || studentResponses[q.id!] === '');
+                }).length;
+                const notVisitedCount = Math.max(0, questions.length - visitedCount);
+
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 310px', gap: '24px', alignItems: 'start', marginBottom: '40px' }}>
+                    {/* Left Column: Current Question Card */}
+                    <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Question Top Meta */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+                        <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--light-primary)' }}>
+                          Question {safeIndex + 1} of {questions.length} ({isSubjective ? 'Subjective / Essay' : 'MCQ'})
+                        </span>
+                        <span className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', fontWeight: '600' }}>
+                          {currentQuestion.marks} Marks
+                        </span>
+                      </div>
+
+                      {/* Question Text */}
+                      <p style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>
+                        {currentQuestion.question_text}
+                      </p>
+
+                      {/* Question Answers Panel */}
+                      {isSubjective ? (
+                        <div>
+                          <label className="form-label-ld" style={{ marginBottom: '8px', fontSize: '13px', color: '#475569' }}>
+                            Type your detailed response below:
+                          </label>
+                          <textarea
+                            className="input-ld"
+                            rows={6}
+                            placeholder="Write your answer clearly here..."
+                            value={studentResponses[currentQuestion.id!] || ''}
+                            onChange={(e) => {
+                              setStudentResponses(prev => ({ ...prev, [currentQuestion.id!]: e.target.value }));
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '14px',
+                              fontSize: '14px',
+                              lineHeight: '1.6',
+                              borderRadius: '10px',
+                              backgroundColor: '#fff',
+                              border: '1.5px solid #cbd5e1'
+                            }}
+                          />
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', textAlign: 'right' }}>
+                            Word count: {(studentResponses[currentQuestion.id!] || '').trim().split(/\s+/).filter(Boolean).length} words
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {options.map((opt: any) => {
+                            const isSelected = studentResponses[currentQuestion.id!] === opt.key;
+
+                            return (
+                              <label 
+                                key={opt.key}
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '12px', 
+                                  padding: '14px 18px', 
+                                  borderRadius: '10px', 
+                                  border: isSelected ? '2px solid var(--light-primary)' : '1px solid #cbd5e1',
+                                  backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  boxShadow: isSelected ? '0 2px 4px rgba(99, 102, 241, 0.1)' : 'none'
+                                }}
+                              >
+                                <input 
+                                  type="radio" 
+                                  name={`q-${currentQuestion.id}`} 
+                                  value={opt.key}
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    setStudentResponses(prev => ({ ...prev, [currentQuestion.id!]: opt.key }));
+                                  }}
+                                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                />
+                                <span style={{ fontWeight: '700', minWidth: '22px', fontSize: '15px', color: isSelected ? 'var(--light-primary)' : '#475569' }}>
+                                  {opt.key}.
+                                </span>
+                                <span style={{ fontSize: '14.5px', color: '#0f172a', fontWeight: isSelected ? '600' : 'normal' }}>
+                                  {opt.text}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Question Navigation Controls */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '18px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          className="btn-ld btn-ld-secondary"
+                          disabled={safeIndex === 0}
+                          onClick={() => setCurrentQuestionIndex(safeIndex - 1)}
+                        >
+                          Previous
+                        </button>
+
+                        {studentResponses[currentQuestion.id!] && (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-secondary btn-ld-small"
+                            onClick={() => {
+                              setStudentResponses(prev => {
+                                const copy = { ...prev };
+                                delete copy[currentQuestion.id!];
+                                return copy;
+                              });
+                            }}
+                            style={{ color: '#ef4444' }}
+                          >
+                            Clear Response
+                          </button>
+                        )}
+
+                        {safeIndex < questions.length - 1 ? (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-primary"
+                            onClick={() => setCurrentQuestionIndex(safeIndex + 1)}
+                          >
+                            Next Question
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-ld btn-ld-primary"
+                            onClick={() => handleAttemptSubmit(false)}
+                          >
+                            Finish & Submit Exam
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px', whiteSpace: 'pre-wrap' }}>{q.question_text}</p>
+                    {/* Right Column: Question Palette matching standard exam UI */}
+                    <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', position: 'sticky', top: '90px' }}>
+                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                        Question Palette
+                      </h4>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {q.options?.map((opt: any) => {
-                        const isSelected = studentResponses[q.id!] === opt.key;
-                        return (
-                          <label 
-                            key={opt.key}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '12px', 
-                              padding: '12px 16px', 
-                              borderRadius: '8px', 
-                              border: isSelected ? '2px solid var(--light-primary)' : '1px solid var(--light-border)',
-                              backgroundColor: isSelected ? 'var(--light-primary-glow)' : 'transparent',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <input 
-                              type="radio" 
-                              name={`q-${q.id}`} 
-                              value={opt.key}
-                              checked={isSelected}
-                              onChange={() => {
-                                setStudentResponses(prev => ({ ...prev, [q.id!]: opt.key }));
+                      {/* Numbered Palette Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '20px' }}>
+                        {questions.map((q, idx) => {
+                          const isCurrent = idx === safeIndex;
+                          const isAnswered = studentResponses[q.id!] !== undefined && studentResponses[q.id!] !== '';
+                          const isVisited = visitedQuestionIndexes.includes(idx);
+
+                          let bgColor = '#e2e8f0'; // Gray (Not Visited)
+                          let textColor = '#475569';
+
+                          if (isCurrent) {
+                            bgColor = '#2563eb'; // Blue (Current Active)
+                            textColor = '#ffffff';
+                          } else if (isAnswered) {
+                            bgColor = '#16a34a'; // Green (Answered)
+                            textColor = '#ffffff';
+                          } else if (isVisited) {
+                            bgColor = '#dc2626'; // Red (Skipped / Unanswered)
+                            textColor = '#ffffff';
+                          }
+
+                          return (
+                            <button
+                              key={q.id || idx}
+                              type="button"
+                              onClick={() => setCurrentQuestionIndex(idx)}
+                              style={{
+                                backgroundColor: bgColor,
+                                color: textColor,
+                                border: 'none',
+                                borderRadius: '8px 8px 8px 2px',
+                                height: '38px',
+                                fontWeight: '700',
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                boxShadow: isCurrent ? '0 0 0 3px rgba(37, 99, 235, 0.3)' : 'none'
                               }}
-                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontWeight: '700', minWidth: '20px' }}>{opt.key}.</span>
-                            <span style={{ fontSize: '14.5px' }}>{opt.text}</span>
-                          </label>
-                        );
-                      })}
+                              title={`Question ${idx + 1}`}
+                            >
+                              {idx + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Palette Status Legend */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#16a34a', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Answered ({answeredCount})</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#dc2626', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Unanswered / Skipped ({skippedCount})</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#2563eb', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Current Active</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#e2e8f0', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600' }}>Not Visited ({notVisitedCount})</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1513,10 +2356,23 @@ const ClassroomDetails: React.FC = () => {
         </div>
 
         {classroom && user?.role === 'admin' && (
-          <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
-            <FiPlus size={18} />
-            <span>Invite Teacher</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              className="btn-ld" 
+              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
+              onClick={() => {
+                setDeleteClassroomError(null);
+                setShowDeleteClassroomModal(true);
+              }}
+            >
+              <FiTrash2 size={16} />
+              <span>Delete Classroom</span>
+            </button>
+            <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
+              <FiPlus size={18} />
+              <span>Invite Teacher</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -1535,10 +2391,10 @@ const ClassroomDetails: React.FC = () => {
         <div className="ld-card">
           {/* Tabs header */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '24px' }}>
-            {user?.role !== 'student' && (
+            {!isStudentUser && (
               <>
                 <button
-                  onClick={() => setActiveTab('active')}
+                  onClick={() => handleTabChange('active')}
                   style={{
                     padding: '12px 20px',
                     background: 'transparent',
@@ -1555,7 +2411,7 @@ const ClassroomDetails: React.FC = () => {
                 </button>
                 {user?.role === 'admin' && (
                   <button
-                    onClick={() => setActiveTab('pending')}
+                    onClick={() => handleTabChange('pending')}
                     style={{
                       padding: '12px 20px',
                       background: 'transparent',
@@ -1586,10 +2442,41 @@ const ClassroomDetails: React.FC = () => {
                     )}
                   </button>
                 )}
+                <button
+                  onClick={() => handleTabChange('students')}
+                  style={{
+                    padding: '12px 20px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: activeTab === 'students' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                    color: activeTab === 'students' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    outline: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>Students ({activeStudents.length})</span>
+                  {pendingStudents.length > 0 && (
+                    <span style={{
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      fontWeight: '700'
+                    }}>
+                      {pendingStudents.length}
+                    </span>
+                  )}
+                </button>
               </>
             )}
             <button
-              onClick={() => setActiveTab('resources')}
+              onClick={() => handleTabChange('resources')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
@@ -1609,13 +2496,13 @@ const ClassroomDetails: React.FC = () => {
               <span>Study Materials</span>
             </button>
             <button
-              onClick={() => setActiveTab('mcqs')}
+              onClick={() => handleTabChange('assign_quiz')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
                 border: 'none',
-                borderBottom: activeTab === 'mcqs' ? '2px solid var(--light-primary)' : '2px solid transparent',
-                color: activeTab === 'mcqs' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                borderBottom: activeTab === 'assign_quiz' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: activeTab === 'assign_quiz' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                 fontWeight: '600',
                 cursor: 'pointer',
                 fontSize: '14px',
@@ -1626,10 +2513,24 @@ const ClassroomDetails: React.FC = () => {
               }}
             >
               <FiAward size={16} />
-              <span>MCQ Exams</span>
+              <span>{user?.role === 'student' ? 'MCQ Exams' : 'Assign Quiz'}</span>
+              {user?.role === 'student' && pendingQuizCount > 0 && (
+                <span style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  lineHeight: '1',
+                  marginLeft: '2px'
+                }}>
+                  {pendingQuizCount}
+                </span>
+              )}
             </button>
             <button
-              onClick={() => setActiveTab('practicals')}
+              onClick={() => handleTabChange('practicals')}
               style={{
                 padding: '12px 20px',
                 background: 'transparent',
@@ -1648,746 +2549,567 @@ const ClassroomDetails: React.FC = () => {
               <FiActivity size={16} />
               <span>Practical Exams</span>
             </button>
+            <button
+              onClick={() => handleTabChange('sessions')}
+              style={{
+                padding: '12px 20px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'sessions' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: activeTab === 'sessions' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '14px',
+                outline: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FiCalendar size={16} />
+              <span>Sessions</span>
+            </button>
           </div>
 
           {/* Active Teachers Tab */}
-          {activeTab === 'active' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiUsers style={{ color: 'var(--light-primary)' }} />
-                  <span>Active Teachers</span>
-                </h3>
-              </div>
-
-              {activeTeachers.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiUsers size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No active teachers found</h4>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                        {user?.role === 'admin' && <th style={{ textAlign: 'right' }}>Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeTeachers.map((teacher) => (
-                        <tr key={`teacher-${teacher.id}`}>
-                          <td style={{ fontWeight: '600' }}>{teacher.name}</td>
-                          <td>{teacher.email}</td>
-                          <td>
-                            {teacher.ClassroomTeacher?.role === 'teacher' ? (
-                              <span className="badge-ld badge-ld-success">Teacher</span>
-                            ) : (
-                              <span className="badge-ld badge-ld-secondary">Co-Teacher</span>
-                            )}
-                          </td>
-                          {user?.role === 'admin' && (
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                {teacher.ClassroomTeacher?.role === 'co-teacher' && (
-                                  <button
-                                    className="btn-ld btn-ld-primary btn-ld-small"
-                                    onClick={() => handleUpgradeTeacher(teacher.id)}
-                                  >
-                                    <FiUserCheck size={13} />
-                                    <span>Upgrade to Teacher</span>
-                                  </button>
-                                )}
-                                {teacher.id !== user.id && (
-                                  <button
-                                    className="btn-ld btn-ld-danger btn-ld-small"
-                                    onClick={() => handleRejectTeacher(teacher.id, false)}
-                                  >
-                                    <FiTrash2 size={13} />
-                                    <span>Remove</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+          {activeTab === 'active' && !isStudentUser && (
+            <TeachersTab
+              activeTeachers={activeTeachers}
+              user={user}
+              onUpgradeTeacher={handleUpgradeTeacher}
+              onRejectTeacher={handleRejectTeacher}
+              onOpenAssignModal={handleOpenAssignTeacherModal}
+            />
           )}
 
           {/* Pending Teacher Join Requests Tab */}
           {activeTab === 'pending' && user?.role === 'admin' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiUserPlus style={{ color: 'var(--light-primary)' }} />
-                  <span>Join Requests</span>
-                </h3>
-              </div>
+            <JoinRequestsTab
+              pendingRequests={pendingRequests}
+              onApproveTeacher={handleApproveTeacher}
+              onRejectTeacher={handleRejectTeacher}
+            />
+          )}
 
-              {pendingRequests.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiUserPlus size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No pending join requests</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Share the invite link with teachers to let them request to join.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingRequests.map((request) => (
-                        <tr key={`request-${request.id}`}>
-                          <td style={{ fontWeight: '600' }}>{request.name}</td>
-                          <td>{request.email}</td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                              <button
-                                className="btn-ld btn-ld-primary btn-ld-small"
-                                style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
-                                onClick={() => handleApproveTeacher(request.id)}
-                              >
-                                <FiUserCheck size={13} />
-                                <span>Approve</span>
-                              </button>
-                              <button
-                                className="btn-ld btn-ld-danger btn-ld-small"
-                                onClick={() => handleRejectTeacher(request.id, true)}
-                              >
-                                <FiX size={13} />
-                                <span>Reject</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+          {/* Students Tab */}
+          {activeTab === 'students' && (
+            <StudentsTab
+              activeStudents={activeStudents}
+              pendingStudents={pendingStudents}
+              user={user}
+              classroomId={classroom?.classroom_id}
+              onOpenInviteOneStudent={() => {
+                setInviteStudentName('');
+                setInviteStudentEmail('');
+                setInviteStudentBatch('');
+                setStudentInviteLink(null);
+                setShowStudentInviteModal(true);
+              }}
+              onApproveStudentRequest={handleApproveStudentRequest}
+              onRejectStudentRequest={handleRejectStudentRequest}
+              onRemoveStudent={handleRemoveStudent}
+            />
           )}
 
           {/* Resources Tab */}
           {activeTab === 'resources' && (
-            <div>
-              {/* Breadcrumb path navigation */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '14px', fontWeight: '600' }}>
-                <span 
-                  style={{ color: currentFolderId === null ? 'var(--light-text)' : 'var(--light-primary)', cursor: currentFolderId === null ? 'default' : 'pointer' }}
-                  onClick={() => setCurrentFolderId(null)}
-                >
-                  Materials
-                </span>
-                {currentFolderId !== null && (
-                  <>
-                    <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
-                    <span style={{ color: 'var(--light-text)' }}>
-                      {folders.find(f => f.id === currentFolderId)?.name || 'Folder'}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Management Actions - Teachers/Admin only */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setAddType('file');
-                      setSelectedFile(null);
-                      setMaterialName('');
-                      setMaterialVisibility('all_students');
-                      setMaterialBatch('');
-                      setMaterialModuleSession('');
-                      setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
-                      setShowAddModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Add File</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      setAddType('link');
-                      setMaterialName('');
-                      setMaterialLink('');
-                      setMaterialVisibility('all_students');
-                      setMaterialBatch('');
-                      setMaterialModuleSession('');
-                      setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
-                      setShowAddModal(true);
-                    }}
-                  >
-                    <FiYoutube size={16} />
-                    <span>Add YouTube / Link</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      setNewFolderName('');
-                      setShowFolderModal(true);
-                    }}
-                  >
-                    <FiFolderPlus size={16} />
-                    <span>New Folder</span>
-                  </button>
-                </div>
-              )}
-
-              {/* File Dropzone/Upload Box */}
-              {user?.role !== 'student' && !showAddModal && (
-                <div 
-                  onDragEnter={handleDrag}
-                  onDragOver={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDrop={handleDrop}
-                  style={{
-                    border: dragActive ? '2px dashed var(--light-primary)' : '2px dashed var(--light-border)',
-                    backgroundColor: dragActive ? 'var(--light-primary-glow)' : 'var(--light-bg-hover)',
-                    borderRadius: '12px',
-                    padding: '30px 20px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    position: 'relative',
-                    marginBottom: '24px'
-                  }}
-                >
-                  <input 
-                    type="file" 
-                    id="resource-file-upload" 
-                    style={{ display: 'none' }} 
-                    onChange={handleFileChange}
-                    accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.zip,.mp4,.webm"
-                  />
-                  <label 
-                    htmlFor="resource-file-upload" 
-                    style={{ cursor: 'pointer', display: 'block' }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                      <FiUploadCloud size={40} style={{ color: 'var(--light-primary)' }} />
-                      <h4 style={{ fontWeight: '600', color: 'var(--light-text)' }}>Drag and drop files here, or <span style={{ color: 'var(--light-primary)', textDecoration: 'underline' }}>browse</span></h4>
-                      <p style={{ fontSize: '12px', color: 'var(--light-text-secondary)' }}>Supports PDF, PPT, Word, Excel, ZIP, MP4, WebM (Max 50MB)</p>
-                    </div>
-                  </label>
-                </div>
-              )}
-
-              {/* Folders and Files Display */}
-              {resourcesLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : currentFolders.length === 0 && currentResources.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiFolder size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>This folder is empty</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Share study materials, notes, recordings, or web links here.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Module / Session</th>
-                        {user?.role !== 'student' && <th>Visibility</th>}
-                        <th>Uploaded By</th>
-                        <th>Upload Date</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Folders */}
-                      {currentFolders.map((folder) => (
-                        <tr 
-                          key={`folder-${folder.id}`} 
-                          onClick={() => setCurrentFolderId(folder.id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ fontWeight: '600' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <FiFolder style={{ color: '#d97706', flexShrink: 0 }} size={20} />
-                              <span>{folder.name}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>FOLDER</span>
-                          </td>
-                          <td>—</td>
-                          {user?.role !== 'student' && <td>—</td>}
-                          <td>—</td>
-                          <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                            {new Date(folder.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </td>
-                          <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                            {user?.role !== 'student' && (
-                              <button
-                                className="btn-ld btn-ld-danger btn-ld-small"
-                                onClick={(e) => handleDeleteFolder(folder.id, e)}
-                                title="Delete folder"
-                              >
-                                <FiTrash2 size={13} />
-                                <span>Delete</span>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-
-                      {/* Files/Links */}
-                      {currentResources.map((res) => {
-                        const isPDF = res.mime_type === 'application/pdf' || res.name.toLowerCase().endsWith('.pdf');
-                        const isImage = res.mime_type.startsWith('image/');
-                        const isVideo = res.mime_type.startsWith('video/') || res.name.toLowerCase().endsWith('.mp4') || res.name.toLowerCase().endsWith('.webm');
-                        const isYouTube = res.mime_type === 'youtube';
-
-                        const uploadDate = new Date(res.created_at).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        });
-
-                        const fullLink = res.drive_link.startsWith('/uploads/') 
-                          ? `http://localhost:5000${res.drive_link}` 
-                          : res.drive_link;
-
-                        return (
-                          <tr key={`resource-${res.id}`}>
-                            <td style={{ fontWeight: '600' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                {isYouTube ? (
-                                  <FiYoutube style={{ color: '#ef4444', flexShrink: 0 }} size={18} />
-                                ) : isPDF ? (
-                                  <FiFileText style={{ color: '#8b5cf6', flexShrink: 0 }} size={18} />
-                                ) : isImage ? (
-                                  <FiImage style={{ color: '#10b981', flexShrink: 0 }} size={18} />
-                                ) : isVideo ? (
-                                  <FiVideo style={{ color: '#6366f1', flexShrink: 0 }} size={18} />
-                                ) : res.mime_type === 'url' ? (
-                                  <FiLink style={{ color: '#3b82f6', flexShrink: 0 }} size={18} />
-                                ) : (
-                                  <FiPaperclip style={{ color: 'var(--light-text-secondary)', flexShrink: 0 }} size={18} />
-                                )}
-                                <span style={{ 
-                                  maxWidth: '220px', 
-                                  whiteSpace: 'nowrap', 
-                                  overflow: 'hidden', 
-                                  textOverflow: 'ellipsis' 
-                                }} title={res.name}>
-                                  {res.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase' }}>
-                                {isYouTube ? 'YOUTUBE' : res.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
-                              </span>
-                            </td>
-                            <td>
-                              {res.module_session ? (
-                                <span className="badge-ld badge-ld-secondary">
-                                  {res.module_session}
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--light-text-muted)', fontSize: '13px', fontStyle: 'italic' }}>None</span>
-                              )}
-                            </td>
-                            {user?.role !== 'student' && (
-                              <td>
-                                {res.visibility === 'hidden' ? (
-                                  <span className="badge-ld badge-ld-warning">Hidden</span>
-                                ) : res.visibility === 'specific_batch' ? (
-                                  <span className="badge-ld badge-ld-primary">Batch: {res.batch}</span>
-                                ) : (
-                                  <span className="badge-ld badge-ld-success">All Students</span>
-                                )}
-                              </td>
-                            )}
-                            <td>{res.uploader?.name}</td>
-                            <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>{uploadDate}</td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                {isPreviewable(res) && (
-                                  <button
-                                    onClick={() => setPreviewResource(res)}
-                                    className="btn-ld btn-ld-secondary btn-ld-small"
-                                  >
-                                    <span>Preview</span>
-                                  </button>
-                                )}
-                                <a 
-                                  href={fullLink} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="btn-ld btn-ld-secondary btn-ld-small"
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
-                                >
-                                  <FiExternalLink size={12} />
-                                  <span>Open</span>
-                                </a>
-                                {(user?.role === 'admin' || res.uploader?.id === user?.id) && (
-                                  <button
-                                    className="btn-ld btn-ld-danger btn-ld-small"
-                                    onClick={() => handleDeleteResource(res.id)}
-                                  >
-                                    <FiTrash2 size={12} />
-                                    <span>Delete</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <ResourcesTab
+              user={user}
+              currentFolderId={currentFolderId}
+              setCurrentFolderId={setCurrentFolderId}
+              folders={folders}
+              currentFolders={currentFolders}
+              currentResources={currentResources}
+              resourcesLoading={resourcesLoading}
+              dragActive={dragActive}
+              showAddModal={showAddModal}
+              handleDrag={handleDrag}
+              handleDrop={handleDrop}
+              handleFileChange={handleFileChange}
+              handleDeleteFolder={handleDeleteFolder}
+              handleDeleteResource={handleDeleteResource}
+              openAssignModal={openAssignModal}
+              isPreviewable={isPreviewable}
+              setPreviewResource={setPreviewResource}
+              onOpenAddModal={(type) => {
+                if (type === 'file') {
+                  setAddType('file');
+                  setSelectedFile(null);
+                  setMaterialName('');
+                  setMaterialVisibility('hidden');
+                  setMaterialBatch('');
+                  setMaterialModuleSession('');
+                  setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
+                  setShowAddModal(true);
+                } else {
+                  setAddType('link');
+                  setMaterialName('');
+                  setMaterialLink('');
+                  setMaterialVisibility('hidden');
+                  setMaterialBatch('');
+                  setMaterialModuleSession('');
+                  setSelectedFolderId(currentFolderId ? String(currentFolderId) : 'root');
+                  setShowAddModal(true);
+                }
+              }}
+              onOpenFolderModal={() => {
+                setNewFolderName('');
+                setShowFolderModal(true);
+              }}
+              onOpenImportBankModal={() => setShowImportBankModal(true)}
+            />
           )}
 
-          {/* MCQ Exams Tab */}
-          {activeTab === 'mcqs' && (
-            <div>
-              {/* Header actions */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setTestTitle('');
-                      setTestDescription('');
-                      setTestTimeLimit(30);
-                      setTestShuffleQuestions(false);
-                      setTestShuffleOptions(false);
-                      setTestShowResultImmediately(true);
-                      setTestQuestions([]);
-                      setShowTestBuilderModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Create MCQ Test</span>
-                  </button>
-                  <button 
-                    className="btn-ld btn-ld-secondary" 
-                    onClick={() => {
-                      loadQuestionBank();
-                      setShowQuestionBankModal(true);
-                    }}
-                  >
-                    <FiBookOpen size={16} />
-                    <span>Question Bank</span>
-                  </button>
-                </div>
-              )}
-
-              {mcqLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : mcqTests.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiAward size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No examinations scheduled yet</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Schedule module exams or session quizzes for this classroom.</p>
-                </div>
-              ) : (
-                /* Group exams by test_type (Session Quiz vs Module Exams) */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                  {['session', 'module'].map((typeKey) => {
-                    const typedTests = mcqTests.filter(t => t.test_type === typeKey);
-                    if (typedTests.length === 0) return null;
-
-                    return (
-                      <div key={typeKey}>
-                        <h3 style={{ textTransform: 'capitalize', fontWeight: '700', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid var(--light-border)', paddingBottom: '8px' }}>
-                          <FiTrendingUp style={{ color: 'var(--light-primary)' }} />
-                          <span>{typeKey === 'session' ? 'Session-wise MCQ Tests' : 'Module MCQ Examinations'}</span>
-                        </h3>
-
-                        <div className="ld-table-container">
-                          <table className="ld-table">
-                            <thead>
-                              <tr>
-                                <th>Exam Title</th>
-                                <th>Active Window</th>
-                                <th>Configs</th>
-                                <th>Status / Grade</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {typedTests.map((test) => {
-                                const now = new Date();
-                                const start = new Date(test.start_window);
-                                const end = new Date(test.end_window);
-                                const isActive = now >= start && now <= end;
-                                const isExpired = now > end;
-                                const isFuture = now < start;
-
-                                // Check if user has attempt
-                                const attempt = test.attempts && test.attempts[0];
-                                const hasAttempt = !!attempt;
-
-                                return (
-                                  <tr key={test.id}>
-                                    <td style={{ fontWeight: '600' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span>{test.title}</span>
-                                        <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>
-                                          {test.total_questions} Questions • {test.time_limit} Mins
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td style={{ fontSize: '13px' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span>Start: {formatDate(test.start_window)}</span>
-                                        <span>End: {formatDate(test.end_window)}</span>
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                        {test.security_force_fullscreen && (
-                                          <span className="badge-ld badge-ld-danger" style={{ fontSize: '10px' }}>Full-Screen</span>
-                                        )}
-                                        {test.security_tab_switch_behavior !== 'warning' && (
-                                          <span className="badge-ld badge-ld-warning" style={{ fontSize: '10px' }}>Tab Monitor</span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td>
-                                      {hasAttempt ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                          <span className="badge-ld badge-ld-success" style={{ width: 'fit-content' }}>Submitted</span>
-                                          {test.show_result_immediately || isExpired ? (
-                                            <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--light-success)' }}>
-                                              Score: {attempt.score} ({attempt.percentage}%)
-                                            </span>
-                                          ) : (
-                                            <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontStyle: 'italic' }}>
-                                              Grades visible after deadline
-                                            </span>
-                                          )}
-                                        </div>
-                                      ) : isExpired ? (
-                                        <span className="badge-ld badge-ld-secondary">Expired</span>
-                                      ) : isFuture ? (
-                                        <span className="badge-ld badge-ld-warning">Scheduled</span>
-                                      ) : (
-                                        <span className="badge-ld badge-ld-primary">Active</span>
-                                      )}
-                                    </td>
-                                    <td style={{ textAlign: 'right' }}>
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                        {user?.role === 'student' && !hasAttempt && isActive && (
-                                          <button 
-                                            className="btn-ld btn-ld-primary"
-                                            onClick={() => {
-                                              setActiveTest(test);
-                                              setActivePledgeChecked(false);
-                                              setActiveAttempt({ status: 'started' } as any); // open pledge screen
-                                            }}
-                                          >
-                                            Start Attempt
-                                          </button>
-                                        )}
-
-                                        {hasAttempt && (test.show_result_immediately || isExpired) && (
-                                          <button 
-                                            className="btn-ld btn-ld-secondary btn-ld-small"
-                                            onClick={() => handleViewResultDetails(attempt.id)}
-                                          >
-                                            View Report
-                                          </button>
-                                        )}
-
-                                        {user?.role !== 'student' && (
-                                          <>
-                                            <button 
-                                              className="btn-ld btn-ld-secondary btn-ld-small"
-                                              onClick={() => handleCloneTest(test.id)}
-                                            >
-                                              Clone
-                                            </button>
-                                            <button 
-                                              className="btn-ld btn-ld-secondary btn-ld-small"
-                                              onClick={() => handleOpenAnalytics(test.id)}
-                                            >
-                                              Analytics
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+          {/* Assign Quiz / MCQ Exams Tab */}
+          {activeTab === 'assign_quiz' && (
+            <AssignQuizTab
+              classroomId={Number(id)}
+              userRole={user?.role || 'student'}
+              user={user}
+              classroomStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
+              onViewReport={handleViewResultDetails}
+              onPreviewTest={handlePreviewTest}
+              onOpenAnalytics={handleOpenAnalytics}
+              onStartAttempt={(test) => {
+                setActiveTest(test);
+                setActivePledgeChecked(false);
+                setPledgeConfirmed(false);
+                setActiveAttempt({ status: 'started' } as any);
+              }}
+              onPendingCountChange={(count) => setPendingQuizCount(count)}
+            />
           )}
 
           {/* Practical Exams Tab */}
           {activeTab === 'practicals' && (
-            <div>
-              {/* Header actions */}
-              {user?.role !== 'student' && (
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-                  <button 
-                    className="btn-ld btn-ld-primary" 
-                    onClick={() => {
-                      setPracTitle('');
-                      setPracInstructions('');
-                      setPracDueDate('');
-                      setPracTotalMarks(100);
-                      setShowPracticalModal(true);
-                    }}
-                  >
-                    <FiPlus size={16} />
-                    <span>Create Practical Exam</span>
-                  </button>
-                </div>
-              )}
+            <PracticalsTab
+              user={user}
+              practicalsLoading={practicalsLoading}
+              practicals={practicals}
+              onOpenCreatePractical={() => {
+                setPracTitle('');
+                setPracInstructions('');
+                setPracDueDate('');
+                setPracTotalMarks(100);
+                setShowPracticalModal(true);
+              }}
+              onStartSubmit={(prac) => {
+                setSelectedPrac(prac);
+                const sub = prac.submissions && prac.submissions[0];
+                setPracTextAnswer(sub?.text_answer || '');
+                setPracGithubLink(sub?.github_link || '');
+                setPracDriveLink(sub?.drive_link || '');
+                setPracFiles([]);
+                setShowPracSubmissionModal(true);
+              }}
+              onViewGrade={(sub) => {
+                setViewSubFeedback(sub);
+                setShowStudentFeedbackModal(true);
+              }}
+              onOpenGrading={handleOpenGrading}
+              onOpenAssignModal={(prac) => openAssignModal('practical', prac)}
+            />
+          )}
 
-              {practicalsLoading ? (
-                <div style={{ padding: '40px', display: 'flex', justifyContent: 'center' }}>
-                  <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
-                </div>
-              ) : practicals.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
-                  <FiFile size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-                  <h4>No practical exams created yet</h4>
-                  <p style={{ fontSize: '13px', marginTop: '6px' }}>Assign laboratory work, SQL tests, or coding challenges here.</p>
-                </div>
-              ) : (
-                <div className="ld-table-container">
-                  <table className="ld-table">
-                    <thead>
-                      <tr>
-                        <th>Practical Task</th>
-                        <th>Due Date</th>
-                        <th>Max Marks</th>
-                        <th>Submission / Grade</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {practicals.map((prac) => {
-                        const now = new Date();
-                        const due = new Date(prac.due_date);
-                        const isOverdue = now > due;
-
-                        const submission = prac.submissions && prac.submissions[0];
-                        const hasSubmitted = !!submission;
-
-                        return (
-                          <tr key={prac.id}>
-                            <td style={{ fontWeight: '600' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span>{prac.title}</span>
-                                <span style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', fontWeight: '500', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {prac.instructions}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ fontSize: '13px', color: isOverdue && !hasSubmitted ? '#ef4444' : 'var(--light-text)' }}>
-                              {formatDate(prac.due_date)}
-                            </td>
-                            <td>{prac.total_marks} Marks</td>
-                            <td>
-                              {hasSubmitted ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                  <span className="badge-ld badge-ld-success" style={{ width: 'fit-content' }}>Submitted</span>
-                                  {submission.graded ? (
-                                    <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--light-success)' }}>
-                                      Grade: {submission.total_grade} / {prac.total_marks}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontStyle: 'italic' }}>Pending Grade</span>
-                                  )}
-                                </div>
-                              ) : isOverdue ? (
-                                <span className="badge-ld badge-ld-danger">Missing</span>
-                              ) : (
-                                <span className="badge-ld badge-ld-primary">Assigned</span>
-                              )}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                {user?.role === 'student' && (
-                                  <button 
-                                    className="btn-ld btn-ld-primary"
-                                    onClick={() => {
-                                      setSelectedPrac(prac);
-                                      setPracTextAnswer(submission?.text_answer || '');
-                                      setPracGithubLink(submission?.github_link || '');
-                                      setPracDriveLink(submission?.drive_link || '');
-                                      setPracFiles([]);
-                                      setShowPracSubmissionModal(true);
-                                    }}
-                                  >
-                                    {hasSubmitted ? 'Resubmit' : 'Submit task'}
-                                  </button>
-                                )}
-
-                                {hasSubmitted && submission.graded && (
-                                  <button 
-                                    className="btn-ld btn-ld-secondary btn-ld-small"
-                                    onClick={() => {
-                                      setViewSubFeedback(submission);
-                                      setShowStudentFeedbackModal(true);
-                                    }}
-                                  >
-                                    View Grade
-                                  </button>
-                                )}
-
-                                {user?.role !== 'student' && (
-                                  <button 
-                                    className="btn-ld btn-ld-secondary"
-                                    onClick={() => handleOpenGrading(prac)}
-                                  >
-                                    Grade submissions
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+          {/* Sessions Tab */}
+          {activeTab === 'sessions' && (
+            <SessionsTab
+              classroomId={classroom?.id}
+              user={user}
+              teachers={classroom?.teachers}
+              activeStudents={activeStudents}
+            />
           )}
         </div>
       ) : null}
+
+      {/* Student Invite Modal */}
+      {showStudentInviteModal && (
+        <div className="modal-overlay-ld" onClick={() => { if (!inviteStudentLoading) setShowStudentInviteModal(false); }}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0 }}>Invite Student</h3>
+              <button 
+                onClick={() => setShowStudentInviteModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--light-text-secondary)' }}
+                disabled={inviteStudentLoading}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {studentInviteLink ? (
+              <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                <div style={{ 
+                  width: '56px', 
+                  height: '56px', 
+                  borderRadius: '50%', 
+                  background: 'rgba(16, 185, 129, 0.12)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  color: '#10b981',
+                  margin: '0 auto 16px'
+                }}>
+                  <FiCheck size={26} />
+                </div>
+                
+                <h4 style={{ fontWeight: '700', marginBottom: '8px' }}>Invitation Link Generated</h4>
+                <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+                  Share this invitation link with the student so they can activate their account and join their batch.
+                </p>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      className="form-input-ld"
+                      style={{ paddingRight: '48px', textOverflow: 'ellipsis', fontWeight: '500' }}
+                      type="text"
+                      readOnly
+                      value={studentInviteLink}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => copyToClipboard(studentInviteLink)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: copied ? 'var(--light-success)' : 'var(--light-text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '8px'
+                      }}
+                    >
+                      {copied ? <FiCheck size={18} /> : <FiCopy size={18} />}
+                    </button>
+                  </div>
+                  {copied && (
+                    <span style={{ fontSize: '12px', color: 'var(--light-success)', marginTop: '6px', display: 'block', textAlign: 'left' }}>
+                      Copied link to clipboard!
+                    </span>
+                  )}
+                </div>
+
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-primary" 
+                  onClick={() => setShowStudentInviteModal(false)}
+                  style={{ width: '100%' }}
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleInviteStudentSubmit}>
+                <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                  <label className="form-label-ld">Full Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-input-ld" 
+                    placeholder="e.g. Jane Doe"
+                    value={inviteStudentName}
+                    onChange={(e) => setInviteStudentName(e.target.value)}
+                    required
+                    disabled={inviteStudentLoading}
+                  />
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                  <label className="form-label-ld">Email Address *</label>
+                  <input 
+                    type="email" 
+                    className="form-input-ld" 
+                    placeholder="e.g. jane.doe@school.edu"
+                    value={inviteStudentEmail}
+                    onChange={(e) => setInviteStudentEmail(e.target.value)}
+                    required
+                    disabled={inviteStudentLoading}
+                  />
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                  <label className="form-label-ld">Classroom Batch (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="form-input-ld" 
+                    placeholder="e.g. Batch A, Morning, 2026"
+                    value={inviteStudentBatch}
+                    onChange={(e) => setInviteStudentBatch(e.target.value)}
+                    disabled={inviteStudentLoading}
+                  />
+                  <small style={{ display: 'block', color: 'var(--light-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
+                    Student will only see tests and resources assigned to this batch.
+                  </small>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button 
+                    type="button" 
+                    className="btn-ld btn-ld-secondary" 
+                    onClick={() => setShowStudentInviteModal(false)}
+                    disabled={inviteStudentLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-ld btn-ld-primary" 
+                    disabled={inviteStudentLoading}
+                  >
+                    {inviteStudentLoading ? 'Generating...' : 'Invite Student'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Classroom Modal */}
+      {showDeleteClassroomModal && classroom && (
+        <div className="modal-overlay-ld" onClick={() => setShowDeleteClassroomModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiAlertCircle size={22} />
+                <span>Delete Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setShowDeleteClassroomModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '16px', fontSize: '14px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete <strong>{classroom.name}</strong>? All associated modules, resources, and tests will be removed.
+            </p>
+
+            {deleteClassroomError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteClassroomError}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn-ld btn-ld-secondary" 
+                onClick={() => setShowDeleteClassroomModal(false)}
+                disabled={deleteClassroomLoading}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-ld" 
+                style={{ backgroundColor: '#dc2626', color: 'white', border: 'none' }}
+                onClick={handleDeleteCurrentClassroom}
+                disabled={deleteClassroomLoading}
+              >
+                {deleteClassroomLoading ? 'Deleting...' : 'Delete Classroom'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Teacher Modal */}
+      {showAssignTeacherModal && (
+        <div className="modal-overlay-ld" onClick={() => setShowAssignTeacherModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiUserPlus style={{ color: 'var(--light-primary)' }} />
+                <span>Assign Teacher to Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setShowAssignTeacherModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+              Select an existing teacher from your organization to assign to <strong>{classroom?.name}</strong>. Teachers are assigned as <strong>Co-Teacher</strong> by default.
+            </p>
+
+            {assignTeacherError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{assignTeacherError}</span>
+              </div>
+            )}
+
+            {loadingOrgTeachers ? (
+              <div style={{ padding: '30px', display: 'flex', justifyContent: 'center' }}>
+                <span className="spinner" style={{ width: '28px', height: '28px' }}></span>
+              </div>
+            ) : availableOrgTeachers.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--light-text-secondary)', background: 'var(--light-bg-subtle)', borderRadius: '8px' }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>All organization teachers are already assigned to this classroom, or no teachers exist.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleAssignTeacherSubmit}>
+                <div className="form-group-ld">
+                  <label className="form-label-ld">Select Teacher(s) *</label>
+
+                  {/* Multi-Select Dropdown Menu Trigger */}
+                  <div ref={teacherDropdownRef} style={{ position: 'relative' }}>
+                    <div 
+                      onClick={() => setIsTeacherDropdownOpen(!isTeacherDropdownOpen)}
+                      className="form-input-ld"
+                      style={{
+                        display: 'flex',
+                        justify: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        background: '#fff',
+                        borderColor: isTeacherDropdownOpen ? 'var(--light-primary)' : 'var(--light-border)'
+                      }}
+                    >
+                      <span style={{ 
+                        color: selectedTeacherIdsToAssign.length === 0 ? 'var(--light-text-muted)' : 'var(--light-text-main)', 
+                        fontSize: '13px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {selectedTeacherIdsToAssign.length === 0 
+                          ? 'Select Teachers...' 
+                          : selectedTeacherIdsToAssign.length === availableOrgTeachers.length
+                            ? `All Teachers Selected (${availableOrgTeachers.length})`
+                            : availableOrgTeachers
+                                .filter(t => selectedTeacherIdsToAssign.includes(t.id))
+                                .map(t => t.name)
+                                .join(', ')
+                        }
+                      </span>
+                      <FiChevronDown 
+                        size={18} 
+                        style={{ 
+                          transform: isTeacherDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
+                          transition: 'transform 0.2s', 
+                          flexShrink: 0,
+                          color: 'var(--light-text-muted)' 
+                        }} 
+                      />
+                    </div>
+
+                    {/* Floating Dropdown Options Menu */}
+                    {isTeacherDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#fff',
+                        border: '1px solid var(--light-border)',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                        zIndex: 1000,
+                        padding: '6px',
+                        maxHeight: '220px',
+                        overflowY: 'auto'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--light-border)', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--light-text-muted)' }}>
+                            {selectedTeacherIdsToAssign.length} of {availableOrgTeachers.length} selected
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSelectAllTeachers}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--light-primary)',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          >
+                            {selectedTeacherIdsToAssign.length === availableOrgTeachers.length ? 'Deselect All' : 'Select All'}
+                          </button>
+                        </div>
+
+                        {availableOrgTeachers.map((t) => {
+                          const isSelected = selectedTeacherIdsToAssign.includes(t.id);
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => handleToggleTeacherSelection(t.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                                transition: 'background-color 0.15s',
+                                marginBottom: '2px'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                              />
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--light-text-main)' }}>{t.name}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--light-text-muted)' }}>{t.email}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-group-ld" style={{ marginBottom: '24px', marginTop: '16px' }}>
+                  <label className="form-label-ld">Assign Role *</label>
+                  <select
+                    className="form-input-ld"
+                    value={selectedAssignRole}
+                    onChange={(e) => setSelectedAssignRole(e.target.value as any)}
+                    required
+                  >
+                    <option value="co-teacher">Co-Teacher (Default)</option>
+                    <option value="teacher">Full Teacher</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn-ld btn-ld-secondary"
+                    onClick={() => setShowAssignTeacherModal(false)}
+                    disabled={assignTeacherLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-ld btn-ld-primary"
+                    disabled={assignTeacherLoading || selectedTeacherIdsToAssign.length === 0}
+                  >
+                    {assignTeacherLoading ? 'Assigning...' : `Assign ${selectedTeacherIdsToAssign.length} Teacher(s)`}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Shareable Invite Modal */}
       {showModal && (
@@ -2493,6 +3215,17 @@ const ClassroomDetails: React.FC = () => {
         </div>
       )}
 
+      {/* Import from Material Bank Modal */}
+      {showImportBankModal && classroom && (
+        <ImportMaterialBankModal
+          isOpen={showImportBankModal}
+          classroomId={classroom.id}
+          targetFolderId={currentFolderId}
+          onClose={() => setShowImportBankModal(false)}
+          onSuccess={() => fetchResources(currentFolderId)}
+        />
+      )}
+
       {/* Add Study Material Modal (Unified File & Link) */}
       {showAddModal && (
         <div className="modal-overlay-ld" onClick={() => setShowAddModal(false)}>
@@ -2503,7 +3236,7 @@ const ClassroomDetails: React.FC = () => {
             <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '16px' }}>
               <button
                 type="button"
-                onClick={() => { setAddType('file'); setMaterialName(''); }}
+                onClick={() => { setAddType('file'); setMaterialName(''); setSelectedBankItem(null); }}
                 style={{
                   flex: 1,
                   padding: '10px',
@@ -2512,14 +3245,15 @@ const ClassroomDetails: React.FC = () => {
                   borderBottom: addType === 'file' ? '2px solid var(--light-primary)' : '2px solid transparent',
                   color: addType === 'file' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
               >
                 File Upload
               </button>
               <button
                 type="button"
-                onClick={() => { setAddType('link'); setMaterialName(''); }}
+                onClick={() => { setAddType('link'); setMaterialName(''); setSelectedBankItem(null); }}
                 style={{
                   flex: 1,
                   padding: '10px',
@@ -2528,15 +3262,73 @@ const ClassroomDetails: React.FC = () => {
                   borderBottom: addType === 'link' ? '2px solid var(--light-primary)' : '2px solid transparent',
                   color: addType === 'link' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontSize: '13px'
                 }}
               >
-                YouTube / Web Link
+                YouTube / Link
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddType('bank'); fetchBankItems(); }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: addType === 'bank' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                  color: addType === 'bank' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                From Material Bank
               </button>
             </div>
 
             <form onSubmit={handleAddMaterialSubmit}>
-              {addType === 'file' ? (
+              {addType === 'bank' ? (
+                <>
+                  <div className="form-group-ld">
+                    <label className="form-label-ld">Select Material Bank Item *</label>
+                    <select
+                      className="form-input-ld"
+                      value={selectedBankItem ? String(selectedBankItem.id) : ''}
+                      onChange={(e) => {
+                        const item = bankItemsList.find(b => String(b.id) === e.target.value);
+                        setSelectedBankItem(item || null);
+                        if (item) {
+                          setMaterialName(item.name);
+                        }
+                      }}
+                      required
+                    >
+                      <option value="">-- Choose from Material Bank --</option>
+                      {bankItemsList.map(b => (
+                        <option key={b.id} value={b.id}>
+                          [{b.type === 'youtube' ? 'YouTube' : 'File'}] {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingBankItems && (
+                      <span style={{ fontSize: '11px', color: 'var(--light-text-muted)', marginTop: '4px', display: 'block' }}>Loading items...</span>
+                    )}
+                  </div>
+
+                  <div className="form-group-ld">
+                    <label className="form-label-ld">Material Title *</label>
+                    <input 
+                      type="text" 
+                      className="form-input-ld" 
+                      placeholder="e.g. Organic Chemistry Video"
+                      value={materialName}
+                      onChange={(e) => setMaterialName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </>
+              ) : addType === 'file' ? (
                 <div className="form-group-ld">
                   <label className="form-label-ld">Select File *</label>
                   <input 
@@ -2610,9 +3402,9 @@ const ClassroomDetails: React.FC = () => {
                   value={materialVisibility}
                   onChange={(e) => setMaterialVisibility(e.target.value as any)}
                 >
-                  <option value="all_students">All Students</option>
-                  <option value="specific_batch">Specific Batch</option>
-                  <option value="hidden">Hidden</option>
+                  <option value="hidden">🔒 Hidden / Unassigned (Default)</option>
+                  <option value="all_students">👥 All Students</option>
+                  <option value="specific_students">🎯 Specific Students</option>
                 </select>
               </div>
 
@@ -2627,6 +3419,44 @@ const ClassroomDetails: React.FC = () => {
                     onChange={(e) => setMaterialBatch(e.target.value)}
                     required
                   />
+                </div>
+              )}
+
+              {materialVisibility === 'specific_students' && (
+                <div className="form-group-ld">
+                  <label className="form-label-ld">Select Students *</label>
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`material-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={materialSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setMaterialSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setMaterialSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2728,6 +3558,7 @@ const ClassroomDetails: React.FC = () => {
                     placeholder="e.g. Batch A, Batch B"
                     value={testBatches} 
                     onChange={(e) => setTestBatches(e.target.value)} 
+                    disabled={testAssignToSpecificStudents}
                   />
                 </div>
                 <div className="form-group-ld">
@@ -2742,6 +3573,54 @@ const ClassroomDetails: React.FC = () => {
                     <option value="immediate_auto_submit">Immediate auto-submit</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-group-ld">
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer', fontWeight: '600', marginBottom: '8px' }}>
+                  <input 
+                    type="checkbox"
+                    checked={testAssignToSpecificStudents}
+                    onChange={(e) => {
+                      setTestAssignToSpecificStudents(e.target.checked);
+                      if (e.target.checked) setTestBatches('');
+                    }}
+                  />
+                  <span>Assign to specific individual students instead of batches</span>
+                </label>
+                {testAssignToSpecificStudents && (
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`test-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={testSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setTestSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setTestSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', alignItems: 'center' }}>
@@ -3079,54 +3958,478 @@ const ClassroomDetails: React.FC = () => {
 
             {analyticsLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}><span className="spinner"></span></div>
-            ) : analyticsData ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* Stats Summary cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Average Score</span>
-                    <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.averageScore}</h2>
+            ) : analyticsData ? (() => {
+              const sortedAttempts = [...(analyticsData.attempts || [])].sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                return a.time_taken - b.time_taken;
+              });
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* Tab Navigation */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '10px', gap: '16px' }}>
+                    <button 
+                      type="button"
+                      onClick={() => setAnalyticsTab('overview')}
+                      style={{
+                        padding: '10px 16px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        color: analyticsTab === 'overview' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                        borderBottom: analyticsTab === 'overview' ? '3px solid var(--light-primary)' : '3px solid transparent',
+                        transition: 'all 0.2s',
+                        outline: 'none'
+                      }}
+                    >
+                      Overview & Performance
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setAnalyticsTab('leaderboard')}
+                      style={{
+                        padding: '10px 16px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        color: analyticsTab === 'leaderboard' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                        borderBottom: analyticsTab === 'leaderboard' ? '3px solid var(--light-primary)' : '3px solid transparent',
+                        transition: 'all 0.2s',
+                        outline: 'none'
+                      }}
+                    >
+                      🏆 Ranking Leaderboard
+                    </button>
                   </div>
-                  <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Total Attempts</span>
-                    <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.totalAttempts}</h2>
-                  </div>
-                </div>
 
-                {/* Question level success rate */}
-                <div>
-                  <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Question Performance</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {analyticsData.questionPerformance?.map((qp: any, idx: number) => (
-                      <div key={qp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: '1px solid var(--light-border)', borderRadius: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: '600', maxWidth: '450px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          Q{idx + 1}. {qp.question_text}
-                        </span>
-                        <span style={{ fontWeight: '700', color: qp.success_rate < 50 ? '#ef4444' : '#10b981' }}>
-                          {qp.success_rate}% Correct
-                        </span>
+                  {analyticsTab === 'overview' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Stats Summary cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Average Score</span>
+                          <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.averageScore}</h2>
+                        </div>
+                        <div style={{ padding: '16px', backgroundColor: 'var(--light-primary-glow)', borderRadius: '8px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Total Attempts</span>
+                          <h2 style={{ fontSize: '32px', color: 'var(--light-primary)', fontWeight: '800', margin: '4px 0' }}>{analyticsData.totalAttempts}</h2>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Students not attempted */}
-                <div>
-                  <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Not Attempted Students ({analyticsData.notAttempted?.length || 0})</h4>
-                  {analyticsData.notAttempted?.length === 0 ? (
-                    <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>All students have completed this examination.</p>
-                  ) : (
-                    <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {analyticsData.notAttempted?.map((stud: any) => (
-                        <span key={stud.id} className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', padding: '6px 10px' }}>
-                          {stud.name} ({stud.batch || 'No Batch'})
-                        </span>
-                      ))}
+                      {/* Question level success rate */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Question Performance</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
+                          {analyticsData.questionPerformance?.map((qp: any, idx: number) => (
+                            <div key={qp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: '1px solid var(--light-border)', borderRadius: '6px' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: '600', maxWidth: '450px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                Q{idx + 1}. {qp.question_text}
+                              </span>
+                              <span style={{ fontWeight: '700', color: qp.success_rate < 50 ? '#ef4444' : '#10b981' }}>
+                                {qp.success_rate}% Correct
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Students not attempted */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Not Attempted Students ({analyticsData.notAttempted?.length || 0})</h4>
+                        {analyticsData.notAttempted?.length === 0 ? (
+                          <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>All students have completed this examination.</p>
+                        ) : (
+                          <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {analyticsData.notAttempted?.map((stud: any) => (
+                              <span key={stud.id} className="badge-ld badge-ld-secondary" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                                {stud.name} ({stud.batch || 'No Batch'})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Student Attempts/Scores List */}
+                      <div>
+                        <h4 style={{ margin: '0 0 10px 0', fontWeight: '700' }}>Student Submissions & Results</h4>
+                        {!analyticsData.attempts || analyticsData.attempts.length === 0 ? (
+                          <p style={{ color: 'var(--light-text-secondary)', fontSize: '13px', margin: 0 }}>No submissions yet.</p>
+                        ) : (
+                          <div className="ld-table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                            <table className="ld-table">
+                              <thead>
+                                <tr>
+                                  <th>Student</th>
+                                  <th>Score / Percentage</th>
+                                  <th>Time Taken</th>
+                                  <th>Proctor Flags</th>
+                                  <th style={{ textAlign: 'right' }}>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {analyticsData.attempts.map((att: any) => (
+                                  <tr key={att.id}>
+                                    <td style={{ fontWeight: '600' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span>{att.user?.name}</span>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>
+                                          {att.user?.email} • {att.user?.batch || 'No Batch'}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td style={{ fontWeight: '700', color: 'var(--light-primary)' }}>
+                                      {att.score} Marks ({att.percentage}%)
+                                    </td>
+                                    <td>{Math.floor(att.time_taken / 60)}m {att.time_taken % 60}s</td>
+                                    <td>
+                                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                        {att.tab_switch_count > 0 && (
+                                          <span className="badge-ld badge-ld-warning" style={{ fontSize: '10px' }}>
+                                            {att.tab_switch_count} Tab Switches
+                                          </span>
+                                        )}
+                                        {att.fullscreen_exit_count > 0 && (
+                                          <span className="badge-ld badge-ld-danger" style={{ fontSize: '10px' }}>
+                                            {att.fullscreen_exit_count} FS Exits
+                                          </span>
+                                        )}
+                                        {att.tab_switch_count === 0 && att.fullscreen_exit_count === 0 && (
+                                          <span className="badge-ld badge-ld-success" style={{ fontSize: '10px' }}>Clean</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <button
+                                        className="btn-ld btn-ld-secondary btn-ld-small"
+                                        onClick={() => handleViewResultDetails(att.id)}
+                                      >
+                                        View Details
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {analyticsTab === 'leaderboard' && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '20px',
+                      backgroundColor: '#581c87',
+                      padding: '24px',
+                      borderRadius: '16px',
+                      color: '#fff'
+                    }}>
+                      
+                      {/* Top 3 Podium */}
+                      {sortedAttempts.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'flex-end',
+                          gap: '20px',
+                          padding: '20px 0 10px 0',
+                          position: 'relative'
+                        }}>
+                          {/* Arch background effect */}
+                          <div style={{
+                            position: 'absolute',
+                            top: '10px',
+                            width: '280px',
+                            height: '140px',
+                            borderTopLeftRadius: '140px',
+                            borderTopRightRadius: '140px',
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            zIndex: 0
+                          }}></div>
+
+                          {/* 3rd Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '100px',
+                            zIndex: 1
+                          }}>
+                            {sortedAttempts.length > 2 ? (
+                              <>
+                                <div style={{
+                                  width: '56px',
+                                  height: '56px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#ea580c',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: '800',
+                                  fontSize: '18px',
+                                  border: '3px solid #fdba74',
+                                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                                }}>
+                                  {sortedAttempts[2].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '3'}
+                                </div>
+                                <span style={{ fontWeight: '700', fontSize: '13px', textAlign: 'center', marginTop: '8px', width: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sortedAttempts[2].user?.name}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#fcd34d', marginTop: '2px' }}>
+                                  {sortedAttempts[2].percentage}%
+                                </span>
+                              </>
+                            ) : (
+                              <div style={{ height: '86px' }}></div>
+                            )}
+                            <div style={{
+                              marginTop: '12px',
+                              height: '80px',
+                              width: '90px',
+                              background: 'linear-gradient(to top, #7c3aed, #a78bfa)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '36px', color: '#fff' }}>3</span>
+                            </div>
+                          </div>
+
+                          {/* 1st Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '120px',
+                            zIndex: 1
+                          }}>
+                            <div style={{
+                              width: '68px',
+                              height: '68px',
+                              borderRadius: '50%',
+                              backgroundColor: '#ca8a04',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: '800',
+                              fontSize: '22px',
+                              border: '3px solid #facc15',
+                              boxShadow: '0 6px 15px rgba(250, 204, 21, 0.3)',
+                              position: 'relative'
+                            }}>
+                              {sortedAttempts[0].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '1'}
+                              <div style={{ position: 'absolute', top: '-18px', fontSize: '16px' }}>👑</div>
+                            </div>
+                            <span style={{ fontWeight: '800', fontSize: '14px', textAlign: 'center', marginTop: '8px', width: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {sortedAttempts[0].user?.name}
+                            </span>
+                            <span style={{ fontSize: '13px', fontWeight: '800', color: '#facc15', marginTop: '2px' }}>
+                              {sortedAttempts[0].percentage}%
+                            </span>
+                            <div style={{
+                              marginTop: '12px',
+                              height: '130px',
+                              width: '100px',
+                              background: 'linear-gradient(to top, #4c1d95, #7c3aed)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 15px rgba(0,0,0,0.15)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '48px', color: '#fff' }}>1</span>
+                            </div>
+                          </div>
+
+                          {/* 2nd Place */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            width: '100px',
+                            zIndex: 1
+                          }}>
+                            {sortedAttempts.length > 1 ? (
+                              <>
+                                <div style={{
+                                  width: '58px',
+                                  height: '58px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#1e3a8a',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: '800',
+                                  fontSize: '18px',
+                                  border: '3px solid #93c5fd',
+                                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                                }}>
+                                  {sortedAttempts[1].user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || '2'}
+                                </div>
+                                <span style={{ fontWeight: '700', fontSize: '13px', textAlign: 'center', marginTop: '8px', width: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sortedAttempts[1].user?.name}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#fcd34d', marginTop: '2px' }}>
+                                  {sortedAttempts[1].percentage}%
+                                </span>
+                              </>
+                            ) : (
+                              <div style={{ height: '88px' }}></div>
+                            )}
+                            <div style={{
+                              marginTop: '12px',
+                              height: '105px',
+                              width: '90px',
+                              background: 'linear-gradient(to top, #6d28d9, #8b5cf6)',
+                              borderRadius: '8px 8px 0 0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+                            }}>
+                              <span style={{ fontWeight: '800', fontSize: '40px', color: '#fff' }}>2</span>
+                            </div>
+                          </div>
+
+                        </div>
+                      )}
+
+                      {/* Standings List Container */}
+                      <div style={{
+                        backgroundColor: '#d8b4fe',
+                        borderRadius: '24px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        maxHeight: '300px',
+                        overflowY: 'auto'
+                      }}>
+                        {sortedAttempts.length === 0 ? (
+                          <p style={{ color: '#581c87', fontSize: '13.5px', fontWeight: '600', margin: 0, textAlign: 'center' }}>No standings available yet.</p>
+                        ) : (
+                          sortedAttempts.map((att: any, index: number) => {
+                            const trend = (att.id % 3 === 0) ? 'up' : (att.id % 3 === 1) ? 'down' : 'stable';
+                            return (
+                              <div key={`rank-row-${att.id}`} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                backgroundColor: '#ffffff',
+                                borderRadius: '16px',
+                                padding: '12px 16px',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                                color: '#1e1b4b'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  
+                                  {/* Trend and Rank */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '24px' }}>
+                                    {trend === 'up' ? (
+                                      <span style={{ color: '#10b981', fontSize: '11px', fontWeight: 'bold' }}>▲</span>
+                                    ) : trend === 'down' ? (
+                                      <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 'bold' }}>▼</span>
+                                    ) : (
+                                      <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' }}>•</span>
+                                    )}
+                                    <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--light-text)' }}>
+                                      {index + 1}
+                                    </span>
+                                  </div>
+
+                                  {/* Student circular initials avatar */}
+                                  <div style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    borderRadius: '50%',
+                                    backgroundColor: index === 0 ? '#fef08a' : index === 1 ? '#cbd5e1' : index === 2 ? '#ffedd5' : '#e0d7ff',
+                                    color: index === 0 ? '#854d0e' : index === 1 ? '#334155' : index === 2 ? '#c2410c' : '#581c87',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: '800',
+                                    fontSize: '14px',
+                                    border: '1.5px solid var(--light-border)'
+                                  }}>
+                                    {att.user?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+                                  </div>
+
+                                  {/* Name and Progress bar */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontWeight: '700', fontSize: '14px', color: '#1e1b4b' }}>
+                                      {att.user?.name}
+                                    </span>
+                                    {/* Progress Bar */}
+                                    <div style={{
+                                      width: '180px',
+                                      height: '14px',
+                                      backgroundColor: '#f3e8ff',
+                                      borderRadius: '7px',
+                                      overflow: 'hidden',
+                                      position: 'relative'
+                                    }}>
+                                      <div style={{
+                                        width: `${att.percentage}%`,
+                                        height: '100%',
+                                        background: 'linear-gradient(to right, #c084fc, #8b5cf6)',
+                                        borderRadius: '7px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        paddingRight: '6px'
+                                      }}>
+                                        <span style={{ fontSize: '9px', fontWeight: '800', color: '#fff' }}>
+                                          {att.percentage}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '60px' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#581c87' }}>
+                                      {att.score} Marks
+                                    </span>
+                                    <span style={{ fontSize: '10px', color: 'var(--light-text-secondary)' }}>
+                                      {Math.floor(att.time_taken / 60)}m {att.time_taken % 60}s
+                                    </span>
+                                  </div>
+                                  <button
+                                    className="btn-ld btn-ld-secondary btn-ld-small"
+                                    onClick={() => handleViewResultDetails(att.id)}
+                                    style={{
+                                      padding: '4px 8px',
+                                      fontSize: '11px',
+                                      backgroundColor: '#f3e8ff',
+                                      border: '1px solid #c084fc',
+                                      color: '#6b21a8'
+                                    }}
+                                  >
+                                    Report
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
                     </div>
                   )}
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button className="btn-ld btn-ld-secondary" onClick={() => setShowAnalyticsModal(false)}>
@@ -3180,23 +4483,54 @@ const ClassroomDetails: React.FC = () => {
                   <h4 style={{ margin: '0 0 12px 0', fontWeight: '700' }}>Answer Key & Responses</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '250px', overflowY: 'auto' }}>
                     {viewAttemptDetails.test?.questions?.map((q, idx) => {
-                      const studentChoice = viewAttemptDetails.responses[q.id!];
-                      const isCorrect = studentChoice?.toUpperCase() === q.correct_answer?.toUpperCase();
+                      const studentChoice = viewAttemptDetails.responses ? viewAttemptDetails.responses[q.id!] : undefined;
+                      const isSubjective = q.question_type === 'subjective';
+                      const isCorrect = !isSubjective && (studentChoice && q.correct_answer && studentChoice.toUpperCase() === q.correct_answer.toUpperCase());
 
                       return (
-                        <div key={q.id} style={{ padding: '16px', border: '1.5px solid var(--light-border)', borderRadius: '8px', backgroundColor: isCorrect ? '#f0fdf4' : '#fef2f2' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-text-secondary)' }}>Question {idx + 1}</span>
-                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0' }}>{q.question_text}</p>
-                          <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
-                            <span>Your Answer: <strong>{studentChoice || 'None'}</strong></span>
-                            {q.correct_answer && (
-                              <span style={{ marginLeft: '20px' }}>Correct Answer: <strong style={{ color: 'var(--light-success)' }}>{q.correct_answer}</strong></span>
-                            )}
+                        <div key={q.id || idx} style={{
+                          padding: '16px',
+                          border: '1.5px solid var(--light-border)',
+                          borderRadius: '8px',
+                          backgroundColor: isSubjective ? '#f8fafc' : (isCorrect ? '#f0fdf4' : '#fef2f2')
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-text-secondary)' }}>
+                              Question {idx + 1} ({isSubjective ? 'Subjective' : 'MCQ'})
+                            </span>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-primary)' }}>
+                              {q.marks} Marks
+                            </span>
                           </div>
-                          {q.explanation && (
-                            <p style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', margin: 0, fontStyle: 'italic' }}>
-                              Explanation: {q.explanation}
-                            </p>
+
+                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0', whiteSpace: 'pre-wrap' }}>{q.question_text}</p>
+
+                          {isSubjective ? (
+                            <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
+                              <div style={{ fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Your Answer:</div>
+                              <div style={{ padding: '10px 14px', backgroundColor: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1', whiteSpace: 'pre-wrap', color: '#0f172a' }}>
+                                {studentChoice || <em style={{ color: '#94a3b8' }}>No response submitted</em>}
+                              </div>
+                              {q.explanation && (
+                                <div style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: '#f0fdf4', borderLeft: '3px solid #22c55e', borderRadius: '4px', fontSize: '12.5px', color: '#15803d' }}>
+                                  <strong>Rubric / Model Answer:</strong> {q.explanation}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
+                                <span>Your Answer: <strong>{studentChoice || 'None'}</strong></span>
+                                {q.correct_answer && (
+                                  <span style={{ marginLeft: '20px' }}>Correct Answer: <strong style={{ color: 'var(--light-success)' }}>{q.correct_answer}</strong></span>
+                                )}
+                              </div>
+                              {q.explanation && (
+                                <p style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', margin: 0, fontStyle: 'italic' }}>
+                                  Explanation: {q.explanation}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
@@ -3254,6 +4588,66 @@ const ClassroomDetails: React.FC = () => {
                   <label className="form-label-ld">Total Marks *</label>
                   <input type="number" className="form-input-ld" value={pracTotalMarks} onChange={(e) => setPracTotalMarks(parseInt(e.target.value) || 100)} required />
                 </div>
+              </div>
+
+              <div className="form-group-ld">
+                <label className="form-label-ld">Assigned Batches (comma-separated, leave blank for all)</label>
+                <input 
+                  type="text" 
+                  className="form-input-ld" 
+                  placeholder="e.g. Batch A, Batch B"
+                  value={pracBatches} 
+                  onChange={(e) => setPracBatches(e.target.value)} 
+                  disabled={pracAssignToSpecificStudents}
+                />
+              </div>
+
+              <div className="form-group-ld">
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer', fontWeight: '600', marginBottom: '8px' }}>
+                  <input 
+                    type="checkbox"
+                    checked={pracAssignToSpecificStudents}
+                    onChange={(e) => {
+                      setPracAssignToSpecificStudents(e.target.checked);
+                      if (e.target.checked) setPracBatches('');
+                    }}
+                  />
+                  <span>Assign to specific individual students instead of batches</span>
+                </label>
+                {pracAssignToSpecificStudents && (
+                  <div style={{
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--light-border)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    backgroundColor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    {activeStudents.length === 0 ? (
+                      <span style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>No active students in classroom</span>
+                    ) : (
+                      activeStudents.map(student => (
+                        <label key={`prac-student-${student.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={pracSelectedStudentIds.includes(student.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPracSelectedStudentIds(prev => [...prev, student.id]);
+                              } else {
+                                setPracSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                              }
+                            }}
+                          />
+                          <span>{student.name} ({student.email})</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '12px' }}>
@@ -3461,7 +4855,7 @@ const ClassroomDetails: React.FC = () => {
                   <strong>Attached Files:</strong>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
                     {selectedSubForGrading.submitted_files.map((f, i) => {
-                      const fileLink = f.url.startsWith('/uploads/') ? `http://localhost:5000${f.url}` : f.url;
+                      const fileLink = f.url.startsWith('/uploads/') ? `${getServerUrl()}${f.url}` : f.url;
                       return (
                         <a key={i} href={fileLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'underline' }}>{f.name}</a>
                       );
@@ -3580,31 +4974,32 @@ const ClassroomDetails: React.FC = () => {
 
             <div style={{ minHeight: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: '8px', overflow: 'hidden' }}>
               {(() => {
+                const link = previewResource.drive_link || '';
+                const isYouTube = previewResource.mime_type === 'youtube' || link.includes('youtube.com') || link.includes('youtu.be');
                 const isPDF = previewResource.mime_type === 'application/pdf' || previewResource.name.toLowerCase().endsWith('.pdf');
+                const isImage = previewResource.mime_type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(previewResource.name);
                 const isVideo = previewResource.mime_type.startsWith('video/') || previewResource.name.toLowerCase().endsWith('.mp4') || previewResource.name.toLowerCase().endsWith('.webm');
-                const isYouTube = previewResource.mime_type === 'youtube';
+                const isOfficeDoc = /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(previewResource.name);
 
-                const fullLink = previewResource.drive_link.startsWith('/uploads/') 
-                  ? `http://localhost:5000${previewResource.drive_link}` 
-                  : previewResource.drive_link;
+                const fullLink = link.startsWith('/uploads/') 
+                  ? `${getServerUrl()}${link}` 
+                  : link;
 
                 if (isYouTube) {
-                  const ytId = getYouTubeId(previewResource.drive_link);
+                  const ytId = getYouTubeId(link);
                   if (ytId) {
                     return (
                       <iframe 
                         width="100%" 
-                        height="450" 
-                        src={`https://www.youtube.com/embed/${ytId}`} 
+                        height="480" 
+                        src={`https://www.youtube.com/embed/${ytId}?autoplay=1`} 
                         title="YouTube video player" 
                         frameBorder="0" 
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                         allowFullScreen
-                        style={{ width: '100%', border: 'none' }}
+                        style={{ width: '100%', border: 'none', borderRadius: '8px' }}
                       />
                     );
-                  } else {
-                    return <p style={{ padding: '20px', color: 'red' }}>Invalid YouTube link.</p>;
                   }
                 }
 
@@ -3613,9 +5008,19 @@ const ClassroomDetails: React.FC = () => {
                     <iframe 
                       src={fullLink} 
                       width="100%" 
-                      height="550px" 
+                      height="580px" 
                       style={{ border: 'none' }} 
                       title="PDF Preview" 
+                    />
+                  );
+                }
+
+                if (isImage) {
+                  return (
+                    <img 
+                      src={fullLink} 
+                      alt={previewResource.name}
+                      style={{ maxWidth: '100%', maxHeight: '550px', objectFit: 'contain' }}
                     />
                   );
                 }
@@ -3627,12 +5032,33 @@ const ClassroomDetails: React.FC = () => {
                       controls 
                       autoPlay
                       width="100%" 
-                      style={{ maxHeight: '500px', outline: 'none' }} 
+                      style={{ maxHeight: '520px', outline: 'none' }} 
                     />
                   );
                 }
 
-                return <p style={{ padding: '20px' }}>Preview not available for this file type.</p>;
+                if (isOfficeDoc) {
+                  const officeViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(fullLink)}&embedded=true`;
+                  return (
+                    <iframe 
+                      src={officeViewerUrl} 
+                      width="100%" 
+                      height="580px" 
+                      style={{ border: 'none' }} 
+                      title="Document Preview" 
+                    />
+                  );
+                }
+
+                return (
+                  <iframe 
+                    src={fullLink} 
+                    width="100%" 
+                    height="550px" 
+                    style={{ border: 'none' }} 
+                    title="Web Link" 
+                  />
+                );
               })()}
             </div>
             
@@ -3644,6 +5070,32 @@ const ClassroomDetails: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Dynamic Assign to Students Modal */}
+      <AssignContentModal
+        show={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        assignTargetType={assignTargetType}
+        assignBatches={assignBatches}
+        setAssignBatches={setAssignBatches}
+        assignToSpecificStudents={assignToSpecificStudents}
+        setAssignToSpecificStudents={setAssignToSpecificStudents}
+        activeStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
+        assignSelectedStudentIds={assignSelectedStudentIds}
+        setAssignSelectedStudentIds={setAssignSelectedStudentIds}
+        assignVisibility={assignVisibility}
+        setAssignVisibility={setAssignVisibility}
+        activeTeachers={activeTeachers.map(t => ({ id: t.id, name: t.name, email: t.email }))}
+        assignToSpecificTeachers={assignToSpecificTeachers}
+        setAssignToSpecificTeachers={setAssignToSpecificTeachers}
+        assignSelectedTeacherIds={assignSelectedTeacherIds}
+        setAssignSelectedTeacherIds={setAssignSelectedTeacherIds}
+        scheduledAt={scheduledAt}
+        setScheduledAt={setScheduledAt}
+        expiryAt={expiryAt}
+        setExpiryAt={setExpiryAt}
+        assignSaving={assignSaving}
+        onAssignSubmit={handleAssignSubmit}
+      />
     </DashboardLayout>
   );
 };

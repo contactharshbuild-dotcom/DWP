@@ -8,9 +8,17 @@ const McqTest = sequelize.define('McqTest', {
     autoIncrement: true,
     allowNull: false
   },
+  organization_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'organizations',
+      key: 'id'
+    }
+  },
   classroom_id: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'classrooms',
       key: 'id'
@@ -56,13 +64,17 @@ const McqTest = sequelize.define('McqTest', {
   },
   start_window: {
     type: DataTypes.DATE,
-    allowNull: false
+    allowNull: true
   },
   end_window: {
     type: DataTypes.DATE,
-    allowNull: false
+    allowNull: true
   },
   batches: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  assigned_student_ids: {
     type: DataTypes.JSON,
     allowNull: true
   },
@@ -77,6 +89,26 @@ const McqTest = sequelize.define('McqTest', {
     defaultValue: 3
   },
   security_force_fullscreen: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  activation_mode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'auto'
+  },
+  status: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'scheduled'
+  },
+  score_release_mode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'immediate'
+  },
+  proctor_extension_required: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false

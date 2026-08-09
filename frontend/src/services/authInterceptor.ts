@@ -16,6 +16,11 @@ export const authErrorInterceptor = (error: any) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('organization');
+
+    // Force redirect to login if session expired to prevent infinite 401 request loops
+    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+      window.location.href = '/login';
+    }
   }
   return Promise.reject(error);
 };

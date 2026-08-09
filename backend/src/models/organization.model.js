@@ -37,6 +37,24 @@ const Organization = sequelize.define('Organization', {
     type: DataTypes.STRING,
     defaultValue: 'active',
     allowNull: false
+  },
+  subscription_plan_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  billing_cycle: {
+    type: DataTypes.STRING,
+    defaultValue: 'monthly',
+    allowNull: true
+  },
+  subscription_status: {
+    type: DataTypes.STRING,
+    defaultValue: 'active',
+    allowNull: true
+  },
+  subscription_expires_at: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   tableName: 'organizations',

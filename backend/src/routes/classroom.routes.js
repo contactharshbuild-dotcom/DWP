@@ -1,6 +1,7 @@
 import express from 'express';
 import { 
   createClassroom, 
+  deleteClassroom,
   getClassrooms, 
   getClassroomById, 
   joinClassroom,
@@ -11,7 +12,12 @@ import {
   getClassroomJoinStatus,
   approveTeacher, 
   rejectTeacher,
-  upgradeTeacherRole
+  upgradeTeacherRole,
+  assignTeacherToClassroom,
+  inviteStudent,
+  removeStudent,
+  approveStudent,
+  rejectStudent
 } from '../controllers/classroom.controller.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.middleware.js';
 
@@ -30,14 +36,22 @@ router.use(authenticate);
 router.get('/', authorizeRoles('admin', 'teacher', 'student'), getClassrooms);
 router.get('/:id', authorizeRoles('admin', 'teacher', 'student'), getClassroomById);
 
-// Teacher join request and status checks
-router.post('/join', authorizeRoles('teacher'), joinClassroom);
-router.get('/status/:numericId', authorizeRoles('teacher'), getClassroomJoinStatus);
+// Join request and status checks
+router.post('/join', authorizeRoles('teacher', 'student'), joinClassroom);
+router.get('/status/:numericId', authorizeRoles('teacher', 'student'), getClassroomJoinStatus);
 
 // Admin write actions
 router.post('/', authorizeRoles('admin'), createClassroom);
+router.delete('/:id', authorizeRoles('admin'), deleteClassroom);
+router.post('/:id/teachers/assign', authorizeRoles('admin'), assignTeacherToClassroom);
 router.post('/:id/teachers/:teacherId/approve', authorizeRoles('admin'), approveTeacher);
 router.post('/:id/teachers/:teacherId/upgrade', authorizeRoles('admin'), upgradeTeacherRole);
 router.delete('/:id/teachers/:teacherId/reject', authorizeRoles('admin'), rejectTeacher);
+
+// Admin/Teacher student invitation, enrollment and approval management
+router.post('/:id/students/invite', authorizeRoles('admin', 'teacher'), inviteStudent);
+router.delete('/:id/students/:studentId', authorizeRoles('admin', 'teacher'), removeStudent);
+router.post('/:id/students/:studentId/approve', authorizeRoles('admin', 'teacher'), approveStudent);
+router.delete('/:id/students/:studentId/reject', authorizeRoles('admin', 'teacher'), rejectStudent);
 
 export default router;
