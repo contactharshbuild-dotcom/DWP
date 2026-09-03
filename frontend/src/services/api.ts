@@ -10,7 +10,7 @@ export const getApiUrl = (): string => {
   }
   // Fallback for development vs production deployment
   if (import.meta.env.DEV) {
-    return 'http://localhost:5000/api';
+    return 'https://dwp-075c.onrender.com/api';
   }
   // Relative path in production if VITE_API_URL is not explicitly set at build time
   return '/api';
@@ -29,7 +29,7 @@ export const getServerUrl = (): string => {
   }
 
   if (import.meta.env.DEV) {
-    return 'http://localhost:5000';
+    return 'https://dwp-075c.onrender.com';
   }
 
   return typeof window !== 'undefined' ? window.location.origin : '';
