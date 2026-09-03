@@ -860,14 +860,14 @@ const JoinClassroom: React.FC = () => {
                 style={{
                   flex: 1,
                   padding: '8px 16px',
-                  background: authTab === 'signup' ? '#ffffff' : 'transparent',
+                  background: (authTab as string) === 'signup' ? '#ffffff' : 'transparent',
                   border: 'none',
                   borderRadius: '8px',
-                  color: authTab === 'signup' ? '#4f46e5' : '#64748b',
+                  color: (authTab as string) === 'signup' ? '#4f46e5' : '#64748b',
                   fontWeight: '600',
                   cursor: 'pointer',
                   fontSize: '13.5px',
-                  boxShadow: authTab === 'signup' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                  boxShadow: (authTab as string) === 'signup' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
                   transition: 'all 0.2s ease'
                 }}
                 onClick={() => { setError(null); setSuccessMsg(null); setAuthTab('signup'); setWizardStep(1); }}

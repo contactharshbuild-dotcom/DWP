@@ -8,6 +8,7 @@ export interface User {
   batch?: string | null;
   profile_url?: string | null;
   profileUrl?: string | null;
+  phone?: string | null;
 }
 
 export interface Organization {

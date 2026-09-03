@@ -204,7 +204,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
       {/* Search Bar & Stats */}
       <div style={{
         display: 'flex',
-        justify: 'space-between',
+        justifyContent: 'space-between',
         alignItems: 'center',
         gap: '12px',
         marginBottom: '16px',
@@ -510,7 +510,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
           {totalQuizzes > 0 && (
             <div style={{
               display: 'flex',
-              justify: 'space-between',
+              justifyContent: 'space-between',
               alignItems: 'center',
               marginTop: '16px',
               padding: '12px 16px',

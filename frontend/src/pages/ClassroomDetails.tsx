@@ -29,7 +29,6 @@ import { ResourcesTab } from './classroom-modules/ResourcesTab';
 import { PracticalsTab } from './classroom-modules/PracticalsTab';
 import { SessionsTab } from './classroom-modules/SessionsTab';
 import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
-import { quizBuilderService } from '../quiz-builder/services/quizBuilderService';
 import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
 import { ImportMaterialBankModal } from './classroom-modules/modals/ImportMaterialBankModal';
 import { materialBankService } from '../material-bank/services/materialBankService';
@@ -38,6 +37,7 @@ interface Teacher {
   id: number;
   name: string;
   email: string;
+  role?: string;
   status: string; // user account status (active/pending)
   batch?: string | null;
   invite_token?: string | null;
@@ -2967,7 +2967,7 @@ const ClassroomDetails: React.FC = () => {
                       className="form-input-ld"
                       style={{
                         display: 'flex',
-                        justify: 'space-between',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
                         cursor: 'pointer',
                         userSelect: 'none',

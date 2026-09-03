@@ -4,11 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { 
   FiLayers, 
   FiCheckCircle, 
-  FiZap, 
-  FiUsers, 
-  FiGlobe, 
-  FiHelpCircle, 
-  FiFileText, 
   FiArrowRight, 
   FiAlertCircle, 
   FiCreditCard,
@@ -50,6 +45,7 @@ const SelectPlan: React.FC = () => {
   const [cardExpiry, setCardExpiry] = useState('08/28');
   const [cardCvv, setCardCvv] = useState('888');
   const [upiId, setUpiId] = useState('8668593971@paytm');
+  const [_razorpayKeyId, setRazorpayKeyId] = useState<string>('');
 
   // Protect route
   useEffect(() => {
