@@ -5,7 +5,9 @@ import {
   FiAlertCircle,
   FiPlus,
   FiUser,
-  FiClock
+  FiClock,
+  FiUserCheck,
+  FiTrash2
 } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
@@ -34,6 +36,7 @@ const Teachers: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -58,6 +61,33 @@ const Teachers: React.FC = () => {
       setError('Failed to fetch teachers list.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveTeacher = async (teacherId: number) => {
+    setActionLoading(teacherId);
+    try {
+      await api.post(`/teachers/${teacherId}/approve`);
+      await fetchTeachers();
+    } catch (err: any) {
+      console.error('Failed to approve teacher:', err);
+      alert(err.response?.data?.message || 'Failed to approve teacher.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectTeacher = async (teacherId: number) => {
+    if (!window.confirm('Are you sure you want to reject or remove this teacher?')) return;
+    setActionLoading(teacherId);
+    try {
+      await api.delete(`/teachers/${teacherId}`);
+      await fetchTeachers();
+    } catch (err: any) {
+      console.error('Failed to reject teacher:', err);
+      alert(err.response?.data?.message || 'Failed to reject teacher.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -207,23 +237,77 @@ const Teachers: React.FC = () => {
                     <td>
                       {teacher.status === 'active' ? (
                         <span className="badge-ld badge-ld-success">Active</span>
-                      ) : (
-                        <span className="badge-ld badge-ld-warning">
+                      ) : teacher.invite_token ? (
+                        <span className="badge-ld badge-ld-warning" title="Invited, awaiting completion of setup">
                           <FiClock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                          Pending
+                          Pending Setup
+                        </span>
+                      ) : (
+                        <span className="badge-ld" style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }} title="Setup completed, awaiting admin approval">
+                          <FiClock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                          Pending Approval
                         </span>
                       )}
                     </td>
                     <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                      {teacher.status === 'pending' && teacher.invite_token && (
-                        <button 
-                          className="btn-ld btn-ld-secondary btn-ld-small" 
-                          onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
-                        >
-                          <FiCopy size={13} />
-                          <span>Copy Link</span>
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                        {teacher.status === 'pending' && !teacher.invite_token && (
+                          <>
+                            <button 
+                              className="btn-ld btn-ld-primary btn-ld-small" 
+                              onClick={() => handleApproveTeacher(teacher.id)}
+                              disabled={actionLoading === teacher.id}
+                              style={{ backgroundColor: '#10b981', borderColor: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <FiUserCheck size={13} />
+                              <span>{actionLoading === teacher.id ? 'Approving...' : 'Approve'}</span>
+                            </button>
+                            <button 
+                              className="btn-ld btn-ld-small" 
+                              onClick={() => handleRejectTeacher(teacher.id)}
+                              disabled={actionLoading === teacher.id}
+                              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Reject / Remove Teacher"
+                            >
+                              <FiTrash2 size={13} />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        )}
+                        {teacher.status === 'pending' && teacher.invite_token && (
+                          <>
+                            <button 
+                              className="btn-ld btn-ld-secondary btn-ld-small" 
+                              onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
+                            >
+                              <FiCopy size={13} />
+                              <span>Copy Link</span>
+                            </button>
+                            <button 
+                              className="btn-ld btn-ld-small" 
+                              onClick={() => handleRejectTeacher(teacher.id)}
+                              disabled={actionLoading === teacher.id}
+                              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Revoke Invitation"
+                            >
+                              <FiTrash2 size={13} />
+                              <span>Revoke</span>
+                            </button>
+                          </>
+                        )}
+                        {teacher.status === 'active' && (
+                          <button 
+                            className="btn-ld btn-ld-small" 
+                            onClick={() => handleRejectTeacher(teacher.id)}
+                            disabled={actionLoading === teacher.id}
+                            style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Remove Teacher"
+                          >
+                            <FiTrash2 size={13} />
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

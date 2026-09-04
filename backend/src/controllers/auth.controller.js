@@ -158,21 +158,6 @@ export const login = async (req, res) => {
       return res.status(403).json({ message: 'Your account is pending approval by an administrator. You will be able to log in once your request is approved.' });
     }
 
-    if (user.role === 'teacher') {
-      const approvedMembership = await ClassroomTeacher.findOne({
-        where: {
-          user_id: user.id,
-          status: 'approved'
-        }
-      });
-
-      if (!approvedMembership) {
-        return res.status(403).json({ 
-          message: 'Your teacher request is pending approval by the classroom administrator. You can log in once an admin approves your request.' 
-        });
-      }
-    }
-
     if (user.organization && user.organization.status !== 'active') {
       return res.status(403).json({ message: 'Organization is inactive.' });
     }
@@ -291,21 +276,6 @@ export const verifyLoginOtp = async (req, res) => {
 
     if (user.status !== 'active') {
       return res.status(403).json({ message: 'Your account is pending approval by an administrator. You will be able to log in once your request is approved.' });
-    }
-
-    if (user.role === 'teacher') {
-      const approvedMembership = await ClassroomTeacher.findOne({
-        where: {
-          user_id: user.id,
-          status: 'approved'
-        }
-      });
-
-      if (!approvedMembership) {
-        return res.status(403).json({ 
-          message: 'Your teacher request is pending approval by the classroom administrator. You can log in once an admin approves your request.' 
-        });
-      }
     }
 
     // Clear OTP details upon verification

@@ -18,10 +18,12 @@ import {
   FiActivity,
   FiCalendar,
   FiUserPlus,
-  FiChevronDown
+  FiChevronDown,
+  FiEdit2
 } from 'react-icons/fi';
 import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
+import { useClassrooms } from '../components/ClassroomContext';
 import { TeachersTab } from './classroom-modules/TeachersTab';
 import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
 import { StudentsTab } from './classroom-modules/StudentsTab';
@@ -265,6 +267,7 @@ const ClassroomDetails: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
+  const { fetchClassrooms } = useClassrooms();
 
   // Classroom Detail State
   const [classroom, setClassroom] = useState<Classroom | null>(null);
@@ -328,6 +331,42 @@ const ClassroomDetails: React.FC = () => {
       setDeleteClassroomError(err.response?.data?.message || 'Failed to delete classroom.');
     } finally {
       setDeleteClassroomLoading(false);
+    }
+  };
+
+  // Rename Classroom Modal State
+  const [showRenameClassroomModal, setShowRenameClassroomModal] = useState(false);
+  const [renameClassName, setRenameClassName] = useState('');
+  const [renameClassSubject, setRenameClassSubject] = useState('');
+  const [renameClassroomLoading, setRenameClassroomLoading] = useState(false);
+  const [renameClassroomError, setRenameClassroomError] = useState<string | null>(null);
+
+  const handleRenameCurrentClassroom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !classroom) return;
+    if (!renameClassName.trim()) {
+      setRenameClassroomError('Classroom name is required.');
+      return;
+    }
+
+    setRenameClassroomLoading(true);
+    setRenameClassroomError(null);
+    try {
+      const response = await api.put(`/classrooms/${id}`, {
+        name: renameClassName.trim(),
+        subject: renameClassSubject.trim() || undefined
+      });
+      setClassroom((prev: any) => prev ? { ...prev, ...response.data.classroom } : response.data.classroom);
+      setShowRenameClassroomModal(false);
+      await fetchClassroomDetails();
+      if (typeof fetchClassrooms === 'function') {
+        fetchClassrooms();
+      }
+    } catch (err: any) {
+      console.error(err);
+      setRenameClassroomError(err.response?.data?.message || 'Failed to rename classroom.');
+    } finally {
+      setRenameClassroomLoading(false);
     }
   };
 
@@ -2363,6 +2402,31 @@ const ClassroomDetails: React.FC = () => {
             <h2 className="ld-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiBookOpen style={{ color: 'var(--light-primary)' }} />
               <span>{classroom?.name || 'Classroom Details'}</span>
+              {classroom && (user?.role === 'admin' || user?.role === 'teacher') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenameClassName(classroom.name || '');
+                    setRenameClassSubject(classroom.subject || '');
+                    setRenameClassroomError(null);
+                    setShowRenameClassroomModal(true);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--light-text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    marginLeft: '4px'
+                  }}
+                  title="Rename Classroom"
+                >
+                  <FiEdit2 size={16} />
+                </button>
+              )}
             </h2>
             <span className="ld-subtitle">
               Subject: {classroom?.subject} • Classroom ID: {classroom?.classroom_id}
@@ -2371,19 +2435,33 @@ const ClassroomDetails: React.FC = () => {
           </div>
         </div>
 
-        {classroom && user?.role === 'admin' && (
+        {classroom && (user?.role === 'admin' || user?.role === 'teacher') && (
           <div style={{ display: 'flex', gap: '8px' }}>
             <button 
-              className="btn-ld" 
-              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
+              className="btn-ld btn-ld-secondary" 
               onClick={() => {
-                setDeleteClassroomError(null);
-                setShowDeleteClassroomModal(true);
+                setRenameClassName(classroom.name || '');
+                setRenameClassSubject(classroom.subject || '');
+                setRenameClassroomError(null);
+                setShowRenameClassroomModal(true);
               }}
             >
-              <FiTrash2 size={16} />
-              <span>Delete Classroom</span>
+              <FiEdit2 size={15} />
+              <span>Rename</span>
             </button>
+            {user?.role === 'admin' && (
+              <button 
+                className="btn-ld" 
+                style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
+                onClick={() => {
+                  setDeleteClassroomError(null);
+                  setShowDeleteClassroomModal(true);
+                }}
+              >
+                <FiTrash2 size={16} />
+                <span>Delete Classroom</span>
+              </button>
+            )}
             <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
               <FiPlus size={18} />
               <span>Invite Teacher</span>
@@ -2880,6 +2958,82 @@ const ClassroomDetails: React.FC = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Rename Classroom Modal */}
+      {showRenameClassroomModal && classroom && (
+        <div className="modal-overlay-ld" onClick={() => setShowRenameClassroomModal(false)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiEdit2 size={20} style={{ color: 'var(--light-primary)' }} />
+                <span>Rename Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setShowRenameClassroomModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+              Update the name or subject for this classroom.
+            </p>
+
+            {renameClassroomError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{renameClassroomError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleRenameCurrentClassroom}>
+              <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                <label className="form-label-ld" htmlFor="detailsRenameClassName">Classroom Name *</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="detailsRenameClassName"
+                  value={renameClassName}
+                  onChange={(e) => setRenameClassName(e.target.value)}
+                  placeholder="e.g. Mathematics Grade 10"
+                  required
+                />
+              </div>
+
+              <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                <label className="form-label-ld" htmlFor="detailsRenameClassSubject">Subject</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="detailsRenameClassSubject"
+                  value={renameClassSubject}
+                  onChange={(e) => setRenameClassSubject(e.target.value)}
+                  placeholder="e.g. Algebra / Trigonometry"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-secondary" 
+                  onClick={() => setShowRenameClassroomModal(false)}
+                  disabled={renameClassroomLoading}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-ld btn-ld-primary" 
+                  disabled={renameClassroomLoading}
+                >
+                  {renameClassroomLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

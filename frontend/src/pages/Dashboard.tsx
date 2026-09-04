@@ -9,6 +9,7 @@ import {
   FiAlertCircle,
   FiAward,
   FiTrash2,
+  FiEdit2,
   FiX
 } from 'react-icons/fi';
 import type { RootState } from '../store';
@@ -28,6 +29,38 @@ const Dashboard: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Rename Classroom Modal State
+  const [renameTarget, setRenameTarget] = useState<{ id: number; name: string; subject?: string } | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [renameSubject, setRenameSubject] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  const handleRenameClassroom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget) return;
+    if (!renameName.trim()) {
+      setRenameError('Classroom name is required.');
+      return;
+    }
+
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      await api.put(`/classrooms/${renameTarget.id}`, {
+        name: renameName.trim(),
+        subject: renameSubject.trim() || undefined
+      });
+      setRenameTarget(null);
+      await fetchClassrooms();
+    } catch (err: any) {
+      console.error(err);
+      setRenameError(err.response?.data?.message || 'Failed to rename classroom.');
+    } finally {
+      setRenaming(false);
+    }
+  };
 
   const handleDeleteClassroom = async () => {
     if (!deleteTarget) return;
@@ -185,18 +218,34 @@ const Dashboard: React.FC = () => {
                           <FiArrowRight size={14} />
                         </Link>
                         {user?.role === 'admin' && (
-                          <button 
-                            type="button"
-                            className="btn-ld btn-ld-small"
-                            style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px' }}
-                            onClick={() => {
-                              setDeleteError(null);
-                              setDeleteTarget({ id: cls.id, name: cls.name });
-                            }}
-                            title="Delete Classroom"
-                          >
-                            <FiTrash2 size={14} />
-                          </button>
+                          <>
+                            <button 
+                              type="button"
+                              className="btn-ld btn-ld-secondary btn-ld-small"
+                              style={{ padding: '6px 10px' }}
+                              onClick={() => {
+                                setRenameError(null);
+                                setRenameName(cls.name);
+                                setRenameSubject(cls.subject || '');
+                                setRenameTarget({ id: cls.id, name: cls.name, subject: cls.subject });
+                              }}
+                              title="Rename Classroom"
+                            >
+                              <FiEdit2 size={14} />
+                            </button>
+                            <button 
+                              type="button"
+                              className="btn-ld btn-ld-small"
+                              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px' }}
+                              onClick={() => {
+                                setDeleteError(null);
+                                setDeleteTarget({ id: cls.id, name: cls.name });
+                              }}
+                              title="Delete Classroom"
+                            >
+                              <FiTrash2 size={14} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -207,6 +256,82 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Rename Classroom Modal */}
+      {renameTarget && (
+        <div className="modal-overlay-ld" onClick={() => setRenameTarget(null)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiEdit2 size={20} style={{ color: 'var(--light-primary)' }} />
+                <span>Rename Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setRenameTarget(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+              Update the name or subject for <strong>{renameTarget.name}</strong>.
+            </p>
+
+            {renameError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{renameError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleRenameClassroom}>
+              <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                <label className="form-label-ld" htmlFor="tableRenameClassName">Classroom Name *</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="tableRenameClassName"
+                  value={renameName}
+                  onChange={(e) => setRenameName(e.target.value)}
+                  placeholder="e.g. Mathematics Grade 10"
+                  required
+                />
+              </div>
+
+              <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                <label className="form-label-ld" htmlFor="tableRenameClassSubject">Subject</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="tableRenameClassSubject"
+                  value={renameSubject}
+                  onChange={(e) => setRenameSubject(e.target.value)}
+                  placeholder="e.g. Algebra / Trigonometry"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-secondary" 
+                  onClick={() => setRenameTarget(null)}
+                  disabled={renaming}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-ld btn-ld-primary" 
+                  disabled={renaming}
+                >
+                  {renaming ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Delete Classroom Modal */}
       {deleteTarget && (

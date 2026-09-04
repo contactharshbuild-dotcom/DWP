@@ -47,6 +47,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Rename Classroom Modal State
+  const [renameClassroomTarget, setRenameClassroomTarget] = useState<{ id: number; name: string; subject?: string } | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [renameSubject, setRenameSubject] = useState('');
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
   // Organization Logo Modal State
   const [showOrgLogoModal, setShowOrgLogoModal] = useState(false);
   const [customLogoUrl, setCustomLogoUrl] = useState(organization?.logo_url || organization?.logoUrl || '');
@@ -117,6 +124,31 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       setDeleteError(err.response?.data?.message || 'Failed to delete classroom.');
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleRenameClassroomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameClassroomTarget) return;
+    if (!renameName.trim()) {
+      setRenameError('Classroom name is required.');
+      return;
+    }
+
+    setRenameLoading(true);
+    setRenameError(null);
+    try {
+      await api.put(`/classrooms/${renameClassroomTarget.id}`, {
+        name: renameName.trim(),
+        subject: renameSubject.trim() || undefined
+      });
+      setRenameClassroomTarget(null);
+      await fetchClassrooms();
+    } catch (err: any) {
+      console.error(err);
+      setRenameError(err.response?.data?.message || 'Failed to rename classroom.');
+    } finally {
+      setRenameLoading(false);
     }
   };
 
@@ -429,33 +461,64 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                           </div>
                         </Link>
                         {user?.role === 'admin' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setDeleteError(null);
-                              setDeleteClassroomTarget({ id: cls.id, name: cls.name });
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#ef4444',
-                              cursor: 'pointer',
-                              padding: '6px 8px',
-                              borderRadius: '6px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              opacity: 0.6,
-                              transition: 'opacity 0.2s'
-                            }}
-                            title={`Delete ${cls.name}`}
-                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
-                          >
-                            <FiTrash2 size={14} />
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setRenameError(null);
+                                setRenameName(cls.name);
+                                setRenameSubject(cls.subject || '');
+                                setRenameClassroomTarget({ id: cls.id, name: cls.name, subject: cls.subject });
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--light-text-secondary)',
+                                cursor: 'pointer',
+                                padding: '6px 4px',
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s'
+                              }}
+                              title={`Rename ${cls.name}`}
+                              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                            >
+                              <FiEdit2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setDeleteError(null);
+                                setDeleteClassroomTarget({ id: cls.id, name: cls.name });
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#ef4444',
+                                cursor: 'pointer',
+                                padding: '6px 6px',
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s'
+                              }}
+                              title={`Delete ${cls.name}`}
+                              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                            >
+                              <FiTrash2 size={14} />
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -764,6 +827,82 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                   disabled={createLoading}
                 >
                   {createLoading ? 'Creating...' : 'Create Classroom'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Classroom Modal Overlay */}
+      {renameClassroomTarget && (
+        <div className="modal-overlay-ld" onClick={() => setRenameClassroomTarget(null)}>
+          <div className="modal-content-ld" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="modal-title-ld" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiEdit2 size={20} style={{ color: 'var(--light-primary)' }} />
+                <span>Rename Classroom</span>
+              </h3>
+              <button 
+                onClick={() => setRenameClassroomTarget(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-muted)' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <p className="modal-subtitle-ld" style={{ marginBottom: '20px' }}>
+              Update the name or subject for this classroom.
+            </p>
+
+            {renameError && (
+              <div className="alert-ld alert-ld-error" style={{ marginBottom: '16px' }}>
+                <FiAlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{renameError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleRenameClassroomSubmit}>
+              <div className="form-group-ld" style={{ marginBottom: '16px' }}>
+                <label className="form-label-ld" htmlFor="renameClassName">Classroom Name *</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="renameClassName"
+                  value={renameName}
+                  onChange={(e) => setRenameName(e.target.value)}
+                  placeholder="e.g. Mathematics Grade 10"
+                  required
+                />
+              </div>
+
+              <div className="form-group-ld" style={{ marginBottom: '24px' }}>
+                <label className="form-label-ld" htmlFor="renameClassSubject">Subject</label>
+                <input
+                  className="form-input-ld"
+                  type="text"
+                  id="renameClassSubject"
+                  value={renameSubject}
+                  onChange={(e) => setRenameSubject(e.target.value)}
+                  placeholder="e.g. Algebra / Trigonometry"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-secondary" 
+                  onClick={() => setRenameClassroomTarget(null)}
+                  disabled={renameLoading}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-ld btn-ld-primary" 
+                  disabled={renameLoading}
+                >
+                  {renameLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

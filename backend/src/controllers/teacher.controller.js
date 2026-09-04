@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { User } from '../models/index.js';
+import { User, ClassroomTeacher } from '../models/index.js';
 
 export const inviteTeacher = async (req, res) => {
   try {
@@ -82,6 +82,85 @@ export const getTeachers = async (req, res) => {
     console.error('Error in getTeachers:', error);
     return res.status(500).json({
       message: 'Internal server error while retrieving teachers.',
+      error: error.message
+    });
+  }
+};
+
+// Approve / Activate a teacher in the organization
+export const approveTeacher = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const teacher = await User.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId,
+        role: 'teacher'
+      }
+    });
+
+    if (!teacher) {
+      return res.status(404).json({ message: 'Teacher not found.' });
+    }
+
+    if (teacher.invite_token) {
+      return res.status(400).json({
+        message: 'This teacher has not completed their setup via the invite link yet.'
+      });
+    }
+
+    teacher.status = 'active';
+    await teacher.save();
+
+    return res.json({
+      success: true,
+      message: 'Teacher approved and activated successfully.',
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+        email: teacher.email,
+        status: teacher.status
+      }
+    });
+  } catch (error) {
+    console.error('Error in approveTeacher:', error);
+    return res.status(500).json({
+      message: 'Internal server error while approving teacher.',
+      error: error.message
+    });
+  }
+};
+
+// Reject / Delete a teacher from the organization
+export const deleteTeacher = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const teacher = await User.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId,
+        role: 'teacher'
+      }
+    });
+
+    if (!teacher) {
+      return res.status(404).json({ message: 'Teacher not found.' });
+    }
+
+    // Clean up any classroom memberships
+    await ClassroomTeacher.destroy({ where: { user_id: teacher.id } });
+    await teacher.destroy();
+
+    return res.json({
+      success: true,
+      message: 'Teacher removed successfully.'
+    });
+  } catch (error) {
+    console.error('Error in deleteTeacher:', error);
+    return res.status(500).json({
+      message: 'Internal server error while deleting teacher.',
       error: error.message
     });
   }

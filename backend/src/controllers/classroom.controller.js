@@ -50,6 +50,65 @@ export const createClassroom = async (req, res) => {
   }
 };
 
+// Update / Rename a classroom (Admin or assigned Teacher)
+export const updateClassroom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, subject } = req.body;
+    const organization_id = req.user?.organizationId;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Classroom name is required.' });
+    }
+
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Authorization: Admin can rename any classroom; Teacher can rename if approved in this classroom
+    if (req.user?.role !== 'admin') {
+      const isTeacher = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: classroom.id,
+          user_id: req.user.id,
+          role: 'teacher',
+          status: 'approved'
+        }
+      });
+
+      if (!isTeacher) {
+        return res.status(403).json({ message: 'Access denied. Only admins or assigned teachers can rename this classroom.' });
+      }
+    }
+
+    classroom.name = name.trim();
+    if (subject !== undefined && subject.trim()) {
+      classroom.subject = subject.trim();
+    }
+
+    await classroom.save();
+
+    return res.json({
+      success: true,
+      message: 'Classroom renamed successfully.',
+      classroom
+    });
+  } catch (error) {
+    console.error('Error in updateClassroom:', error);
+    return res.status(500).json({
+      message: 'Internal server error while updating classroom.',
+      error: error.message
+    });
+  }
+};
+
 // Delete a classroom (Admin only)
 export const deleteClassroom = async (req, res) => {
   try {
@@ -679,15 +738,13 @@ export const signupStep4Profile = async (req, res) => {
       return res.status(404).json({ message: 'Classroom not found.' });
     }
 
-    const isPendingTeacher = (role === 'teacher');
-
     // Update user status, profile details, role, and batch
     await user.update({
       name,
       username,
       email,
       role,
-      status: isPendingTeacher ? 'pending' : 'active',
+      status: 'active',
       batch: batch || null
     });
 
@@ -708,14 +765,6 @@ export const signupStep4Profile = async (req, res) => {
           role: role === 'teacher' ? 'co-teacher' : role
         });
       }
-    }
-
-    if (isPendingTeacher) {
-      return res.status(201).json({
-        success: true,
-        pendingApproval: true,
-        message: 'Onboarding details submitted! Your request to join the classroom is pending approval by the administrator. You will be able to log in once an admin approves your request.'
-      });
     }
 
     // Generate JWT token for immediate login

@@ -1,6 +1,7 @@
 import express from 'express';
 import { 
   createClassroom, 
+  updateClassroom,
   deleteClassroom,
   getClassrooms, 
   getClassroomById, 
@@ -40,8 +41,10 @@ router.get('/:id', authorizeRoles('admin', 'teacher', 'student'), getClassroomBy
 router.post('/join', authorizeRoles('teacher', 'student'), joinClassroom);
 router.get('/status/:numericId', authorizeRoles('teacher', 'student'), getClassroomJoinStatus);
 
-// Admin write actions
+// Admin/Teacher write actions
 router.post('/', authorizeRoles('admin'), createClassroom);
+router.put('/:id', authorizeRoles('admin', 'teacher'), updateClassroom);
+router.patch('/:id', authorizeRoles('admin', 'teacher'), updateClassroom);
 router.delete('/:id', authorizeRoles('admin'), deleteClassroom);
 router.post('/:id/teachers/assign', authorizeRoles('admin'), assignTeacherToClassroom);
 router.post('/:id/teachers/:teacherId/approve', authorizeRoles('admin'), approveTeacher);
