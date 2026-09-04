@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { attachAuthInterceptors } from './authInterceptor.ts';
 
+const DEFAULT_BACKEND_URL = 'https://dwp-075c.onrender.com';
+
 // Helper to determine the API base URL
 export const getApiUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL;
@@ -8,12 +10,8 @@ export const getApiUrl = (): string => {
     const cleanUrl = envUrl.replace(/\/+$/, '');
     return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
   }
-  // Fallback for development vs production deployment
-  if (import.meta.env.DEV) {
-    return 'https://dwp-075c.onrender.com/api';
-  }
-  // Relative path in production if VITE_API_URL is not explicitly set at build time
-  return '/api';
+  // Default fallback for both development and production if VITE_API_URL is not provided
+  return `${DEFAULT_BACKEND_URL}/api`;
 };
 
 // Helper to determine the backend server root URL (for uploaded media/files)
@@ -28,11 +26,7 @@ export const getServerUrl = (): string => {
     return envApiUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
   }
 
-  if (import.meta.env.DEV) {
-    return 'https://dwp-075c.onrender.com';
-  }
-
-  return typeof window !== 'undefined' ? window.location.origin : '';
+  return DEFAULT_BACKEND_URL;
 };
 
 const API_URL = getApiUrl();
