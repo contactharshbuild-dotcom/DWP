@@ -40,7 +40,8 @@ export const inviteTeacher = async (req, res) => {
       invite_expires: expiry
     });
 
-    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const origin = req.get('origin') || (req.get('referer') ? new URL(req.get('referer')).origin : '');
+    const frontendUrl = (process.env.FRONTEND_URL || origin || 'http://localhost:5173').replace(/\/+$/, '');
     const inviteLink = `${frontendUrl}/accept-invite?token=${token}`;
 
     return res.status(201).json({

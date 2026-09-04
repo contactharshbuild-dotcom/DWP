@@ -891,7 +891,8 @@ export const inviteStudent = async (req, res) => {
         role: 'student'
       });
 
-      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+      const origin = req.get('origin') || (req.get('referer') ? new URL(req.get('referer')).origin : '');
+      const frontendUrl = (process.env.FRONTEND_URL || origin || 'http://localhost:5173').replace(/\/+$/, '');
       inviteToken = token;
       inviteLink = `${frontendUrl}/accept-invite?token=${token}`;
     }
@@ -903,7 +904,8 @@ export const inviteStudent = async (req, res) => {
         name: user.name,
         email: user.email,
         status: user.status,
-        batch: user.batch
+        batch: user.batch,
+        invite_token: inviteToken
       },
       inviteLink
     });

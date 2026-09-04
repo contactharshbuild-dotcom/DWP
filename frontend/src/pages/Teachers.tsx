@@ -95,8 +95,24 @@ const Teachers: React.FC = () => {
         email: inviteEmail,
         phone: invitePhone || undefined
       });
+      const rawLink = response.data.inviteLink;
+      const token = response.data.teacher?.invite_token;
+      let finalLink = rawLink;
+
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        if (token) {
+          finalLink = `${window.location.origin}/accept-invite?token=${token}`;
+        } else if (rawLink) {
+          try {
+            const url = new URL(rawLink);
+            finalLink = `${window.location.origin}${url.pathname}${url.search}`;
+          } catch {
+            finalLink = rawLink;
+          }
+        }
+      }
       
-      setGeneratedLink(response.data.inviteLink);
+      setGeneratedLink(finalLink);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Failed to send invitation.';
       setInviteError(msg);

@@ -723,7 +723,23 @@ const ClassroomDetails: React.FC = () => {
       });
 
       if (response.data.inviteLink) {
-        setStudentInviteLink(response.data.inviteLink);
+        let link = response.data.inviteLink;
+        const token = response.data.student?.invite_token;
+
+        if (typeof window !== 'undefined' && window.location?.origin) {
+          if (token) {
+            link = `${window.location.origin}/accept-invite?token=${token}`;
+          } else {
+            try {
+              const url = new URL(link);
+              link = `${window.location.origin}${url.pathname}${url.search}`;
+            } catch {
+              // keep fallback link
+            }
+          }
+        }
+
+        setStudentInviteLink(link);
       } else {
         alert('Student linked to classroom successfully!');
         setShowStudentInviteModal(false);
