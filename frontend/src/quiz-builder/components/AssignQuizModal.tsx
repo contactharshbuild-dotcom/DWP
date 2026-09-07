@@ -220,14 +220,16 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
       padding: '20px'
     }}>
       <div style={{
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--light-modal-bg)',
+        color: 'var(--light-text-primary)',
         borderRadius: '16px',
         maxWidth: '850px',
         width: '100%',
         maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+        border: '1px solid var(--light-border)',
         overflow: 'hidden'
       }}>
         {/* Header */}
@@ -237,7 +239,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          backgroundColor: '#f9fafb'
+          backgroundColor: 'var(--light-table-header-bg)'
         }}>
           <div>
             <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>
@@ -340,7 +342,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
 
             {/* 3. Activation Mode & Score Release Policy */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-              <div style={{ border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc' }}>
+              <div style={{ border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px', backgroundColor: 'var(--light-table-header-bg)' }}>
                 <label className="form-label-ld" style={{ marginBottom: '8px' }}>Quiz Activation Mode</label>
                 <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -366,7 +368,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                 </div>
               </div>
 
-              <div style={{ border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc' }}>
+              <div style={{ border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px', backgroundColor: 'var(--light-table-header-bg)' }}>
                 <label className="form-label-ld" style={{ marginBottom: '8px' }}>Score Release Policy</label>
                 <select
                   className="select-ld"
@@ -381,7 +383,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             </div>
 
             {/* 4. Cheating Prevention & Proctoring Options */}
-            <div style={{ border: '1px solid var(--light-border)', padding: '16px', borderRadius: '12px', marginBottom: '20px', backgroundColor: '#fff' }}>
+            <div style={{ border: '1px solid var(--light-border)', padding: '16px', borderRadius: '12px', marginBottom: '20px', backgroundColor: 'var(--light-card)' }}>
               <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-primary)' }}>
                 <FiShield />
                 <span>Anti-Cheating & Proctoring Prevention Options</span>
@@ -436,7 +438,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             </div>
 
             {/* 5. Shuffling Options */}
-            <div style={{ display: 'flex', gap: '24px', marginBottom: '20px', border: '1px solid var(--light-border)', padding: '12px 16px', borderRadius: '10px', backgroundColor: '#f8fafc' }}>
+            <div style={{ display: 'flex', gap: '24px', marginBottom: '20px', border: '1px solid var(--light-border)', padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--light-table-header-bg)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
@@ -459,7 +461,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             </div>
 
             {/* 6. Target Student Selection (Default ALL Selected) */}
-            <div style={{ border: '1px solid var(--light-border)', padding: '16px', borderRadius: '12px', backgroundColor: '#fff' }}>
+            <div style={{ border: '1px solid var(--light-border)', padding: '16px', borderRadius: '12px', backgroundColor: 'var(--light-card)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <FiUsers />
@@ -494,7 +496,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                           padding: '6px 10px',
                           borderRadius: '6px',
                           border: isChecked ? '1px solid #6366f1' : '1px solid var(--light-border)',
-                          backgroundColor: isChecked ? '#eef2ff' : '#fafafa',
+                          backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.15)' : 'var(--light-table-header-bg)',
                           fontSize: '12.5px',
                           cursor: 'pointer'
                         }}
@@ -521,7 +523,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px',
-            backgroundColor: '#f9fafb'
+            backgroundColor: 'var(--light-table-header-bg)'
           }}>
             <button
               type="button"

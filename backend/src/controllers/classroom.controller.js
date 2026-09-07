@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
-import { Classroom, User, ClassroomTeacher } from '../models/index.js';
+import { 
+  sequelize, 
+  Classroom, 
+  User, 
+  ClassroomTeacher, 
+  SessionAttendance, 
+  McqAttempt, 
+  PracticalSubmission 
+} from '../models/index.js';
 
 // Helper to generate a unique 6-digit classroom ID
 const generateUniqueClassroomId = async () => {
@@ -390,10 +398,11 @@ export const rejectTeacher = async (req, res) => {
   }
 };
 
-// Upgrade teacher role from co-teacher to teacher (Admin only)
+// Update or toggle teacher role (teacher <-> co-teacher) (Admin only)
 export const upgradeTeacherRole = async (req, res) => {
   try {
     const { id, teacherId } = req.params; // classroom PK, teacher user ID
+    const { role: requestedRole } = req.body || {};
 
     // Verify classroom belongs to admin's organization
     const classroom = await Classroom.findOne({
@@ -420,21 +429,34 @@ export const upgradeTeacherRole = async (req, res) => {
     }
 
     if (relation.status !== 'approved') {
-      return res.status(400).json({ message: 'Teacher must be approved first before upgrading.' });
+      return res.status(400).json({ message: 'Teacher must be approved first before modifying role.' });
     }
 
-    if (relation.role === 'teacher') {
-      return res.status(400).json({ message: 'Teacher is already upgraded to Teacher role.' });
+    // Determine new role: explicit or toggle
+    let newRole = requestedRole;
+    if (!newRole) {
+      newRole = relation.role === 'teacher' ? 'co-teacher' : 'teacher';
     }
 
-    // Update role to teacher
-    await relation.update({ role: 'teacher' });
+    if (!['teacher', 'co-teacher'].includes(newRole)) {
+      return res.status(400).json({ message: 'Role must be either teacher or co-teacher.' });
+    }
 
-    return res.json({ message: 'Teacher upgraded to full Teacher role successfully.' });
+    // Update role
+    await relation.update({ role: newRole });
+
+    const message = newRole === 'teacher'
+      ? 'Role changed to Teacher successfully.'
+      : 'Role changed to Co-Teacher successfully.';
+
+    return res.json({ 
+      message,
+      role: newRole
+    });
   } catch (error) {
     console.error('Error in upgradeTeacherRole:', error);
     return res.status(500).json({
-      message: 'Internal server error while upgrading teacher role.',
+      message: 'Internal server error while updating teacher role.',
       error: error.message
     });
   }
@@ -616,15 +638,15 @@ export const signupStep2VerifyOtp = async (req, res) => {
       return res.status(400).json({ message: 'OTP code has expired.' });
     }
 
-    // Move to next onboarding state: password setup
+    // Move to next onboarding state: profile configuration
     await user.update({
-      status: 'unverified_password',
+      status: 'unverified_profile',
       otp_code: null,
       otp_expires: null
     });
 
     return res.json({
-      message: 'OTP verified successfully! Please set up your password.'
+      message: 'OTP verified successfully! Please configure your profile details.'
     });
 
   } catch (error) {
@@ -636,55 +658,8 @@ export const signupStep2VerifyOtp = async (req, res) => {
   }
 };
 
-// Step 3: Setup Password (Public)
-export const signupStep3Password = async (req, res) => {
-  try {
-    const { phone, password } = req.body;
-
-    if (!phone || !password) {
-      return res.status(400).json({ message: 'Phone number and Password are required.' });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
-    }
-
-    const user = await User.findOne({
-      where: {
-        phone,
-        status: 'unverified_password'
-      }
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found or invalid onboarding state.' });
-    }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Update password and move to profile setup
-    await user.update({
-      password: hashedPassword,
-      status: 'unverified_profile'
-    });
-
-    return res.json({
-      message: 'Password saved successfully! Please configure your profile details.'
-    });
-
-  } catch (error) {
-    console.error('Error in signupStep3Password:', error);
-    return res.status(500).json({
-      message: 'Internal server error during password setup step.',
-      error: error.message
-    });
-  }
-};
-
-// Step 4: Complete Profile (Name, Username, Email, Role) & Join Classroom (Public)
-export const signupStep4Profile = async (req, res) => {
+// Step 3: Complete Profile (Name, Username, Email, Role, Batch) (Public)
+export const signupStep3Profile = async (req, res) => {
   try {
     const { phone, role, name, username, email, classroomId, batch } = req.body;
 
@@ -699,12 +674,12 @@ export const signupStep4Profile = async (req, res) => {
     const user = await User.findOne({
       where: {
         phone,
-        status: 'unverified_profile'
+        status: { [Op.in]: ['unverified', 'unverified_profile', 'unverified_password'] }
       }
     });
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found or profile is already configured.' });
+      return res.status(404).json({ message: 'User not found or invalid onboarding state.' });
     }
 
     // Check username uniqueness
@@ -738,18 +713,93 @@ export const signupStep4Profile = async (req, res) => {
       return res.status(404).json({ message: 'Classroom not found.' });
     }
 
-    // Update user status, profile details, role, and batch
+    // Update user profile details, role, and batch, and transition to unverified_password
     await user.update({
       name,
       username,
       email,
       role,
-      status: 'active',
+      status: 'unverified_password',
       batch: batch || null
     });
 
+    return res.json({
+      message: 'Profile details saved successfully! Please set up your password.'
+    });
+
+  } catch (error) {
+    console.error('Error in signupStep3Profile:', error);
+    return res.status(500).json({
+      message: 'Internal server error during profile configuration step.',
+      error: error.message
+    });
+  }
+};
+
+// Step 5: Setup Password & Complete Signup (Public)
+export const signupStep5Password = async (req, res) => {
+  try {
+    const { phone, password, classroomId, role, batch } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({ message: 'Phone number and Password are required.' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+    }
+
+    const user = await User.findOne({
+      where: {
+        phone,
+        status: { [Op.in]: ['unverified_password', 'unverified_profile', 'unverified'] }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found or invalid onboarding state.' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const updateData = {
+      password: hashedPassword,
+      status: 'active'
+    };
+    if (role && (role === 'teacher' || role === 'student')) {
+      updateData.role = role;
+    }
+    if (batch !== undefined) {
+      updateData.batch = batch;
+    }
+
+    // Update user
+    await user.update(updateData);
+
+    // Find classroom to get organization_id & PK id
+    let classroom = null;
+    if (classroomId) {
+      classroom = await Classroom.findOne({
+        where: { classroom_id: parseInt(classroomId) }
+      });
+    }
+
+    if (!classroom && user.organization_id) {
+      classroom = await Classroom.findOne({
+        where: { organization_id: user.organization_id }
+      });
+    }
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    const userRole = updateData.role || user.role;
+
     // If role is teacher or student, link to classroom
-    if (role === 'teacher' || role === 'student') {
+    if (userRole === 'teacher' || userRole === 'student') {
       const existingRelation = await ClassroomTeacher.findOne({
         where: {
           classroom_id: classroom.id,
@@ -762,7 +812,7 @@ export const signupStep4Profile = async (req, res) => {
           classroom_id: classroom.id,
           user_id: user.id,
           status: 'pending',
-          role: role === 'teacher' ? 'co-teacher' : role
+          role: userRole === 'teacher' ? 'co-teacher' : userRole
         });
       }
     }
@@ -799,13 +849,17 @@ export const signupStep4Profile = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error in signupStep4Profile:', error);
+    console.error('Error in signupStep5Password:', error);
     return res.status(500).json({
-      message: 'Internal server error during profile completion step.',
+      message: 'Internal server error during password setup step.',
       error: error.message
     });
   }
 };
+
+// Backward-compatible exports
+export const signupStep3Password = signupStep5Password;
+export const signupStep4Profile = signupStep3Profile;
 
 // Check classroom join status for teacher (Protected)
 export const getClassroomJoinStatus = async (req, res) => {
@@ -968,7 +1022,7 @@ export const inviteStudent = async (req, res) => {
   }
 };
 
-// Remove Student from Classroom
+// Remove Student from Classroom and delete User account
 export const removeStudent = async (req, res) => {
   try {
     const { id, studentId } = req.params;
@@ -989,8 +1043,18 @@ export const removeStudent = async (req, res) => {
       }
     }
 
-    // Delete association
-    const deletedCount = await ClassroomTeacher.destroy({
+    // Verify student user exists
+    const studentUser = await User.findByPk(studentId);
+    if (!studentUser) {
+      return res.status(404).json({ message: 'Student user not found.' });
+    }
+
+    if (studentUser.role !== 'student') {
+      return res.status(400).json({ message: 'Target user is not a student.' });
+    }
+
+    // Check student enrollment in this classroom
+    const membership = await ClassroomTeacher.findOne({
       where: {
         classroom_id: id,
         user_id: studentId,
@@ -998,15 +1062,127 @@ export const removeStudent = async (req, res) => {
       }
     });
 
-    if (deletedCount === 0) {
+    if (!membership) {
       return res.status(404).json({ message: 'Student not found in this classroom.' });
     }
 
-    return res.json({ message: 'Student removed successfully.' });
+    const t = await sequelize.transaction();
+    try {
+      // Remove associations from classroom_teachers
+      await ClassroomTeacher.destroy({
+        where: { user_id: studentId },
+        transaction: t
+      });
+
+      // Remove dependent student activity records
+      await SessionAttendance.destroy({
+        where: { student_id: studentId },
+        transaction: t
+      });
+
+      await McqAttempt.destroy({
+        where: { user_id: studentId },
+        transaction: t
+      });
+
+      await PracticalSubmission.destroy({
+        where: { user_id: studentId },
+        transaction: t
+      });
+
+      // Permanently delete user record
+      await studentUser.destroy({ transaction: t });
+
+      await t.commit();
+      return res.json({ message: 'Student and user account removed successfully.' });
+    } catch (dbError) {
+      await t.rollback();
+      throw dbError;
+    }
   } catch (error) {
     console.error('Error in removeStudent:', error);
     return res.status(500).json({
       message: 'Internal server error while removing student.',
+      error: error.message
+    });
+  }
+};
+
+// Suspend or Activate Student
+export const updateStudentStatus = async (req, res) => {
+  try {
+    const { id, studentId } = req.params;
+    const { status } = req.body;
+
+    // Verify classroom exists
+    const classroom = await Classroom.findByPk(id);
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Verify user authorization: admin, or approved teacher of this classroom
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    // Find student user
+    const studentUser = await User.findByPk(studentId);
+    if (!studentUser) {
+      return res.status(404).json({ message: 'Student user not found.' });
+    }
+
+    if (studentUser.role !== 'student') {
+      return res.status(400).json({ message: 'Target user is not a student.' });
+    }
+
+    // Verify membership in classroom
+    const membership = await ClassroomTeacher.findOne({
+      where: {
+        classroom_id: id,
+        user_id: studentId,
+        role: 'student'
+      }
+    });
+
+    if (!membership) {
+      return res.status(404).json({ message: 'Student not found in this classroom.' });
+    }
+
+    // Determine target status: toggle if not explicitly provided
+    let newStatus = status;
+    if (!newStatus) {
+      newStatus = studentUser.status === 'suspended' ? 'active' : 'suspended';
+    }
+
+    if (!['active', 'suspended'].includes(newStatus)) {
+      return res.status(400).json({ message: 'Invalid status. Status must be active or suspended.' });
+    }
+
+    await studentUser.update({ status: newStatus });
+
+    const message = newStatus === 'suspended'
+      ? 'Student suspended successfully. They will not be able to log in.'
+      : 'Student reactivated successfully.';
+
+    return res.json({
+      message,
+      status: newStatus,
+      student: {
+        id: studentUser.id,
+        name: studentUser.name,
+        email: studentUser.email,
+        status: newStatus
+      }
+    });
+  } catch (error) {
+    console.error('Error in updateStudentStatus:', error);
+    return res.status(500).json({
+      message: 'Internal server error while updating student status.',
       error: error.message
     });
   }

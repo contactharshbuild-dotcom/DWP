@@ -234,7 +234,8 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
               borderRadius: '8px',
               border: '1px solid var(--light-border, #e5e7eb)',
               outline: 'none',
-              backgroundColor: '#fff',
+              backgroundColor: 'var(--light-input-bg)',
+              color: 'var(--light-input-text)',
               transition: 'border-color 0.15s ease'
             }}
           />
@@ -283,7 +284,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
         <div style={{
           padding: '48px 24px',
           textAlign: 'center',
-          backgroundColor: '#fff',
+          backgroundColor: 'var(--light-card)',
           border: '1px solid var(--light-border)',
           borderRadius: '16px'
         }}>
@@ -514,7 +515,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
               alignItems: 'center',
               marginTop: '16px',
               padding: '12px 16px',
-              backgroundColor: '#fff',
+              backgroundColor: 'var(--light-card)',
               border: '1px solid var(--light-border, #e5e7eb)',
               borderRadius: '12px',
               flexWrap: 'wrap',

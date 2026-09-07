@@ -165,7 +165,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
             style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}
           >
             <FiUploadCloud size={32} style={{ color: 'var(--light-primary)' }} />
-            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--light-text)' }}>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
               Drag & drop files here, or <span style={{ color: 'var(--light-primary)' }}>browse</span>
             </span>
             <span style={{ fontSize: '12px', color: 'var(--light-text-muted)' }}>
@@ -182,9 +182,9 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
           <p style={{ marginTop: '10px', fontSize: '13px' }}>Loading materials...</p>
         </div>
       ) : currentFolders.length === 0 && currentResources.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
           <FiFolder size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-          <h4>This folder is empty</h4>
+          <h4 style={{ color: 'var(--light-text-primary)' }}>This folder is empty</h4>
           <p style={{ fontSize: '13px', marginTop: '6px' }}>Share study materials, notes, recordings, or web links here.</p>
         </div>
       ) : (

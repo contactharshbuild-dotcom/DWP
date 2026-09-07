@@ -134,7 +134,7 @@ export const AssignContentModal: React.FC<AssignContentModalProps> = ({
                 border: '1px solid var(--light-border)',
                 borderRadius: '8px',
                 padding: '10px',
-                backgroundColor: '#fff',
+                backgroundColor: 'var(--light-table-header-bg)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px'
@@ -183,7 +183,7 @@ export const AssignContentModal: React.FC<AssignContentModalProps> = ({
                   border: '1px solid var(--light-border)',
                   borderRadius: '8px',
                   padding: '10px',
-                  backgroundColor: '#fff',
+                  backgroundColor: 'var(--light-table-header-bg)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px'

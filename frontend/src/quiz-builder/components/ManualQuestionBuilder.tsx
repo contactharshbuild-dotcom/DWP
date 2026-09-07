@@ -93,7 +93,7 @@ export const ManualQuestionBuilder: React.FC<ManualQuestionBuilderProps> = ({
                   border: '1px solid var(--light-border)',
                   borderRadius: '12px',
                   padding: '16px',
-                  backgroundColor: '#fff',
+                  backgroundColor: 'var(--light-card)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                 }}
               >

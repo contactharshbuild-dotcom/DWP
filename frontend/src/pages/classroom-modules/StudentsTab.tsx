@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiUsers, FiCopy, FiUserPlus, FiUserCheck, FiX, FiTrash2 } from 'react-icons/fi';
+import { FiUsers, FiCopy, FiUserPlus, FiUserCheck, FiX, FiTrash2, FiSlash, FiCheckCircle } from 'react-icons/fi';
 
 interface StudentUser {
   id: number;
@@ -14,53 +14,48 @@ interface StudentUser {
 
 interface StudentsTabProps {
   activeStudents: StudentUser[];
-  pendingStudents: StudentUser[];
+  pendingStudents?: StudentUser[];
   user: { id: number; role: string } | null;
   classroomId: number | undefined;
   onOpenInviteOneStudent: () => void;
-  onApproveStudentRequest: (studentId: number) => Promise<void>;
-  onRejectStudentRequest: (studentId: number) => Promise<void>;
+  onApproveStudentRequest?: (studentId: number) => Promise<void>;
+  onRejectStudentRequest?: (studentId: number) => Promise<void>;
   onRemoveStudent: (studentId: number) => Promise<void>;
+  onToggleSuspendStudent?: (studentId: number, currentStatus?: string) => Promise<void>;
 }
 
 export const StudentsTab: React.FC<StudentsTabProps> = ({
   activeStudents,
-  pendingStudents,
   user,
   classroomId,
   onOpenInviteOneStudent,
-  onApproveStudentRequest,
-  onRejectStudentRequest,
-  onRemoveStudent
+  onRemoveStudent,
+  onToggleSuspendStudent
 }) => {
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
-
   const getInitials = (name: string = '') => {
     return name
       .split(' ')
-      .map(n => n[0])
+      .map(part => part[0])
       .join('')
       .toUpperCase()
-      .substring(0, 2);
+      .slice(0, 2);
   };
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <FiUsers style={{ color: 'var(--light-primary)' }} />
-          <span>Classroom Students</span>
+          <span>Active Students ({activeStudents.length})</span>
         </h3>
-        {(user?.role === 'admin' || user?.role === 'teacher') && (
-          <div style={{ display: 'flex', gap: '12px' }}>
+        {user?.role !== 'student' && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button 
               className="btn-ld btn-ld-secondary"
               onClick={() => {
                 if (!classroomId) return;
                 const link = `${window.location.origin}/join-classroom/${classroomId}?role=student`;
-                copyToClipboard(link);
+                navigator.clipboard.writeText(link);
                 alert('Copied student registration link to clipboard!');
               }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -68,7 +63,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               <FiCopy size={16} />
               <span>Copy Student Invite Link</span>
             </button>
-            <button 
+            <button
               className="btn-ld btn-ld-primary"
               onClick={onOpenInviteOneStudent}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -80,80 +75,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         )}
       </div>
 
-      {/* Pending Student Join Requests Section */}
-      {pendingStudents.length > 0 && (
-        <div style={{ marginBottom: '32px', backgroundColor: 'rgba(245, 158, 11, 0.03)', border: '1px dashed rgba(245, 158, 11, 0.3)', borderRadius: '12px', padding: '20px' }}>
-          <h4 style={{ margin: '0 0 16px 0', fontWeight: '700', color: '#d97706', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FiUserPlus size={18} />
-            <span>Pending Student Join Requests ({pendingStudents.length})</span>
-          </h4>
-          <div className="ld-table-container">
-            <table className="ld-table" style={{ background: 'transparent' }}>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Batch</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingStudents.map((stud) => (
-                  <tr key={`pending-student-${stud.id}`}>
-                    <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {stud.profile_url || stud.profileUrl ? (
-                        <img 
-                          src={stud.profile_url || stud.profileUrl || ''} 
-                          alt={stud.name} 
-                          className="teacher-avatar-thumb"
-                          onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
-                        />
-                      ) : (
-                        <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
-                          {getInitials(stud.name)}
-                        </div>
-                      )}
-                      <span>{stud.name}</span>
-                    </td>
-                    <td>{stud.email}</td>
-                    <td>
-                      {stud.batch ? (
-                        <span className="badge-ld badge-ld-primary">{stud.batch}</span>
-                      ) : (
-                        <span style={{ color: 'var(--light-text-muted)', fontStyle: 'italic', fontSize: '13px' }}>No Batch</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button
-                          className="btn-ld btn-ld-primary btn-ld-small"
-                          style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
-                          onClick={() => onApproveStudentRequest(stud.id)}
-                        >
-                          <FiUserCheck size={13} />
-                          <span>Approve</span>
-                        </button>
-                        <button
-                          className="btn-ld btn-ld-danger btn-ld-small"
-                          onClick={() => onRejectStudentRequest(stud.id)}
-                        >
-                          <FiX size={13} />
-                          <span>Reject</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {activeStudents.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
           <FiUsers size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-          <h4>No active students found</h4>
+          <h4 style={{ color: 'var(--light-text-primary)' }}>No active students found</h4>
           <p style={{ fontSize: '13px', marginTop: '6px' }}>Invite students to join your classroom batches.</p>
         </div>
       ) : (
@@ -197,20 +122,47 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   <td>
                     {stud.status === 'pending' ? (
                       <span className="badge-ld badge-ld-warning">Pending Invite</span>
+                    ) : stud.status === 'suspended' ? (
+                      <span className="badge-ld" style={{ backgroundColor: 'rgba(220, 38, 38, 0.15)', color: '#ef4444', border: '1px solid rgba(220, 38, 38, 0.3)' }}>Suspended</span>
                     ) : (
                       <span className="badge-ld badge-ld-success">Active</span>
                     )}
                   </td>
                   {(user?.role === 'admin' || user?.role === 'teacher') && (
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        className="btn-ld btn-ld-danger btn-ld-small"
-                        onClick={() => onRemoveStudent(stud.id)}
-                        title="Remove student from classroom"
-                      >
-                        <FiTrash2 size={13} />
-                        <span>Remove</span>
-                      </button>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                        {onToggleSuspendStudent && (
+                          stud.status === 'suspended' ? (
+                            <button
+                              className="btn-ld btn-ld-secondary btn-ld-small"
+                              onClick={() => onToggleSuspendStudent(stud.id, stud.status)}
+                              title="Activate student login"
+                              style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', backgroundColor: 'rgba(16, 185, 129, 0.15)' }}
+                            >
+                              <FiCheckCircle size={13} />
+                              <span>Activate</span>
+                            </button>
+                          ) : (
+                            <button
+                              className="btn-ld btn-ld-secondary btn-ld-small"
+                              onClick={() => onToggleSuspendStudent(stud.id, stud.status)}
+                              title="Suspend student login access"
+                              style={{ color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)', backgroundColor: 'rgba(245, 158, 11, 0.15)' }}
+                            >
+                              <FiSlash size={13} />
+                              <span>Suspend</span>
+                            </button>
+                          )
+                        )}
+                        <button
+                          className="btn-ld btn-ld-danger btn-ld-small"
+                          onClick={() => onRemoveStudent(stud.id)}
+                          title="Remove student and delete user account"
+                        >
+                          <FiTrash2 size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>

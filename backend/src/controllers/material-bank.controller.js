@@ -82,11 +82,29 @@ export const createFolder = async (req, res) => {
       return res.status(400).json({ message: 'Folder name is required.' });
     }
 
+    const trimmedName = name.trim();
+    const parentFolderId = parentId ? parseInt(parentId, 10) : null;
+
+    const existingFolder = await MaterialBankFolder.findOne({
+      where: {
+        organization_id: req.user.organizationId,
+        parent_id: parentFolderId,
+        name: trimmedName
+      }
+    });
+
+    if (existingFolder) {
+      return res.status(200).json({
+        message: 'Folder already exists.',
+        folder: existingFolder
+      });
+    }
+
     const folder = await MaterialBankFolder.create({
       organization_id: req.user.organizationId,
       created_by: req.user.id,
-      name: name.trim(),
-      parent_id: parentId ? parseInt(parentId, 10) : null
+      name: trimmedName,
+      parent_id: parentFolderId
     });
 
     return res.status(201).json({

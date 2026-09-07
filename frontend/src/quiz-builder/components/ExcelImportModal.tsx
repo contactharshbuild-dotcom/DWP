@@ -140,7 +140,7 @@ subjective,"Explain the main differences between SQL and NoSQL databases.",,,,,,
       border: '1px solid var(--light-border)',
       borderRadius: '12px',
       padding: '20px',
-      backgroundColor: '#f8fafc'
+      backgroundColor: 'var(--light-table-header-bg)'
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
@@ -165,11 +165,11 @@ subjective,"Explain the main differences between SQL and NoSQL databases.",,,,,,
 
       {/* Upload Zone */}
       <div style={{
-        border: '2px dashed #cbd5e1',
+        border: '2px dashed var(--light-border-hover)',
         borderRadius: '12px',
         padding: '24px',
         textAlign: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--light-card)',
         marginBottom: '16px'
       }}>
         <FiUploadCloud size={36} style={{ color: 'var(--light-primary)', marginBottom: '8px' }} />
@@ -235,7 +235,7 @@ subjective,"Explain the main differences between SQL and NoSQL databases.",,,,,,
             </button>
           </div>
 
-          <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--light-border)', borderRadius: '8px', backgroundColor: '#fff' }}>
+          <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--light-border)', borderRadius: '8px', backgroundColor: 'var(--light-card)' }}>
             <table className="ld-table" style={{ margin: 0 }}>
               <thead>
                 <tr>

@@ -797,17 +797,40 @@ const ClassroomDetails: React.FC = () => {
   };
 
   const handleRemoveStudent = async (studentId: number) => {
-    if (!window.confirm('Are you sure you want to remove this student from this classroom?')) {
+    if (!window.confirm('Are you sure you want to remove this student? This will permanently delete the student and their user account.')) {
       return;
     }
 
     try {
       await api.delete(`/classrooms/${id}/students/${studentId}`);
-      alert('Student removed successfully.');
+      alert('Student and user account removed successfully.');
       fetchClassroomDetails();
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to remove student.');
+    }
+  };
+
+  const handleToggleSuspendStudent = async (studentId: number, currentStatus?: string) => {
+    const isSuspending = currentStatus !== 'suspended';
+    const actionText = isSuspending ? 'suspend' : 'activate';
+    const confirmMessage = isSuspending
+      ? 'Are you sure you want to suspend this student? They will not have permission to log in until reactivated.'
+      : 'Are you sure you want to activate this student? They will regain permission to log in.';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const response = await api.patch(`/classrooms/${id}/students/${studentId}/status`, {
+        status: isSuspending ? 'suspended' : 'active'
+      });
+      alert(response.data.message || `Student ${actionText}d successfully.`);
+      fetchClassroomDetails();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || `Failed to ${actionText} student.`);
     }
   };
 
@@ -836,19 +859,26 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
-  const handleUpgradeTeacher = async (teacherId: number) => {
-    if (!window.confirm('Are you sure you want to upgrade this teacher to the Teacher role?')) {
+  const handleToggleTeacherRole = async (teacherId: number, currentRole?: string) => {
+    const targetRole = currentRole === 'teacher' ? 'co-teacher' : 'teacher';
+    const actionLabel = targetRole === 'teacher' ? 'upgrade to Teacher' : 'change to Co-Teacher';
+    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
       return;
     }
 
     try {
-      await api.post(`/classrooms/${id}/teachers/${teacherId}/upgrade`);
+      const response = await api.post(`/classrooms/${id}/teachers/${teacherId}/upgrade`, {
+        role: targetRole
+      });
+      alert(response.data.message || 'Teacher role updated successfully.');
       fetchClassroomDetails();
     } catch (err: any) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to upgrade teacher role.');
+      alert(err.response?.data?.message || 'Failed to update teacher role.');
     }
   };
+
+  const handleUpgradeTeacher = handleToggleTeacherRole;
 
   // Multer & File upload validations
   const validateFile = (file: File): boolean => {
@@ -1176,6 +1206,7 @@ const ClassroomDetails: React.FC = () => {
   const pendingRequests = classroom?.teachers.filter(t => isTeacherMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
   const activeStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'approved') || [];
   const pendingStudents = classroom?.teachers.filter(t => isStudentMember(t) && t.ClassroomTeacher?.status === 'pending') || [];
+  const totalJoinRequestsCount = pendingRequests.length + pendingStudents.length;
 
   const myMember = classroom?.teachers?.find(t => t.id === user?.id);
   const isStudentUser = user?.role === 'student' || myMember?.role === 'student' || myMember?.ClassroomTeacher?.role === 'student';
@@ -2503,39 +2534,37 @@ const ClassroomDetails: React.FC = () => {
                 >
                   Active Teachers ({activeTeachers.length})
                 </button>
-                {user?.role === 'admin' && (
-                  <button
-                    onClick={() => handleTabChange('pending')}
-                    style={{
-                      padding: '12px 20px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: activeTab === 'pending' ? '2px solid var(--light-primary)' : '2px solid transparent',
-                      color: activeTab === 'pending' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      outline: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <span>Join Requests</span>
-                    {pendingRequests.length > 0 && (
-                      <span style={{
-                        backgroundColor: '#ef4444',
-                        color: 'white',
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        borderRadius: '99px',
-                        fontWeight: '700'
-                      }}>
-                        {pendingRequests.length}
-                      </span>
-                    )}
-                  </button>
-                )}
+                <button
+                  onClick={() => handleTabChange('pending')}
+                  style={{
+                    padding: '12px 20px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: activeTab === 'pending' ? '2px solid var(--light-primary)' : '2px solid transparent',
+                    color: activeTab === 'pending' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    outline: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>Join Requests</span>
+                  {totalJoinRequestsCount > 0 && (
+                    <span style={{
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      fontWeight: '700'
+                    }}>
+                      {totalJoinRequestsCount}
+                    </span>
+                  )}
+                </button>
                 <button
                   onClick={() => handleTabChange('students')}
                   style={{
@@ -2671,17 +2700,22 @@ const ClassroomDetails: React.FC = () => {
               activeTeachers={activeTeachers}
               user={user}
               onUpgradeTeacher={handleUpgradeTeacher}
+              onToggleTeacherRole={handleToggleTeacherRole}
               onRejectTeacher={handleRejectTeacher}
               onOpenAssignModal={handleOpenAssignTeacherModal}
             />
           )}
 
-          {/* Pending Teacher Join Requests Tab */}
-          {activeTab === 'pending' && user?.role === 'admin' && (
+          {/* Pending Join Requests Tab (Students & Teachers) */}
+          {activeTab === 'pending' && !isStudentUser && (
             <JoinRequestsTab
+              user={user}
               pendingRequests={pendingRequests}
+              pendingStudents={pendingStudents}
               onApproveTeacher={handleApproveTeacher}
               onRejectTeacher={handleRejectTeacher}
+              onApproveStudent={handleApproveStudentRequest}
+              onRejectStudent={handleRejectStudentRequest}
             />
           )}
 
@@ -2689,7 +2723,6 @@ const ClassroomDetails: React.FC = () => {
           {activeTab === 'students' && (
             <StudentsTab
               activeStudents={activeStudents}
-              pendingStudents={pendingStudents}
               user={user}
               classroomId={classroom?.classroom_id}
               onOpenInviteOneStudent={() => {
@@ -2699,9 +2732,8 @@ const ClassroomDetails: React.FC = () => {
                 setStudentInviteLink(null);
                 setShowStudentInviteModal(true);
               }}
-              onApproveStudentRequest={handleApproveStudentRequest}
-              onRejectStudentRequest={handleRejectStudentRequest}
               onRemoveStudent={handleRemoveStudent}
+              onToggleSuspendStudent={handleToggleSuspendStudent}
             />
           )}
 

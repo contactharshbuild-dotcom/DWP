@@ -27,15 +27,17 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
       padding: '20px'
     }}>
       <div style={{
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--light-modal-bg)',
+        color: 'var(--light-text-primary)',
         borderRadius: '16px',
         maxWidth: '800px',
         width: '100%',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-        overflow: 'hidden'
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+        overflow: 'hidden',
+        border: '1px solid var(--light-border)'
       }}>
         {/* Header */}
         <div style={{
@@ -44,7 +46,7 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          backgroundColor: '#f9fafb'
+          backgroundColor: 'var(--light-table-header-bg)'
         }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -86,10 +88,11 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
             gap: '16px',
             marginBottom: '20px',
             padding: '12px 16px',
-            backgroundColor: '#eef2ff',
+            backgroundColor: 'var(--light-primary-glow)',
+            border: '1px solid var(--light-border)',
             borderRadius: '8px',
             fontSize: '13px',
-            color: '#3730a3'
+            color: 'var(--light-primary)'
           }}>
             <span>❓ <strong>Total Questions:</strong> {questions.length}</span>
           </div>
@@ -110,7 +113,7 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
                       border: '1px solid var(--light-border)',
                       borderRadius: '12px',
                       padding: '20px',
-                      backgroundColor: '#fff'
+                      backgroundColor: 'var(--light-card)'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -137,15 +140,15 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
                             width: '100%',
                             padding: '10px 12px',
                             borderRadius: '8px',
-                            border: '1px dashed #cbd5e1',
-                            backgroundColor: '#f8fafc',
+                            border: '1px dashed var(--light-border)',
+                            backgroundColor: 'var(--light-bg)',
                             fontSize: '13px',
                             cursor: 'not-allowed',
-                            color: '#64748b'
+                            color: 'var(--light-text-secondary)'
                           }}
                         />
                         {q.explanation && (
-                          <div style={{ marginTop: '10px', padding: '10px 12px', backgroundColor: '#f0fdf4', borderLeft: '4px solid #22c55e', borderRadius: '4px', fontSize: '12px', color: '#15803d' }}>
+                          <div style={{ marginTop: '10px', padding: '10px 12px', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderLeft: '4px solid #22c55e', borderRadius: '4px', fontSize: '12px', color: '#16a34a' }}>
                             <strong>Rubric / Model Answer:</strong> {q.explanation}
                           </div>
                         )}
@@ -167,7 +170,8 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
                                 padding: '10px 14px',
                                 borderRadius: '8px',
                                 border: isCorrect ? '2px solid #22c55e' : '1px solid var(--light-border)',
-                                backgroundColor: isCorrect ? '#f0fdf4' : '#fff',
+                                backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.12)' : 'var(--light-card)',
+                                color: 'var(--light-text-primary)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '8px',
@@ -179,8 +183,8 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
                                 width: '22px',
                                 height: '22px',
                                 borderRadius: '50%',
-                                backgroundColor: isCorrect ? '#22c55e' : '#e2e8f0',
-                                color: isCorrect ? '#fff' : '#475569',
+                                backgroundColor: isCorrect ? '#22c55e' : 'var(--light-border)',
+                                color: isCorrect ? '#fff' : 'var(--light-text-primary)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -204,7 +208,7 @@ export const QuizPreviewModal: React.FC<QuizPreviewModalProps> = ({ quiz, onClos
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--light-border)', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#f9fafb' }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--light-border)', display: 'flex', justifyContent: 'flex-end', backgroundColor: 'var(--light-table-header-bg)' }}>
           <button className="btn-ld btn-ld-secondary" onClick={onClose}>
             Close Preview
           </button>

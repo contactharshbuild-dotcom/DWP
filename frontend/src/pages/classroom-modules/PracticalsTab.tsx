@@ -53,9 +53,9 @@ export const PracticalsTab: React.FC<PracticalsTabProps> = ({
           <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
         </div>
       ) : practicals.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
           <FiFile size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-          <h4>No practical exams created yet</h4>
+          <h4 style={{ color: 'var(--light-text-primary)' }}>No practical exams created yet</h4>
           <p style={{ fontSize: '13px', marginTop: '6px' }}>Assign laboratory work, SQL tests, or coding challenges here.</p>
         </div>
       ) : (
@@ -83,13 +83,13 @@ export const PracticalsTab: React.FC<PracticalsTabProps> = ({
                   <tr key={prac.id}>
                     <td style={{ fontWeight: '600' }}>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span>{prac.title}</span>
+                        <span style={{ color: 'var(--light-text-primary)' }}>{prac.title}</span>
                         <span style={{ fontSize: '12.5px', color: 'var(--light-text-secondary)', fontWeight: '500', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {prac.instructions}
                         </span>
                       </div>
                     </td>
-                    <td style={{ fontSize: '13px', color: isOverdue && !hasSubmitted ? '#ef4444' : 'var(--light-text)' }}>
+                    <td style={{ fontSize: '13px', color: isOverdue && !hasSubmitted ? '#ef4444' : 'var(--light-text-primary)' }}>
                       {formatDate(prac.due_date)}
                     </td>
                     <td>{prac.total_marks} Marks</td>

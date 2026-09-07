@@ -29,7 +29,11 @@ export const authenticate = async (req, res, next) => {
     }
 
     if (user.status !== 'active') {
-      return res.status(403).json({ message: 'User account is inactive.' });
+      return res.status(403).json({
+        message: user.status === 'suspended'
+          ? 'Your account has been suspended. You do not have permission to access this resource. Please contact your administrator.'
+          : 'User account is inactive.'
+      });
     }
 
     if (user.organization && user.organization.status !== 'active') {

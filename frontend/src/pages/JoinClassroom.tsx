@@ -51,20 +51,20 @@ const JoinClassroom: React.FC = () => {
   const [otpInput, setOtpInput] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
 
-  // Step 3: Password
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  // Step 3: Profile Info
+  const [profileName, setProfileName] = useState('');
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileBatch, setProfileBatch] = useState('');
 
   // Step 4: Role Selection
   const [selectedRole, setSelectedRole] = useState<'teacher' | 'student' | null>(
     queryRole === 'student' || queryRole === 'teacher' ? queryRole : 'teacher'
   );
 
-  // Step 5: Profile Info
-  const [profileName, setProfileName] = useState('');
-  const [profileUsername, setProfileUsername] = useState('');
-  const [profileEmail, setProfileEmail] = useState('');
-  const [profileBatch, setProfileBatch] = useState('');
+  // Step 5: Password
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
   // Login states
   const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>(
@@ -191,8 +191,59 @@ const JoinClassroom: React.FC = () => {
     }
   };
 
-  // Step 3 handler: Setup Password
-  const handleStep3PasswordSubmit = async (e: React.FormEvent) => {
+  // Step 3 handler: Profile setup
+  const handleStep3ProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileName || !profileUsername || !profileEmail || (selectedRole === 'student' && !profileBatch)) {
+      setError('Please fill in all profile details.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      await api.post('/classrooms/join/signup-step3', {
+        phone: regPhone,
+        role: selectedRole,
+        name: profileName,
+        username: profileUsername,
+        email: profileEmail,
+        classroomId,
+        batch: selectedRole === 'student' ? profileBatch : null
+      });
+
+      if (queryRole === 'student' || queryRole === 'teacher') {
+        setSelectedRole(queryRole);
+        setWizardStep(5);
+      } else {
+        setWizardStep(4);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Profile save failed.';
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Step 4 handler: Role Selection
+  const handleStep4RoleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole) {
+      setError('Please select your role.');
+      return;
+    }
+    if (selectedRole === 'student' && !profileBatch) {
+      setError('Please provide your batch / section.');
+      return;
+    }
+    setWizardStep(5);
+  };
+
+  // Step 5 handler: Setup Password & Complete Signup
+  const handleStep5PasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regPassword || !regConfirmPassword) {
       setError('All password fields are required.');
@@ -214,55 +265,11 @@ const JoinClassroom: React.FC = () => {
     setSuccessMsg(null);
 
     try {
-      await api.post('/classrooms/join/signup-step3', {
+      await api.post('/classrooms/join/signup-step5', {
         phone: regPhone,
-        password: regPassword
-      });
-      
-      if (queryRole === 'student' || queryRole === 'teacher') {
-        setSelectedRole(queryRole);
-        setWizardStep(5);
-      } else {
-        setWizardStep(4);
-      }
-    } catch (err: any) {
-      const msg = err.response?.data?.message || 'Password registration failed.';
-      setError(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Step 4 handler: Role Selection
-  const handleStep4RoleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRole) {
-      setError('Please select your role.');
-      return;
-    }
-    setWizardStep(5);
-  };
-
-  // Step 5 handler: Profile setup
-  const handleStep5ProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profileName || !profileUsername || !profileEmail || (selectedRole === 'student' && !profileBatch)) {
-      setError('Please fill in all profile details.');
-      return;
-    }
-
-    setSubmitting(true);
-    setError(null);
-    setSuccessMsg(null);
-
-    try {
-      await api.post('/classrooms/join/signup-step4', {
-        phone: regPhone,
-        role: selectedRole,
-        name: profileName,
-        username: profileUsername,
-        email: profileEmail,
+        password: regPassword,
         classroomId,
+        role: selectedRole,
         batch: selectedRole === 'student' ? profileBatch : null
       });
 
@@ -270,7 +277,7 @@ const JoinClassroom: React.FC = () => {
       localStorage.removeItem('pending_join_classroom_id');
       setWizardStep(6);
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Profile save failed.';
+      const msg = err.response?.data?.message || 'Password registration failed.';
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -379,9 +386,9 @@ const JoinClassroom: React.FC = () => {
     switch(wizardStep) {
       case 1: return 'Step 1 of 5: Enter Phone Number';
       case 2: return 'Step 2 of 5: Verify OTP';
-      case 3: return 'Step 3 of 5: Set Account Password';
+      case 3: return 'Step 3 of 5: Configure Profile';
       case 4: return 'Step 4 of 5: Select Your Role';
-      case 5: return 'Step 5 of 5: Configure Profile';
+      case 5: return 'Step 5 of 5: Set Account Password';
       default: return 'Signup Completed';
     }
   };
@@ -606,51 +613,91 @@ const JoinClassroom: React.FC = () => {
               </form>
             )}
 
-            {/* Step 3: Setup Password */}
+            {/* Step 3: Configure Profile */}
             {wizardStep === 3 && (
-              <form onSubmit={handleStep3PasswordSubmit} style={{ textAlign: 'left' }}>
+              <form onSubmit={handleStep3ProfileSubmit} style={{ textAlign: 'left' }}>
                 <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                  OTP verified successfully! Now create a secure password to protect your account.
+                  OTP verified! Configure your profile credentials below. These details will represent your digital identity.
                 </p>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="pass">Create Password *</label>
+                  <label className="form-label" htmlFor="profName">Full Name *</label>
                   <div className="input-wrapper">
                     <input
                       className="form-input"
-                      type="password"
-                      id="pass"
-                      placeholder="••••••••"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
+                      type="text"
+                      id="profName"
+                      placeholder="e.g. Professor Smith"
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
                       required
                     />
-                    <FiLock className="input-icon" />
+                    <FiUser className="input-icon" />
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '28px' }}>
-                  <label className="form-label" htmlFor="passConf">Confirm Password *</label>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="profUsername">Username *</label>
                   <div className="input-wrapper">
                     <input
                       className="form-input"
-                      type="password"
-                      id="passConf"
-                      placeholder="••••••••"
-                      value={regConfirmPassword}
-                      onChange={(e) => setRegConfirmPassword(e.target.value)}
+                      type="text"
+                      id="profUsername"
+                      placeholder="e.g. prof_smith"
+                      value={profileUsername}
+                      onChange={(e) => setProfileUsername(e.target.value)}
                       required
                     />
-                    <FiLock className="input-icon" />
+                    <FiKey className="input-icon" />
                   </div>
                 </div>
+
+                <div className="form-group" style={{ marginBottom: selectedRole === 'student' ? '20px' : '28px' }}>
+                  <label className="form-label" htmlFor="profEmail">Email (Gmail) *</label>
+                  <div className="input-wrapper">
+                    <input
+                      className="form-input"
+                      type="email"
+                      id="profEmail"
+                      placeholder="e.g. smith@gmail.com"
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
+                      required
+                    />
+                    <FiMail className="input-icon" />
+                  </div>
+                </div>
+
+                {selectedRole === 'student' && (
+                  <div className="form-group" style={{ marginBottom: '28px' }}>
+                    <label className="form-label" htmlFor="profBatch">Batch / Section (e.g. Batch A) *</label>
+                    <div className="input-wrapper">
+                      <input
+                        className="form-input"
+                        type="text"
+                        id="profBatch"
+                        placeholder="e.g. Batch A"
+                        value={profileBatch}
+                        onChange={(e) => setProfileBatch(e.target.value)}
+                        required={selectedRole === 'student'}
+                      />
+                      <FiUsers className="input-icon" />
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setWizardStep(2)} disabled={submitting}>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    style={{ flex: 1 }} 
+                    onClick={() => setWizardStep(2)} 
+                    disabled={submitting}
+                  >
                     Back
                   </button>
                   <button className="btn" type="submit" style={{ flex: 2 }} disabled={submitting}>
-                    {submitting ? <span className="spinner"></span> : <span>Save Password</span>}
+                    {submitting ? <span className="spinner"></span> : <span>Next Step</span>}
                   </button>
                 </div>
               </form>
@@ -663,7 +710,7 @@ const JoinClassroom: React.FC = () => {
                   Select your role in the classroom. This determines your permissions.
                 </p>
 
-                <div style={{ display: 'flex', gap: '16px', marginBottom: '28px' }}>
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
                   {/* Join as Teacher Card */}
                   <div 
                     onClick={() => setSelectedRole('teacher')}
@@ -703,6 +750,24 @@ const JoinClassroom: React.FC = () => {
                   </div>
                 </div>
 
+                {selectedRole === 'student' && !profileBatch && (
+                  <div className="form-group" style={{ marginBottom: '28px' }}>
+                    <label className="form-label" htmlFor="roleBatch">Batch / Section (e.g. Batch A) *</label>
+                    <div className="input-wrapper">
+                      <input
+                        className="form-input"
+                        type="text"
+                        id="roleBatch"
+                        placeholder="e.g. Batch A"
+                        value={profileBatch}
+                        onChange={(e) => setProfileBatch(e.target.value)}
+                        required
+                      />
+                      <FiUsers className="input-icon" />
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setWizardStep(3)}>
                     Back
@@ -714,78 +779,44 @@ const JoinClassroom: React.FC = () => {
               </form>
             )}
 
-            {/* Step 5: Complete Profile details */}
+            {/* Step 5: Setup Password */}
             {wizardStep === 5 && (
-              <form onSubmit={handleStep5ProfileSubmit} style={{ textAlign: 'left' }}>
+              <form onSubmit={handleStep5PasswordSubmit} style={{ textAlign: 'left' }}>
                 <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                  Configure your profile credentials below. These details will represent your digital identity.
+                  Create a secure password to protect your account.
                 </p>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="profName">Full Name *</label>
+                  <label className="form-label" htmlFor="pass">Create Password *</label>
                   <div className="input-wrapper">
                     <input
                       className="form-input"
-                      type="text"
-                      id="profName"
-                      placeholder="e.g. Professor Smith"
-                      value={profileName}
-                      onChange={(e) => setProfileName(e.target.value)}
+                      type="password"
+                      id="pass"
+                      placeholder="••••••••"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
                       required
                     />
-                    <FiUser className="input-icon" />
+                    <FiLock className="input-icon" />
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="profUsername">Username *</label>
+                <div className="form-group" style={{ marginBottom: '28px' }}>
+                  <label className="form-label" htmlFor="passConf">Confirm Password *</label>
                   <div className="input-wrapper">
                     <input
                       className="form-input"
-                      type="text"
-                      id="profUsername"
-                      placeholder="e.g. prof_smith"
-                      value={profileUsername}
-                      onChange={(e) => setProfileUsername(e.target.value)}
+                      type="password"
+                      id="passConf"
+                      placeholder="••••••••"
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
                       required
                     />
-                    <FiKey className="input-icon" />
+                    <FiLock className="input-icon" />
                   </div>
                 </div>
-
-                <div className="form-group" style={{ marginBottom: '20px' }}>
-                  <label className="form-label" htmlFor="profEmail">Email (Gmail) *</label>
-                  <div className="input-wrapper">
-                    <input
-                      className="form-input"
-                      type="email"
-                      id="profEmail"
-                      placeholder="e.g. smith@gmail.com"
-                      value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      required
-                    />
-                    <FiMail className="input-icon" />
-                  </div>
-                </div>
-
-                {selectedRole === 'student' && (
-                  <div className="form-group" style={{ marginBottom: '28px' }}>
-                    <label className="form-label" htmlFor="profBatch">Batch / Section (e.g. Batch A) *</label>
-                    <div className="input-wrapper">
-                      <input
-                        className="form-input"
-                        type="text"
-                        id="profBatch"
-                        placeholder="e.g. Batch A"
-                        value={profileBatch}
-                        onChange={(e) => setProfileBatch(e.target.value)}
-                        required={selectedRole === 'student'}
-                      />
-                      <FiUsers className="input-icon" />
-                    </div>
-                  </div>
-                )}
 
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button 

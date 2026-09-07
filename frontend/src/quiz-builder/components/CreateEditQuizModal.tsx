@@ -109,15 +109,17 @@ export const CreateEditQuizModal: React.FC<CreateEditQuizModalProps> = ({
       padding: '20px'
     }}>
       <div style={{
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--light-modal-bg)',
+        color: 'var(--light-text-primary)',
         borderRadius: '16px',
         maxWidth: '850px',
         width: '100%',
         maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-        overflow: 'hidden'
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+        overflow: 'hidden',
+        border: '1px solid var(--light-border)'
       }}>
         {/* Header */}
         <div style={{
@@ -126,10 +128,10 @@ export const CreateEditQuizModal: React.FC<CreateEditQuizModalProps> = ({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          backgroundColor: '#f9fafb'
+          backgroundColor: 'var(--light-table-header-bg)'
         }}>
           <div>
-            <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700', color: 'var(--light-text-primary)' }}>
               {quizToEdit ? 'Edit Quiz / Assessment' : 'Create New Quiz / Assessment'}
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
@@ -270,7 +272,7 @@ export const CreateEditQuizModal: React.FC<CreateEditQuizModalProps> = ({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px',
-            backgroundColor: '#f9fafb'
+            backgroundColor: 'var(--light-table-header-bg)'
           }}>
             <button
               type="button"

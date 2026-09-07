@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from './store';
 import { ClassroomProvider } from './components/ClassroomContext';
+import { ThemeProvider } from './context/ThemeContext';
 
 // Lazy loading route components for code splitting & initial bundle optimization
 const Login = lazy(() => import('./pages/Login'));
@@ -110,124 +111,126 @@ const PageFallback = (
 function App() {
   return (
     <BrowserRouter>
-      <ClassroomProvider>
-        <Suspense fallback={PageFallback}>
-          <Routes>
-            {/* Master Admin Routes */}
-            <Route
-              path="/master-login"
-              element={
-                <MasterPublicRoute>
-                  <MasterAdminLogin />
-                </MasterPublicRoute>
-              }
-            />
-            <Route
-              path="/master-admin"
-              element={
-                <MasterProtectedRoute>
-                  <MasterAdminDashboard />
-                </MasterProtectedRoute>
-              }
-            />
+      <ThemeProvider>
+        <ClassroomProvider>
+          <Suspense fallback={PageFallback}>
+            <Routes>
+              {/* Master Admin Routes */}
+              <Route
+                path="/master-login"
+                element={
+                  <MasterPublicRoute>
+                    <MasterAdminLogin />
+                  </MasterPublicRoute>
+                }
+              />
+              <Route
+                path="/master-admin"
+                element={
+                  <MasterProtectedRoute>
+                    <MasterAdminDashboard />
+                  </MasterProtectedRoute>
+                }
+              />
 
-            {/* Protected Dashboard Route */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/teachers"
-              element={
-                <ProtectedRoute>
-                  <Teachers />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <UserProfile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/about"
-              element={
-                <ProtectedRoute>
-                  <OrganizationProfile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/select-plan"
-              element={
-                <ProtectedRoute allowNoSubscription={true}>
-                  <SelectPlan />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/quiz-builder"
-              element={
-                <ProtectedRoute>
-                  <QuizBuilderPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/material-bank"
-              element={
-                <ProtectedRoute>
-                  <MaterialBankPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/classrooms/:id"
-              element={
-                <ProtectedRoute>
-                  <ClassroomDetails />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/accept-invite"
-              element={<AcceptInvite />}
-            />
-            <Route
-              path="/join-classroom/:classroomId"
-              element={<JoinClassroom />}
-            />
+              {/* Protected Dashboard Route */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/teachers"
+                element={
+                  <ProtectedRoute>
+                    <Teachers />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <UserProfile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/about"
+                element={
+                  <ProtectedRoute>
+                    <OrganizationProfile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/select-plan"
+                element={
+                  <ProtectedRoute allowNoSubscription={true}>
+                    <SelectPlan />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/quiz-builder"
+                element={
+                  <ProtectedRoute>
+                    <QuizBuilderPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/material-bank"
+                element={
+                  <ProtectedRoute>
+                    <MaterialBankPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/classrooms/:id"
+                element={
+                  <ProtectedRoute>
+                    <ClassroomDetails />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/accept-invite"
+                element={<AcceptInvite />}
+              />
+              <Route
+                path="/join-classroom/:classroomId"
+                element={<JoinClassroom />}
+              />
 
-            {/* Public Login/Signup Routes */}
-            <Route
-              path="/login"
-              element={
-                <PublicRoute>
-                  <Login />
-                </PublicRoute>
-              }
-            />
-            <Route
-              path="/signup"
-              element={
-                <PublicRoute>
-                  <Signup />
-                </PublicRoute>
-              }
-            />
+              {/* Public Login/Signup Routes */}
+              <Route
+                path="/login"
+                element={
+                  <PublicRoute>
+                    <Login />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/signup"
+                element={
+                  <PublicRoute>
+                    <Signup />
+                  </PublicRoute>
+                }
+              />
 
-            {/* Fallback Catch-All */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </ClassroomProvider>
+              {/* Fallback Catch-All */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </ClassroomProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

@@ -228,8 +228,8 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '10px 12px',
-                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.06)' : '#ffffff',
-                            border: isSelected ? '1px solid var(--light-primary)' : '1px solid #e2e8f0',
+                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.12)' : 'var(--light-table-header-bg)',
+                            border: isSelected ? '1px solid var(--light-primary)' : '1px solid var(--light-border)',
                             borderRadius: '6px',
                             cursor: 'pointer'
                           }}
@@ -243,11 +243,11 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
                               {isSelected ? <FiCheckSquare size={18} /> : <FiSquare size={18} />}
                             </button>
                             <FiFolder size={18} style={{ color: 'var(--light-primary)' }} />
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
                               {f.name}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: '#64748b' }}>Open &rarr;</span>
+                          <span style={{ fontSize: '11px', color: 'var(--light-text-muted)' }}>Open &rarr;</span>
                         </div>
                       );
                     })}
@@ -273,8 +273,8 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
                             alignItems: 'center',
                             gap: '10px',
                             padding: '10px 12px',
-                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.06)' : '#ffffff',
-                            border: isSelected ? '1px solid var(--light-primary)' : '1px solid #e2e8f0',
+                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.12)' : 'var(--light-table-header-bg)',
+                            border: isSelected ? '1px solid var(--light-primary)' : '1px solid var(--light-border)',
                             borderRadius: '6px',
                             cursor: 'pointer'
                           }}
@@ -291,7 +291,7 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
                           }}>
                             {item.type === 'youtube' ? <FiYoutube size={16} /> : <FiFileText size={16} />}
                           </div>
-                          <span style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--light-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {item.name}
                           </span>
                         </div>
@@ -306,7 +306,7 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
 
         {/* Footer actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-          <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
+          <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>
             Selected: <strong style={{ color: 'var(--light-primary)' }}>{totalSelectedCount}</strong> item(s)
           </span>
 

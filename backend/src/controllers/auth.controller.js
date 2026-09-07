@@ -154,6 +154,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
+    if (user.status === 'suspended') {
+      return res.status(403).json({ message: 'Your account has been suspended. You do not have permission to log in. Please contact your administrator.' });
+    }
+
     if (user.status !== 'active') {
       return res.status(403).json({ message: 'Your account is pending approval by an administrator. You will be able to log in once your request is approved.' });
     }
@@ -214,6 +218,10 @@ export const sendLoginOtp = async (req, res) => {
       return res.status(403).json({ message: 'OTP login is only supported for teachers.' });
     }
 
+    if (user.status === 'suspended') {
+      return res.status(403).json({ message: 'Your account has been suspended. You do not have permission to log in. Please contact your administrator.' });
+    }
+
     if (user.status !== 'active') {
       return res.status(403).json({ message: 'Your account is not active or verified.' });
     }
@@ -272,6 +280,10 @@ export const verifyLoginOtp = async (req, res) => {
 
     if (new Date() > new Date(user.otp_expires)) {
       return res.status(400).json({ message: 'OTP code has expired.' });
+    }
+
+    if (user.status === 'suspended') {
+      return res.status(403).json({ message: 'Your account has been suspended. You do not have permission to log in. Please contact your administrator.' });
     }
 
     if (user.status !== 'active') {

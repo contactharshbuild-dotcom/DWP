@@ -22,6 +22,8 @@ import type { RootState } from '../store';
 import { logout, updateOrganization, updateUserProfile } from '../store/authSlice';
 import api from '../services/api';
 import { useClassrooms } from './ClassroomContext';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeToggle } from './ThemeToggle';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -34,6 +36,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   
   const { user, organization } = useSelector((state: RootState) => state.auth);
   const { classrooms, loadingClassrooms, fetchClassrooms } = useClassrooms();
+  const { theme } = useTheme();
 
   // Create Classroom Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -296,7 +299,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const currentProfileLogo = user?.profile_url || user?.profileUrl;
 
   return (
-    <div className="light-dashboard">
+    <div className={`light-dashboard ${theme === 'dark' ? 'dark-dashboard' : ''}`}>
       <div className="ld-container">
         {/* Left Sidebar */}
         <aside className="ld-sidebar">
@@ -530,6 +533,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
           {/* User Profile Footer & Logout */}
           <div className="ld-sidebar-footer">
+            <div style={{ marginBottom: '8px' }}>
+              <ThemeToggle />
+            </div>
             <div className="ld-user-card">
               {/* User Profile Avatar with Edit Badge */}
               <div 

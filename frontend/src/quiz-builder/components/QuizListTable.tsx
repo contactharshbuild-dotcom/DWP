@@ -32,12 +32,13 @@ export const QuizListTable: React.FC<QuizListTableProps> = ({
       <div style={{
         padding: '48px 24px',
         textAlign: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--light-card)',
         border: '1px solid var(--light-border)',
-        borderRadius: '16px'
+        borderRadius: '16px',
+        color: 'var(--light-text-primary)'
       }}>
         <FiHelpCircle size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
-        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700' }}>No Quizzes Created Yet</h4>
+        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700', color: 'var(--light-text-primary)' }}>No Quizzes Created Yet</h4>
         <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
           Create your organization's first MCQ or Subjective quiz using the <strong>+ Create New Quiz</strong> button above.
         </p>

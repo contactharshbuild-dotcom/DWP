@@ -14,7 +14,9 @@ import {
   FiChevronRight, 
   FiHome,
   FiExternalLink,
-  FiFile
+  FiFile,
+  FiList,
+  FiGrid
 } from 'react-icons/fi';
 import { materialBankService } from './services/materialBankService';
 import type { MaterialBankFolder, MaterialBankItem, BreadcrumbItem } from './types/materialBank.types';
@@ -22,6 +24,7 @@ import type { RootState } from '../store';
 import { getServerUrl } from '../services/api';
 import { CreateFolderModal } from './components/CreateFolderModal';
 import { UploadFileModal } from './components/UploadFileModal';
+import { UploadFolderModal } from './components/UploadFolderModal';
 import { AddYoutubeModal } from './components/AddYoutubeModal';
 import { YoutubePlayerModal } from './components/YoutubePlayerModal';
 
@@ -37,10 +40,12 @@ export const MaterialBankPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'file' | 'youtube'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'box'>('list');
 
   // Modals state
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [isUploadFileOpen, setIsUploadFileOpen] = useState(false);
+  const [isUploadFolderOpen, setIsUploadFolderOpen] = useState(false);
   const [isAddYoutubeOpen, setIsAddYoutubeOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<{ title: string; url: string } | null>(null);
 
@@ -146,7 +151,7 @@ export const MaterialBankPage: React.FC = () => {
               Material Bank
             </h2>
             <p style={{ margin: 0, fontSize: '14px', color: 'var(--light-text-secondary)' }}>
-              Store, organize, and access teaching materials, files, and YouTube videos.
+              Create, manage, and clone organization quiz templates (MCQ & Subjective) to assign across classrooms.
             </p>
           </div>
 
@@ -170,6 +175,15 @@ export const MaterialBankPage: React.FC = () => {
             </button>
 
             <button
+              className="btn-ld btn-ld-secondary"
+              onClick={() => setIsUploadFolderOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <FiFolder size={18} />
+              <span>+ Upload Folder</span>
+            </button>
+
+            <button
               className="btn-ld btn-ld-primary"
               onClick={() => setIsUploadFileOpen(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -180,15 +194,15 @@ export const MaterialBankPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Breadcrumb Navigation Bar */}
+        {/* Breadcrumb Navigation */}
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '8px', 
           padding: '12px 16px', 
-          backgroundColor: '#ffffff', 
+          backgroundColor: 'var(--light-card)', 
           borderRadius: '8px', 
-          border: '1px solid #e2e8f0', 
+          border: '1px solid var(--light-border)', 
           marginBottom: '20px',
           fontSize: '14px'
         }}>
@@ -201,7 +215,7 @@ export const MaterialBankPage: React.FC = () => {
               display: 'flex', 
               alignItems: 'center', 
               gap: '6px',
-              color: currentFolderId === null ? 'var(--light-primary)' : '#64748b',
+              color: currentFolderId === null ? 'var(--light-primary)' : 'var(--light-text-secondary)',
               fontWeight: currentFolderId === null ? '700' : '500'
             }}
           >
@@ -211,14 +225,14 @@ export const MaterialBankPage: React.FC = () => {
 
           {breadcrumbs.map((crumb) => (
             <React.Fragment key={crumb.id}>
-              <FiChevronRight size={14} style={{ color: '#94a3b8' }} />
+              <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
               <button
                 onClick={() => handleBreadcrumbClick(crumb.id)}
                 style={{
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: currentFolderId === crumb.id ? 'var(--light-primary)' : '#64748b',
+                  color: currentFolderId === crumb.id ? 'var(--light-primary)' : 'var(--light-text-secondary)',
                   fontWeight: currentFolderId === crumb.id ? '700' : '500'
                 }}
               >
@@ -242,7 +256,7 @@ export const MaterialBankPage: React.FC = () => {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             <select
               className="input-ld"
               value={filterType}
@@ -253,49 +267,113 @@ export const MaterialBankPage: React.FC = () => {
               <option value="file">Files Only</option>
               <option value="youtube">YouTube Videos</option>
             </select>
+
+            {/* List / Box View Toggle */}
+            <div style={{
+              display: 'inline-flex',
+              backgroundColor: 'var(--light-table-header-bg)',
+              padding: '3px',
+              borderRadius: '8px',
+              border: '1px solid var(--light-border)',
+              gap: '2px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: viewMode === 'list' ? '700' : '500',
+                  backgroundColor: viewMode === 'list' ? 'var(--light-card)' : 'transparent',
+                  color: viewMode === 'list' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                  boxShadow: viewMode === 'list' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="List View"
+              >
+                <FiList size={16} />
+                <span>List</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('box')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: viewMode === 'box' ? '700' : '500',
+                  backgroundColor: viewMode === 'box' ? 'var(--light-card)' : 'transparent',
+                  color: viewMode === 'box' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                  boxShadow: viewMode === 'box' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Box (Grid) View"
+              >
+                <FiGrid size={16} />
+                <span>Box</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Content Loading State */}
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={{ padding: '60px', textAlign: 'center', backgroundColor: 'var(--light-card)', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
             <span className="spinner" style={{ width: '32px', height: '32px', borderTopColor: 'var(--light-primary)' }}></span>
-            <p style={{ marginTop: '12px', color: '#64748b', fontSize: '14px' }}>Loading materials...</p>
+            <p style={{ marginTop: '12px', color: 'var(--light-text-secondary)', fontSize: '14px' }}>Loading materials...</p>
           </div>
         ) : filteredFolders.length === 0 && filteredItems.length === 0 ? (
           /* Empty State */
           <div style={{ 
             padding: '60px 20px', 
             textAlign: 'center', 
-            backgroundColor: '#ffffff', 
+            backgroundColor: 'var(--light-card)', 
             borderRadius: '12px', 
-            border: '1px dashed #cbd5e1' 
+            border: '1px dashed var(--light-border)' 
           }}>
             <div style={{ 
               width: '64px', 
               height: '64px', 
               margin: '0 auto 16px', 
               borderRadius: '50%', 
-              backgroundColor: '#f1f5f9', 
+              backgroundColor: 'var(--light-table-header-bg)', 
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'center',
-              color: '#94a3b8'
+              color: 'var(--light-text-muted)'
             }}>
               <FiFolder size={32} />
             </div>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '700', color: '#1e293b' }}>
+            <h4 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '700', color: 'var(--light-text-primary)' }}>
               No folders or files yet
             </h4>
-            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#64748b', maxWidth: '420px', marginInline: 'auto' }}>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: 'var(--light-text-secondary)', maxWidth: '420px', marginInline: 'auto' }}>
               Start building your Material Bank by creating a folder, uploading files, or adding YouTube video links above.
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button 
                 className="btn-ld btn-ld-secondary"
                 onClick={() => setIsCreateFolderOpen(true)}
               >
                 + Create Folder
+              </button>
+              <button 
+                className="btn-ld btn-ld-secondary"
+                onClick={() => setIsUploadFolderOpen(true)}
+              >
+                + Upload Folder
               </button>
               <button 
                 className="btn-ld btn-ld-primary"
@@ -310,186 +388,421 @@ export const MaterialBankPage: React.FC = () => {
             {/* Folders Section */}
             {filteredFolders.length > 0 && (
               <div style={{ marginBottom: '28px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#475569', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--light-text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Folders ({filteredFolders.length})
                 </h3>
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', 
-                  gap: '16px' 
-                }}>
-                  {filteredFolders.map((folder) => (
-                    <div
-                      key={folder.id}
-                      onClick={() => handleOpenFolder(folder.id)}
-                      style={{
-                        padding: '16px',
-                        backgroundColor: '#ffffff',
-                        borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        transition: 'all 0.2s ease',
-                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--light-primary)';
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = '#e2e8f0';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
-                        <div style={{ 
-                          padding: '10px', 
-                          borderRadius: '8px', 
-                          backgroundColor: 'rgba(79, 70, 229, 0.08)', 
-                          color: 'var(--light-primary)',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}>
-                          <FiFolder size={22} />
-                        </div>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {folder.name}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={(e) => handleDeleteFolder(e, folder.id, folder.name)}
+                {viewMode === 'list' ? (
+                  <div style={{
+                    backgroundColor: 'var(--light-card)',
+                    borderRadius: '10px',
+                    border: '1px solid var(--light-border)',
+                    overflowX: 'auto',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '480px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--light-table-header-bg)', borderBottom: '1px solid var(--light-border)' }}>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Folder Name
+                          </th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '140px' }}>
+                            Type
+                          </th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '100px', textAlign: 'right' }}>
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredFolders.map((folder, idx) => (
+                          <tr
+                            key={folder.id}
+                            onClick={() => handleOpenFolder(folder.id)}
+                            style={{
+                              borderBottom: idx === filteredFolders.length - 1 ? 'none' : '1px solid var(--light-border)',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--light-table-hover-bg)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <td style={{ padding: '12px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ 
+                                  padding: '8px', 
+                                  borderRadius: '6px', 
+                                  backgroundColor: 'rgba(79, 70, 229, 0.08)', 
+                                  color: 'var(--light-primary)',
+                                  display: 'flex',
+                                  alignItems: 'center'
+                                }}>
+                                  <FiFolder size={18} />
+                                </div>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                                  {folder.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--light-text-secondary)' }}>
+                              Folder
+                            </td>
+                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                              <button
+                                onClick={(e) => handleDeleteFolder(e, folder.id, folder.name)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  color: 'var(--light-text-muted)',
+                                  padding: '6px',
+                                  borderRadius: '4px',
+                                  transition: 'color 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                                title="Delete Folder"
+                              >
+                                <FiTrash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', 
+                    gap: '16px' 
+                  }}>
+                    {filteredFolders.map((folder) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => handleOpenFolder(folder.id)}
                         style={{
-                          background: 'none',
-                          border: 'none',
+                          padding: '16px',
+                          backgroundColor: 'var(--light-card)',
+                          borderRadius: '10px',
+                          border: '1px solid var(--light-border)',
                           cursor: 'pointer',
-                          color: '#94a3b8',
-                          padding: '6px',
-                          borderRadius: '4px',
-                          transition: 'color 0.2s'
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                        onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
-                        title="Delete Folder"
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--light-primary)';
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--light-border)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                        }}
                       >
-                        <FiTrash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
+                          <div style={{ 
+                            padding: '10px', 
+                            borderRadius: '8px', 
+                            backgroundColor: 'rgba(79, 70, 229, 0.08)', 
+                            color: 'var(--light-primary)',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}>
+                            <FiFolder size={22} />
+                          </div>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--light-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {folder.name}
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={(e) => handleDeleteFolder(e, folder.id, folder.name)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--light-text-muted)',
+                            padding: '6px',
+                            borderRadius: '4px',
+                            transition: 'color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                          title="Delete Folder"
+                        >
+                          <FiTrash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Items Section */}
             {filteredItems.length > 0 && (
               <div>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#475569', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--light-text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Files & Links ({filteredItems.length})
                 </h3>
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-                  gap: '16px' 
-                }}>
-                  {filteredItems.map((item) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        padding: '16px',
-                        backgroundColor: '#ffffff',
-                        borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ 
-                          padding: '10px', 
-                          borderRadius: '8px', 
-                          backgroundColor: item.type === 'youtube' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
-                          color: item.type === 'youtube' ? '#ef4444' : '#3b82f6',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}>
-                          {item.type === 'youtube' ? <FiYoutube size={22} /> : <FiFileText size={22} />}
-                        </div>
-                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                          <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item.name}
-                          </h4>
-                          <span style={{ fontSize: '12px', color: '#64748b', display: 'block' }}>
-                            Uploaded by {item.uploader?.name || 'Teacher'}
-                          </span>
-                        </div>
-                      </div>
+                {viewMode === 'list' ? (
+                  <div style={{
+                    backgroundColor: 'var(--light-card)',
+                    borderRadius: '10px',
+                    border: '1px solid var(--light-border)',
+                    overflowX: 'auto',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--light-table-header-bg)', borderBottom: '1px solid var(--light-border)' }}>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Material Name
+                          </th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '160px' }}>
+                            Uploaded By
+                          </th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>
+                            Type
+                          </th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '160px', textAlign: 'right' }}>
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredItems.map((item, idx) => (
+                          <tr
+                            key={item.id}
+                            style={{
+                              borderBottom: idx === filteredItems.length - 1 ? 'none' : '1px solid var(--light-border)',
+                              transition: 'background-color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--light-table-hover-bg)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <td style={{ padding: '12px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ 
+                                  padding: '8px', 
+                                  borderRadius: '6px', 
+                                  backgroundColor: item.type === 'youtube' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
+                                  color: item.type === 'youtube' ? '#ef4444' : '#3b82f6',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  {item.type === 'youtube' ? <FiYoutube size={18} /> : <FiFileText size={18} />}
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: 'var(--light-text-primary)',
+                                    maxWidth: '380px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  title={item.name}
+                                >
+                                  {item.name}
+                                </span>
+                              </div>
+                            </td>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
-                        {item.type === 'youtube' ? (
+                            <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--light-text-secondary)' }}>
+                              {item.uploader?.name || 'Teacher'}
+                            </td>
+
+                            <td style={{ padding: '12px 16px' }}>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: item.type === 'youtube' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                color: item.type === 'youtube' ? '#ef4444' : '#3b82f6'
+                              }}>
+                                {item.type === 'youtube' ? 'YouTube' : 'File'}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                {item.type === 'youtube' ? (
+                                  <button
+                                    onClick={() => setActiveVideo({ title: item.name, url: item.file_url })}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      color: '#ef4444',
+                                      fontWeight: '600',
+                                      fontSize: '13px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      padding: '4px 6px',
+                                      borderRadius: '4px'
+                                    }}
+                                  >
+                                    <FiVideo size={15} />
+                                    <span>Watch</span>
+                                  </button>
+                                ) : (
+                                  <a
+                                    href={getFullFileUrl(item.file_url)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      color: 'var(--light-primary)',
+                                      fontWeight: '600',
+                                      fontSize: '13px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      textDecoration: 'none',
+                                      padding: '4px 6px',
+                                      borderRadius: '4px'
+                                    }}
+                                  >
+                                    <FiExternalLink size={15} />
+                                    <span>View</span>
+                                  </a>
+                                )}
+
+                                <button
+                                  onClick={() => handleDeleteItem(item.id, item.name)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: 'var(--light-text-muted)',
+                                    padding: '4px',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                                  title="Delete Material"
+                                >
+                                  <FiTrash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
+                    gap: '16px' 
+                  }}>
+                    {filteredItems.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '16px',
+                          backgroundColor: 'var(--light-card)',
+                          borderRadius: '10px',
+                          border: '1px solid var(--light-border)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                          <div style={{ 
+                            padding: '10px', 
+                            borderRadius: '8px', 
+                            backgroundColor: item.type === 'youtube' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
+                            color: item.type === 'youtube' ? '#ef4444' : '#3b82f6',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}>
+                            {item.type === 'youtube' ? <FiYoutube size={22} /> : <FiFileText size={22} />}
+                          </div>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600', color: 'var(--light-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {item.name}
+                            </h4>
+                            <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', display: 'block' }}>
+                              Uploaded by {item.uploader?.name || 'Teacher'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid var(--light-border)' }}>
+                          {item.type === 'youtube' ? (
+                            <button
+                              onClick={() => setActiveVideo({ title: item.name, url: item.file_url })}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: '#ef4444',
+                                fontWeight: '600',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: 0
+                              }}
+                            >
+                              <FiVideo size={16} />
+                              <span>Watch Video</span>
+                            </button>
+                          ) : (
+                            <a
+                              href={getFullFileUrl(item.file_url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                color: 'var(--light-primary)',
+                                fontWeight: '600',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                textDecoration: 'none'
+                              }}
+                            >
+                              <FiExternalLink size={15} />
+                              <span>View File</span>
+                            </a>
+                          )}
+
                           <button
-                            onClick={() => setActiveVideo({ title: item.name, url: item.file_url })}
+                            onClick={() => handleDeleteItem(item.id, item.name)}
                             style={{
                               background: 'none',
                               border: 'none',
                               cursor: 'pointer',
-                              color: '#ef4444',
-                              fontWeight: '600',
-                              fontSize: '13px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: 0
+                              color: 'var(--light-text-muted)',
+                              padding: '4px'
                             }}
+                            onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                            title="Delete Material"
                           >
-                            <FiVideo size={16} />
-                            <span>Watch Video</span>
+                            <FiTrash2 size={16} />
                           </button>
-                        ) : (
-                          <a
-                            href={getFullFileUrl(item.file_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              color: 'var(--light-primary)',
-                              fontWeight: '600',
-                              fontSize: '13px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              textDecoration: 'none'
-                            }}
-                          >
-                            <FiExternalLink size={15} />
-                            <span>View File</span>
-                          </a>
-                        )}
-
-                        <button
-                          onClick={() => handleDeleteItem(item.id, item.name)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: '#94a3b8',
-                            padding: '4px'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
-                          title="Delete Material"
-                        >
-                          <FiTrash2 size={16} />
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -507,6 +820,13 @@ export const MaterialBankPage: React.FC = () => {
         isOpen={isUploadFileOpen}
         onClose={() => setIsUploadFileOpen(false)}
         onSuccess={handleUploadFile}
+      />
+
+      <UploadFolderModal
+        isOpen={isUploadFolderOpen}
+        onClose={() => setIsUploadFolderOpen(false)}
+        currentFolderId={currentFolderId}
+        onUploadComplete={() => loadContents(currentFolderId)}
       />
 
       <AddYoutubeModal

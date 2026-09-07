@@ -65,6 +65,7 @@ const Teachers: React.FC = () => {
   };
 
   const handleApproveTeacher = async (teacherId: number) => {
+    if (user?.role !== 'admin') return;
     setActionLoading(teacherId);
     try {
       await api.post(`/teachers/${teacherId}/approve`);
@@ -78,6 +79,7 @@ const Teachers: React.FC = () => {
   };
 
   const handleRejectTeacher = async (teacherId: number) => {
+    if (user?.role !== 'admin') return;
     if (!window.confirm('Are you sure you want to reject or remove this teacher?')) return;
     setActionLoading(teacherId);
     try {
@@ -96,6 +98,7 @@ const Teachers: React.FC = () => {
   }, []);
 
   const handleOpenModal = () => {
+    if (user?.role !== 'admin') return;
     setShowModal(true);
     setInviteName('');
     setInviteEmail('');
@@ -168,14 +171,20 @@ const Teachers: React.FC = () => {
         <div className="ld-header-left">
           <h2 className="ld-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FiUser style={{ color: 'var(--light-primary)' }} />
-            <span>Manage Teachers</span>
+            <span>{user?.role === 'admin' ? 'Manage Teachers' : 'Teachers Directory'}</span>
           </h2>
-          <span className="ld-subtitle">Add and configure access for your academic staff.</span>
+          <span className="ld-subtitle">
+            {user?.role === 'admin' 
+              ? 'Add and configure access for your academic staff.' 
+              : 'View academic staff members in your organization.'}
+          </span>
         </div>
-        <button className="btn-ld btn-ld-primary" onClick={handleOpenModal}>
-          <FiPlus size={18} />
-          <span>Invite Teacher</span>
-        </button>
+        {user?.role === 'admin' && (
+          <button className="btn-ld btn-ld-primary" onClick={handleOpenModal}>
+            <FiPlus size={18} />
+            <span>Invite Teacher</span>
+          </button>
+        )}
       </div>
 
       {error && (
@@ -202,7 +211,11 @@ const Teachers: React.FC = () => {
           <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--light-text-secondary)' }}>
             <FiUser size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
             <h3>No teachers added yet</h3>
-            <p style={{ fontSize: '13px', marginTop: '8px' }}>Invite your first teacher to start collaborating.</p>
+            <p style={{ fontSize: '13px', marginTop: '8px' }}>
+              {user?.role === 'admin' 
+                ? 'Invite your first teacher to start collaborating.' 
+                : 'No teachers have been registered in your organization yet.'}
+            </p>
           </div>
         ) : (
           <div className="ld-table-container">
@@ -212,7 +225,7 @@ const Teachers: React.FC = () => {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Action</th>
+                  {user?.role === 'admin' && <th style={{ textAlign: 'right' }}>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -249,66 +262,68 @@ const Teachers: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
-                        {teacher.status === 'pending' && !teacher.invite_token && (
-                          <>
-                            <button 
-                              className="btn-ld btn-ld-primary btn-ld-small" 
-                              onClick={() => handleApproveTeacher(teacher.id)}
-                              disabled={actionLoading === teacher.id}
-                              style={{ backgroundColor: '#10b981', borderColor: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <FiUserCheck size={13} />
-                              <span>{actionLoading === teacher.id ? 'Approving...' : 'Approve'}</span>
-                            </button>
+                    {user?.role === 'admin' && (
+                      <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                          {teacher.status === 'pending' && !teacher.invite_token && (
+                            <>
+                              <button 
+                                className="btn-ld btn-ld-primary btn-ld-small" 
+                                onClick={() => handleApproveTeacher(teacher.id)}
+                                disabled={actionLoading === teacher.id}
+                                style={{ backgroundColor: '#10b981', borderColor: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <FiUserCheck size={13} />
+                                <span>{actionLoading === teacher.id ? 'Approving...' : 'Approve'}</span>
+                              </button>
+                              <button 
+                                className="btn-ld btn-ld-small" 
+                                onClick={() => handleRejectTeacher(teacher.id)}
+                                disabled={actionLoading === teacher.id}
+                                style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="Reject / Remove Teacher"
+                              >
+                                <FiTrash2 size={13} />
+                                <span>Reject</span>
+                              </button>
+                            </>
+                          )}
+                          {teacher.status === 'pending' && teacher.invite_token && (
+                            <>
+                              <button 
+                                className="btn-ld btn-ld-secondary btn-ld-small" 
+                                onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
+                              >
+                                <FiCopy size={13} />
+                                <span>Copy Link</span>
+                              </button>
+                              <button 
+                                className="btn-ld btn-ld-small" 
+                                onClick={() => handleRejectTeacher(teacher.id)}
+                                disabled={actionLoading === teacher.id}
+                                style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="Revoke Invitation"
+                              >
+                                <FiTrash2 size={13} />
+                                <span>Revoke</span>
+                              </button>
+                            </>
+                          )}
+                          {teacher.status === 'active' && (
                             <button 
                               className="btn-ld btn-ld-small" 
                               onClick={() => handleRejectTeacher(teacher.id)}
                               disabled={actionLoading === teacher.id}
                               style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              title="Reject / Remove Teacher"
+                              title="Remove Teacher"
                             >
                               <FiTrash2 size={13} />
-                              <span>Reject</span>
+                              <span>Remove</span>
                             </button>
-                          </>
-                        )}
-                        {teacher.status === 'pending' && teacher.invite_token && (
-                          <>
-                            <button 
-                              className="btn-ld btn-ld-secondary btn-ld-small" 
-                              onClick={() => copyToClipboard(`${window.location.origin}/accept-invite?token=${teacher.invite_token}`)}
-                            >
-                              <FiCopy size={13} />
-                              <span>Copy Link</span>
-                            </button>
-                            <button 
-                              className="btn-ld btn-ld-small" 
-                              onClick={() => handleRejectTeacher(teacher.id)}
-                              disabled={actionLoading === teacher.id}
-                              style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              title="Revoke Invitation"
-                            >
-                              <FiTrash2 size={13} />
-                              <span>Revoke</span>
-                            </button>
-                          </>
-                        )}
-                        {teacher.status === 'active' && (
-                          <button 
-                            className="btn-ld btn-ld-small" 
-                            onClick={() => handleRejectTeacher(teacher.id)}
-                            disabled={actionLoading === teacher.id}
-                            style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            title="Remove Teacher"
-                          >
-                            <FiTrash2 size={13} />
-                            <span>Remove</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

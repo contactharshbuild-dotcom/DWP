@@ -66,9 +66,9 @@ export const McqExamsTab: React.FC<McqExamsTabProps> = ({
           <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '30px', height: '30px' }}></span>
         </div>
       ) : mcqTests.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
           <FiAward size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-          <h4>No examinations scheduled yet</h4>
+          <h4 style={{ color: 'var(--light-text-primary)' }}>No examinations scheduled yet</h4>
           <p style={{ fontSize: '13px', marginTop: '6px' }}>Schedule module exams or session quizzes for this classroom.</p>
         </div>
       ) : (

@@ -889,7 +889,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   const isModalOpen = !!activeModuleForSession || !!editingSession;
 
   return (
-    <div style={{ color: 'var(--light-text)', fontFamily: '"Inter", sans-serif' }}>
+    <div style={{ color: 'var(--light-text-primary)', fontFamily: '"Inter", sans-serif' }}>
       <style>{`
         .live-pulsate {
           display: inline-block;
@@ -919,7 +919,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
 
         .timeline-session-node {
           position: relative;
-          background: #ffffff;
+          background: var(--light-card);
           border: 1px solid var(--light-border);
           border-radius: 12px;
           padding: 18px 20px;
@@ -940,7 +940,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background: white;
+          background: var(--light-card);
           border: 3px solid var(--light-primary);
           box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
           z-index: 2;
@@ -952,7 +952,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.4);
+          background: rgba(0, 0, 0, 0.6);
           backdrop-filter: blur(4px);
           display: flex;
           align-items: center;
@@ -962,14 +962,16 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         }
 
         .modal-sessions-card {
-          background: white;
+          background: var(--light-modal-bg);
+          color: var(--light-text-primary);
+          border: 1px solid var(--light-border);
           border-radius: 16px;
           max-width: 600px;
           width: 100%;
           max-height: 85vh;
           overflow-y: auto;
           padding: 28px;
-          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3), 0 10px 10px -5px rgba(0,0,0,0.2);
         }
 
         .calendar-grid {
@@ -979,7 +981,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         }
 
         .calendar-day-cell {
-          background: #ffffff;
+          background: var(--light-card);
           border: 1px solid var(--light-border);
           border-radius: 10px;
           min-height: 120px;
@@ -995,17 +997,17 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         }
 
         .calendar-day-cell.dimmed {
-          background: #f9fafb;
+          background: var(--light-table-header-bg);
           opacity: 0.6;
         }
 
         .calendar-day-cell.today {
           border: 2px solid var(--light-primary);
-          background: rgba(79, 70, 229, 0.02);
+          background: rgba(79, 70, 229, 0.05);
         }
 
         .calendar-event-card {
-          background: #ffffff;
+          background: var(--light-table-header-bg);
           border: 1px solid var(--light-border);
           border-left: 3px solid var(--light-primary);
           border-radius: 6px;
@@ -1028,9 +1030,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           font-size: 12px;
           padding: 6px 12px;
           border-radius: 6px;
-          background-color: #ffffff;
-          color: #1a73e8;
-          border: 1px solid rgba(26, 115, 232, 0.3);
+          background-color: var(--light-card);
+          color: #3b82f6;
+          border: 1px solid rgba(59, 130, 246, 0.3);
           font-weight: 600;
           text-decoration: none;
           transition: all 0.15s;
@@ -1038,9 +1040,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         }
 
         .gcal-btn:hover {
-          background-color: #f8b4b415;
-          border-color: #1a73e8;
-          box-shadow: 0 2px 6px rgba(26, 115, 232, 0.15);
+          background-color: rgba(59, 130, 246, 0.1);
+          border-color: #3b82f6;
+          box-shadow: 0 2px 6px rgba(59, 130, 246, 0.2);
         }
 
         .btn-sync-all {
@@ -1089,7 +1091,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           </button>
 
           {/* Timeline / Calendar View Switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', background: '#f3f4f6', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--light-table-header-bg)', padding: '4px', borderRadius: '10px', gap: '4px', border: '1px solid var(--light-border)' }}>
             <button
               onClick={() => setViewMode('timeline')}
               style={{
@@ -1169,14 +1171,14 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
       {/* Add Module Panel */}
       {showAddModule && (
         <div style={{
-          backgroundColor: '#fff',
+          backgroundColor: 'var(--light-card)',
           border: '1px solid var(--light-border)',
           borderRadius: '12px',
           padding: '24px',
           marginBottom: '24px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
         }}>
-          <h4 style={{ margin: '0 0 16px 0', fontWeight: '700' }}>Create Module Grouping</h4>
+          <h4 style={{ margin: '0 0 16px 0', fontWeight: '700', color: 'var(--light-text-primary)' }}>Create Module Grouping</h4>
           <form onSubmit={handleCreateModule}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
               <div className="form-group-ld">
@@ -1230,12 +1232,12 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
       {/* CALENDAR VIEW */}
       {/* ========================================================================= */}
       {viewMode === 'calendar' && (
-        <div style={{ background: '#fff', border: '1px solid var(--light-border)', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+        <div style={{ background: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           
           {/* Calendar Header Controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h3 style={{ margin: 0, fontWeight: '800', fontSize: '20px', color: 'black' }}>
+              <h3 style={{ margin: 0, fontWeight: '800', fontSize: '20px', color: 'var(--light-text-primary)' }}>
                 {monthNames[calMonth]} {calYear}
               </h3>
               <div style={{ display: 'flex', gap: '4px' }}>
@@ -1327,7 +1329,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                     <span style={{
                       fontSize: '12.5px',
                       fontWeight: isToday ? '800' : '600',
-                      color: isToday ? 'var(--light-primary)' : (cell.isCurrentMonth ? 'black' : 'var(--light-text-muted)'),
+                      color: isToday ? 'var(--light-primary)' : (cell.isCurrentMonth ? 'var(--light-text-primary)' : 'var(--light-text-muted)'),
                       width: isToday ? '22px' : 'auto',
                       height: isToday ? '22px' : 'auto',
                       borderRadius: '50%',
@@ -1357,7 +1359,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                           onClick={() => setViewingSession(sess)}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontWeight: '700', color: 'black', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                            <span style={{ fontWeight: '700', color: 'var(--light-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
                               Session {sess.session_number}{sess.name ? `: ${sess.name}` : ''}
                             </span>
                             {sess.mode === 'online' ? (
@@ -1401,9 +1403,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
               <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
             </div>
           ) : modules.length === 0 ? (
-            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: '#fff', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
               <FiBookOpen size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
-              <h4>No modules configured</h4>
+              <h4 style={{ color: 'var(--light-text-primary)' }}>No modules configured</h4>
               {canWrite ? (
                 <p style={{ fontSize: '13.5px', marginTop: '6px' }}>Click "Create Module" to start adding sessions for your students.</p>
               ) : (
@@ -1414,7 +1416,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {modules.map((mod) => (
                 <div key={`module-card-${mod.id}`} style={{
-                  background: '#ffffff',
+                  background: 'var(--light-card)',
                   border: '1px solid var(--light-border)',
                   borderRadius: '16px',
                   padding: '24px',
@@ -1423,7 +1425,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                   {/* Module Header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'black' }}>{mod.name}</h4>
+                      <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'var(--light-text-primary)' }}>{mod.name}</h4>
                       {mod.description && (
                         <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--light-text-secondary)' }}>{mod.description}</p>
                       )}
@@ -1490,7 +1492,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'black' }}>
+                                  <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'var(--light-text-primary)' }}>
                                     Session {sess.session_number}
                                     {sess.name ? `: ${sess.name}` : ''}
                                     {sess.part_extension ? ` (${sess.part_extension})` : ''}
@@ -1550,7 +1552,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                               {sess.assigned_teacher_ids && sess.assigned_teacher_ids.length > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
                                   <FiUser size={13} style={{ color: 'var(--light-text-muted)' }} />
-                                  <span>Conducted by: <strong style={{ color: 'black' }}>
+                                  <span>Conducted by: <strong style={{ color: 'var(--light-text-primary)' }}>
                                     {sess.assigned_teacher_ids
                                       .map(id => teachers.find(t => t.id === id)?.name)
                                       .filter(Boolean)
@@ -1585,7 +1587,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                 {sess.mode === 'offline' && sess.venue && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--light-text-secondary)' }}>
                                     <FiMapPin size={14} style={{ color: 'var(--light-text-muted)' }} />
-                                    <span>Venue: <strong style={{ color: 'black' }}>{sess.venue}</strong></span>
+                                    <span>Venue: <strong style={{ color: 'var(--light-text-primary)' }}>{sess.venue}</strong></span>
                                   </div>
                                 )}
 
@@ -1615,12 +1617,12 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                               {/* Notes/Agenda */}
                               {sess.notes && (
                                 <div style={{ 
-                                  background: '#f9fafb', 
+                                  background: 'var(--light-table-header-bg)', 
                                   borderLeft: '3px solid var(--light-primary)', 
                                   padding: '10px 14px', 
                                   borderRadius: '4px',
                                   fontSize: '13px',
-                                  color: '#374151',
+                                  color: 'var(--light-text-secondary)',
                                   marginTop: '8px'
                                 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase', color: 'var(--light-primary)', marginBottom: '4px' }}>
@@ -1636,7 +1638,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                             {canWrite && (
                               <div style={{ 
                                 marginTop: '16px', 
-                                borderTop: '1px solid rgba(0,0,0,0.04)', 
+                                borderTop: '1px solid var(--light-border)', 
                                 paddingTop: '12px', 
                                 display: 'flex', 
                                 justifyContent: 'space-between', 
@@ -1655,9 +1657,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                       fontSize: '11.5px',
                                       padding: '4px 8px',
                                       borderRadius: '6px',
-                                      background: sess.status === 'Live' ? '#10b981' : '#f3f4f6',
-                                      color: sess.status === 'Live' ? 'white' : 'var(--light-text)',
-                                      border: 'none',
+                                      background: sess.status === 'Live' ? '#10b981' : 'var(--light-table-header-bg)',
+                                      color: sess.status === 'Live' ? 'white' : 'var(--light-text-secondary)',
+                                      border: '1px solid var(--light-border)',
                                       cursor: 'pointer',
                                       fontWeight: '600'
                                     }}
@@ -1672,9 +1674,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                       fontSize: '11.5px',
                                       padding: '4px 8px',
                                       borderRadius: '6px',
-                                      background: sess.status === 'Completed' ? '#3b82f6' : '#f3f4f6',
-                                      color: sess.status === 'Completed' ? 'white' : 'var(--light-text)',
-                                      border: 'none',
+                                      background: sess.status === 'Completed' ? '#3b82f6' : 'var(--light-table-header-bg)',
+                                      color: sess.status === 'Completed' ? 'white' : 'var(--light-text-secondary)',
+                                      border: '1px solid var(--light-border)',
                                       cursor: 'pointer',
                                       fontWeight: '600'
                                     }}
@@ -1689,9 +1691,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                       fontSize: '11.5px',
                                       padding: '4px 8px',
                                       borderRadius: '6px',
-                                      background: sess.status === 'Cancelled' ? '#ef4444' : '#f3f4f6',
-                                      color: sess.status === 'Cancelled' ? 'white' : 'var(--light-text)',
-                                      border: 'none',
+                                      background: sess.status === 'Cancelled' ? '#ef4444' : 'var(--light-table-header-bg)',
+                                      color: sess.status === 'Cancelled' ? 'white' : 'var(--light-text-secondary)',
+                                      border: '1px solid var(--light-border)',
                                       cursor: 'pointer',
                                       fontWeight: '600'
                                     }}
@@ -1819,7 +1821,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                 fontWeight: '700',
                                 padding: '8px 24px',
                                 borderRadius: '24px',
-                                background: '#ffffff',
+                                background: 'var(--light-card)',
                                 border: '1.5px solid var(--light-primary)',
                                 color: 'var(--light-primary)',
                                 boxShadow: '0 2px 10px rgba(79, 70, 229, 0.12)',
@@ -1863,7 +1865,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                   <FiShare2 size={20} style={{ color: '#1a73e8' }} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontWeight: '800', fontSize: '18px', color: 'black' }}>
+                  <h3 style={{ margin: 0, fontWeight: '800', fontSize: '18px', color: 'var(--light-text-primary)' }}>
                     Add All Sessions to Google Calendar
                   </h3>
                   <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
@@ -1881,7 +1883,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             </div>
 
             {/* Scope selection */}
-            <div style={{ marginBottom: '20px', background: '#f9fafb', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
+            <div style={{ marginBottom: '20px', background: 'var(--light-table-header-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
               <label className="form-label-ld" htmlFor="exportScope" style={{ marginBottom: '8px', display: 'block' }}>
                 Select Scope of Sessions to Export *
               </label>
@@ -1904,12 +1906,12 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
               
               {/* Step 1 */}
-              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: '#fff', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: 'var(--light-card)', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
                 <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#1a73e8', color: 'white', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   1
                 </span>
                 <div style={{ flex: 1 }}>
-                  <strong style={{ fontSize: '14px', color: 'black' }}>Download Calendar File (.ics)</strong>
+                  <strong style={{ fontSize: '14px', color: 'var(--light-text-primary)' }}>Download Calendar File (.ics)</strong>
                   <p style={{ margin: '2px 0 10px 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
                     Generates a single calendar file containing all {getExportableSessions().length} scheduled sessions.
                   </p>
@@ -1932,12 +1934,12 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
               </div>
 
               {/* Step 2 */}
-              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: '#fff', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', background: 'var(--light-card)', border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px' }}>
                 <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#4285F4', color: 'white', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   2
                 </span>
                 <div style={{ flex: 1 }}>
-                  <strong style={{ fontSize: '14px', color: 'black' }}>Import into Google Calendar</strong>
+                  <strong style={{ fontSize: '14px', color: 'var(--light-text-primary)' }}>Import into Google Calendar</strong>
                   <p style={{ margin: '2px 0 10px 0', fontSize: '12.5px', color: 'var(--light-text-secondary)' }}>
                     Open Google Calendar's Import page and upload the downloaded file to add all sessions to your Google Calendar at once.
                   </p>
@@ -1978,7 +1980,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                 <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-primary)', textTransform: 'uppercase' }}>
                   {viewingSession.moduleName || 'Classroom Module'}
                 </span>
-                <h3 style={{ margin: '4px 0 0 0', fontWeight: '800', fontSize: '18px', color: 'black' }}>
+                <h3 style={{ margin: '4px 0 0 0', fontWeight: '800', fontSize: '18px', color: 'var(--light-text-primary)' }}>
                   Session {viewingSession.session_number}{viewingSession.name ? `: ${viewingSession.name}` : ''}
                   {viewingSession.part_extension ? ` (${viewingSession.part_extension})` : ''}
                 </h3>
@@ -1992,7 +1994,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             </div>
 
             {/* Session Info Grid */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', background: '#f9fafb', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', background: 'var(--light-table-header-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--light-border)' }}>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Status:</span>
@@ -2014,7 +2016,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Date & Time:</span>
-                <span style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
                   {formatDate(viewingSession.date)} ({viewingSession.start_time} - {viewingSession.end_time})
                 </span>
               </div>
@@ -2044,7 +2046,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
               {viewingSession.mode === 'offline' && viewingSession.venue && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>Venue Location:</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>{viewingSession.venue}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>{viewingSession.venue}</span>
                 </div>
               )}
 
@@ -2053,7 +2055,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                   <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', display: 'block', marginBottom: '4px' }}>
                     Conducted By:
                   </span>
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'black' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
                     {viewingSession.assigned_teacher_ids
                       .map(id => teachers.find(t => t.id === id)?.name)
                       .filter(Boolean)
@@ -2066,8 +2068,8 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             {/* Agenda / Notes */}
             {viewingSession.notes && (
               <div style={{ marginBottom: '20px' }}>
-                <h5 style={{ margin: '0 0 8px 0', fontWeight: '700', fontSize: '13px', color: 'black' }}>Agenda & Notes</h5>
-                <div style={{ background: '#f9fafb', borderLeft: '3px solid var(--light-primary)', padding: '12px', borderRadius: '6px', fontSize: '13px', color: '#374151', whiteSpace: 'pre-wrap' }}>
+                <h5 style={{ margin: '0 0 8px 0', fontWeight: '700', fontSize: '13px', color: 'var(--light-text-primary)' }}>Agenda & Notes</h5>
+                <div style={{ background: 'var(--light-table-header-bg)', borderLeft: '3px solid var(--light-primary)', padding: '12px', borderRadius: '6px', fontSize: '13px', color: 'var(--light-text-secondary)', whiteSpace: 'pre-wrap' }}>
                   {viewingSession.notes}
                 </div>
               </div>
@@ -2249,8 +2251,8 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                               borderRadius: '6px',
                               border: '1px solid',
                               borderColor: isSelected ? 'var(--light-primary)' : 'var(--light-border)',
-                              background: isSelected ? 'var(--light-primary)' : 'white',
-                              color: isSelected ? 'white' : 'var(--light-text)',
+                              background: isSelected ? 'var(--light-primary)' : 'var(--light-card)',
+                              color: isSelected ? 'white' : 'var(--light-text-secondary)',
                               fontSize: '12px',
                               fontWeight: '600',
                               cursor: 'pointer',
@@ -2787,11 +2789,11 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                   alignItems: 'center', 
                   flexWrap: 'wrap', 
                   gap: '12px', 
-                  background: '#f8fafc', 
+                  background: 'var(--light-table-header-bg)', 
                   padding: '12px 16px', 
                   borderRadius: '10px', 
                   marginBottom: '16px',
-                  border: '1px solid #e2e8f0'
+                  border: '1px solid var(--light-border)'
                 }}>
                   {/* Real-time Counters */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2915,9 +2917,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                         borderRadius: '6px',
                                         fontSize: '11px',
                                         fontWeight: '700',
-                                        border: st.status === 'present' ? '2px solid #16a34a' : '1px solid #cbd5e1',
-                                        background: st.status === 'present' ? '#22c55e' : '#f8fafc',
-                                        color: st.status === 'present' ? '#ffffff' : '#475569',
+                                        border: st.status === 'present' ? '2px solid #16a34a' : '1px solid var(--light-border)',
+                                        background: st.status === 'present' ? '#22c55e' : 'var(--light-table-header-bg)',
+                                        color: st.status === 'present' ? '#ffffff' : 'var(--light-text-secondary)',
                                         cursor: 'pointer'
                                       }}
                                     >
@@ -2932,9 +2934,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                         borderRadius: '6px',
                                         fontSize: '11px',
                                         fontWeight: '700',
-                                        border: st.status === 'absent' ? '2px solid #dc2626' : '1px solid #cbd5e1',
-                                        background: st.status === 'absent' ? '#ef4444' : '#f8fafc',
-                                        color: st.status === 'absent' ? '#ffffff' : '#475569',
+                                        border: st.status === 'absent' ? '2px solid #dc2626' : '1px solid var(--light-border)',
+                                        background: st.status === 'absent' ? '#ef4444' : 'var(--light-table-header-bg)',
+                                        color: st.status === 'absent' ? '#ffffff' : 'var(--light-text-secondary)',
                                         cursor: 'pointer'
                                       }}
                                     >
@@ -2949,9 +2951,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                         borderRadius: '6px',
                                         fontSize: '11px',
                                         fontWeight: '700',
-                                        border: st.status === 'late' ? '2px solid #d97706' : '1px solid #cbd5e1',
-                                        background: st.status === 'late' ? '#f59e0b' : '#f8fafc',
-                                        color: st.status === 'late' ? '#ffffff' : '#475569',
+                                        border: st.status === 'late' ? '2px solid #d97706' : '1px solid var(--light-border)',
+                                        background: st.status === 'late' ? '#f59e0b' : 'var(--light-table-header-bg)',
+                                        color: st.status === 'late' ? '#ffffff' : 'var(--light-text-secondary)',
                                         cursor: 'pointer'
                                       }}
                                     >
@@ -2966,9 +2968,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                                         borderRadius: '6px',
                                         fontSize: '11px',
                                         fontWeight: '700',
-                                        border: st.status === 'excused' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                                        background: st.status === 'excused' ? '#3b82f6' : '#f8fafc',
-                                        color: st.status === 'excused' ? '#ffffff' : '#475569',
+                                        border: st.status === 'excused' ? '2px solid #2563eb' : '1px solid var(--light-border)',
+                                        background: st.status === 'excused' ? '#3b82f6' : 'var(--light-table-header-bg)',
+                                        color: st.status === 'excused' ? '#ffffff' : 'var(--light-text-secondary)',
                                         cursor: 'pointer'
                                       }}
                                     >

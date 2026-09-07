@@ -4,15 +4,17 @@ import { authenticate, authorizeRoles } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
-// Guard all routes in this router for authenticated admin owners
+// Guard all routes in this router for authenticated users
 router.use(authenticate);
-router.use(authorizeRoles('admin'));
 
-router.post('/', inviteTeacher);
-router.get('/', getTeachers);
-router.post('/:id/approve', approveTeacher);
-router.put('/:id/approve', approveTeacher);
-router.delete('/:id', deleteTeacher);
-router.post('/:id/reject', deleteTeacher);
+// Read action: Admin and Teacher can access the teachers list
+router.get('/', authorizeRoles('admin', 'teacher'), getTeachers);
+
+// Admin-only management actions
+router.post('/', authorizeRoles('admin'), inviteTeacher);
+router.post('/:id/approve', authorizeRoles('admin'), approveTeacher);
+router.put('/:id/approve', authorizeRoles('admin'), approveTeacher);
+router.delete('/:id', authorizeRoles('admin'), deleteTeacher);
+router.post('/:id/reject', authorizeRoles('admin'), deleteTeacher);
 
 export default router;
