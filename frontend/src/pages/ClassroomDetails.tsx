@@ -33,6 +33,7 @@ import { SessionsTab } from './classroom-modules/SessionsTab';
 import { AssignQuizTab } from '../quiz-builder/components/AssignQuizTab';
 import { AssignContentModal } from './classroom-modules/modals/AssignContentModal';
 import { ImportMaterialBankModal } from './classroom-modules/modals/ImportMaterialBankModal';
+import { AssignExistingStudentsModal } from './classroom-modules/modals/AssignExistingStudentsModal';
 import { materialBankService } from '../material-bank/services/materialBankService';
 
 interface Teacher {
@@ -297,7 +298,14 @@ const ClassroomDetails: React.FC = () => {
 
   const handleTabChange = (newTab: string) => {
     setActiveTab(newTab as any);
-    setSearchParams({ tab: newTab });
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', newTab);
+      if (newTab !== activeTab) {
+        next.delete('folderId');
+      }
+      return next;
+    });
   };
   const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
 
@@ -369,6 +377,9 @@ const ClassroomDetails: React.FC = () => {
       setRenameClassroomLoading(false);
     }
   };
+
+  // Assign Existing Students Modal State
+  const [showAssignExistingStudentsModal, setShowAssignExistingStudentsModal] = useState(false);
 
   // Assign Teacher Modal State
   const [showAssignTeacherModal, setShowAssignTeacherModal] = useState(false);
@@ -457,7 +468,24 @@ const ClassroomDetails: React.FC = () => {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
-  const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+  // Sync folder state with URL search parameter (?folderId=...) so it persists on page refresh
+  const folderParam = searchParams.get('folderId');
+  const currentFolderId = (activeTab === 'resources' && folderParam && !isNaN(parseInt(folderParam, 10))) 
+    ? parseInt(folderParam, 10) 
+    : null;
+
+  const setCurrentFolderId = (folderId: number | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (folderId !== null) {
+        next.set('tab', 'resources');
+        next.set('folderId', folderId.toString());
+      } else {
+        next.delete('folderId');
+      }
+      return next;
+    });
+  };
 
   // Add Material Modal / Form State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -645,16 +673,15 @@ const ClassroomDetails: React.FC = () => {
   const fetchResources = async (targetFolderId?: number | null) => {
     setResourcesLoading(true);
     try {
-      const url = targetFolderId 
-        ? `/resources/classroom/${id}?folderId=${targetFolderId}` 
+      const folderToFetch = targetFolderId !== undefined ? targetFolderId : currentFolderId;
+      const url = folderToFetch 
+        ? `/resources/classroom/${id}?folderId=${folderToFetch}` 
         : `/resources/classroom/${id}`;
       const response = await api.get(url);
-      if (targetFolderId) {
-        setResources(response.data.resources || []);
-      } else {
+      if (response.data.folders) {
         setFolders(response.data.folders || []);
-        setResources([]);
       }
+      setResources(response.data.resources || []);
     } catch (err) {
       console.error('Failed to fetch resources:', err);
     } finally {
@@ -689,7 +716,6 @@ const ClassroomDetails: React.FC = () => {
   // Initial page mount: ONLY fetch basic classroom details
   useEffect(() => {
     fetchClassroomDetails();
-    setCurrentFolderId(null);
     setResourcesLoaded(false);
     setMcqLoaded(false);
     setPracticalsLoaded(false);
@@ -699,7 +725,7 @@ const ClassroomDetails: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     if (activeTab === 'resources' && !resourcesLoaded) {
-      fetchResources();
+      fetchResources(currentFolderId);
       setResourcesLoaded(true);
     } else if (activeTab === 'mcqs' && !mcqLoaded) {
       fetchMcqTests();
@@ -710,9 +736,9 @@ const ClassroomDetails: React.FC = () => {
     }
   }, [id, activeTab, resourcesLoaded, mcqLoaded, practicalsLoaded]);
 
-  // Fetch folder-specific resources on-demand ONLY when user opens a folder
+  // Fetch folder-specific resources on-demand when user navigates into or out of folders
   useEffect(() => {
-    if (id && currentFolderId !== null) {
+    if (id && activeTab === 'resources' && resourcesLoaded) {
       fetchResources(currentFolderId);
     }
   }, [id, currentFolderId]);
@@ -1188,6 +1214,18 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  // Rename Folder
+  const handleRenameFolder = async (folderId: number, newName: string) => {
+    try {
+      const response = await api.put(`/resources/folders/${folderId}`, { name: newName });
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: response.data.folder.name } : f));
+      return response.data.folder;
+    } catch (err: any) {
+      console.error('Failed to rename folder:', err);
+      throw err;
+    }
+  };
+
   const copyToClipboard = async (link: string) => {
     try {
       await navigator.clipboard.writeText(link);
@@ -1214,9 +1252,11 @@ const ClassroomDetails: React.FC = () => {
   // Generate generic shareable link for this classroom ID
   const inviteLink = classroom ? `${window.location.origin}/join-classroom/${classroom.classroom_id}` : '';
 
-  // Filter resources and folders for display (show ONLY folders at root level; show resources ONLY inside opened folder)
+  // Filter resources and folders for display (show root folders and root resources outside folders; show folder contents inside an opened folder)
   const currentFolders = currentFolderId === null ? folders : [];
-  const currentResources = currentFolderId === null ? [] : resources.filter(resrc => resrc.folder_id === currentFolderId);
+  const currentResources = currentFolderId === null 
+    ? resources.filter(resrc => !resrc.folder_id) 
+    : resources.filter(resrc => Number(resrc.folder_id) === Number(currentFolderId));
 
   // Check if resource is previewable (all materials open in-app modal)
   const isPreviewable = (_resrc: Resource): boolean => true;
@@ -2732,6 +2772,7 @@ const ClassroomDetails: React.FC = () => {
                 setStudentInviteLink(null);
                 setShowStudentInviteModal(true);
               }}
+              onOpenAssignExistingStudents={() => setShowAssignExistingStudentsModal(true)}
               onRemoveStudent={handleRemoveStudent}
               onToggleSuspendStudent={handleToggleSuspendStudent}
             />
@@ -2753,6 +2794,7 @@ const ClassroomDetails: React.FC = () => {
               handleDrop={handleDrop}
               handleFileChange={handleFileChange}
               handleDeleteFolder={handleDeleteFolder}
+              handleRenameFolder={handleRenameFolder}
               handleDeleteResource={handleDeleteResource}
               openAssignModal={openAssignModal}
               isPreviewable={isPreviewable}
@@ -3425,6 +3467,20 @@ const ClassroomDetails: React.FC = () => {
           targetFolderId={currentFolderId}
           onClose={() => setShowImportBankModal(false)}
           onSuccess={() => fetchResources(currentFolderId)}
+        />
+      )}
+
+      {/* Assign Existing Students From Other Classrooms Modal */}
+      {showAssignExistingStudentsModal && classroom && (
+        <AssignExistingStudentsModal
+          isOpen={showAssignExistingStudentsModal}
+          classroomId={classroom.id}
+          classroomName={classroom.name}
+          onClose={() => setShowAssignExistingStudentsModal(false)}
+          onSuccess={(count) => {
+            alert(`Successfully assigned ${count} student(s) to ${classroom.name}!`);
+            fetchClassroomDetails();
+          }}
         />
       )}
 

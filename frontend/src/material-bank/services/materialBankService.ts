@@ -13,6 +13,11 @@ export const materialBankService = {
     return res.data.folder;
   },
 
+  renameFolder: async (folderId: number, name: string): Promise<MaterialBankFolder> => {
+    const res = await api.put(`/material-bank/folders/${folderId}`, { name });
+    return res.data.folder;
+  },
+
   deleteFolder: async (folderId: number): Promise<void> => {
     await api.delete(`/material-bank/folders/${folderId}`);
   },
@@ -40,5 +45,13 @@ export const materialBankService = {
 
   deleteItem: async (itemId: number): Promise<void> => {
     await api.delete(`/material-bank/items/${itemId}`);
+  },
+
+  reorderItems: async (itemIds: number[]): Promise<void> => {
+    await api.put('/material-bank/items/reorder', { itemIds });
+  },
+
+  reorderFolders: async (folderIds: number[]): Promise<void> => {
+    await api.put('/material-bank/folders/reorder', { folderIds });
   }
 };

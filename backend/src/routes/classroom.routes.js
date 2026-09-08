@@ -21,7 +21,9 @@ import {
   removeStudent,
   updateStudentStatus,
   approveStudent,
-  rejectStudent
+  rejectStudent,
+  getAvailableStudentsForClassroom,
+  assignStudentsToClassroom
 } from '../controllers/classroom.controller.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.middleware.js';
 
@@ -56,7 +58,9 @@ router.post('/:id/teachers/:teacherId/upgrade', authorizeRoles('admin'), upgrade
 router.patch('/:id/teachers/:teacherId/role', authorizeRoles('admin'), upgradeTeacherRole);
 router.delete('/:id/teachers/:teacherId/reject', authorizeRoles('admin'), rejectTeacher);
 
-// Admin/Teacher student invitation, enrollment and approval management
+// Admin/Teacher student invitation, enrollment, assignment and approval management
+router.get('/:id/students/available', authorizeRoles('admin', 'teacher'), getAvailableStudentsForClassroom);
+router.post('/:id/students/assign', authorizeRoles('admin', 'teacher'), assignStudentsToClassroom);
 router.post('/:id/students/invite', authorizeRoles('admin', 'teacher'), inviteStudent);
 router.delete('/:id/students/:studentId', authorizeRoles('admin', 'teacher'), removeStudent);
 router.patch('/:id/students/:studentId/status', authorizeRoles('admin', 'teacher'), updateStudentStatus);

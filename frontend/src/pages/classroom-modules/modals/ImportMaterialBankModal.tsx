@@ -56,8 +56,11 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
     setLoading(true);
     try {
       const data = await materialBankService.getContents(folderId);
-      setFolders(data.folders || []);
-      setItems(data.items || []);
+      // Sort to match exact Material Bank display order
+      const sortedFolders = (data.folders || []).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      const sortedItems = (data.items || []).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      setFolders(sortedFolders);
+      setItems(sortedItems);
       setBreadcrumbs(data.breadcrumbs || []);
     } catch (err: any) {
       console.error('Failed to load Material Bank:', err);
@@ -91,11 +94,20 @@ export const ImportMaterialBankModal: React.FC<ImportMaterialBankModalProps> = (
     setError(null);
 
     try {
+      // Ensure selected IDs maintain the exact folder display order
+      const orderedSelectedFolderIds = folders
+        .filter(folder => selectedFolderIds.includes(folder.id))
+        .map(folder => folder.id);
+
+      const orderedSelectedItemIds = items
+        .filter(item => selectedItemIds.includes(item.id))
+        .map(item => item.id);
+
       await api.post('/resources/import-material-bank', {
         classroomId,
         targetFolderId,
-        folderIds: selectedFolderIds,
-        itemIds: selectedItemIds
+        folderIds: orderedSelectedFolderIds,
+        itemIds: orderedSelectedItemIds
       });
 
       onSuccess();

@@ -44,6 +44,11 @@ const ClassroomFolder = sequelize.define('ClassroomFolder', {
   expiry_at: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  order_index: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'classroom_folders',

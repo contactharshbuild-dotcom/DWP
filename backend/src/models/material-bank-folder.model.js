@@ -35,6 +35,11 @@ const MaterialBankFolder = sequelize.define('MaterialBankFolder', {
   name: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  order_index: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'material_bank_folders',

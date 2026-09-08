@@ -76,6 +76,11 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
   expiry_at: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  order_index: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'classroom_resources',

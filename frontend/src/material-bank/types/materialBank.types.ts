@@ -4,6 +4,7 @@ export interface MaterialBankFolder {
   created_by: number;
   parent_id: number | null;
   name: string;
+  order_index?: number;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,7 @@ export interface MaterialBankItem {
   mime_type: string | null;
   file_url: string;
   drive_file_id: string | null;
+  order_index?: number;
   uploader?: {
     id: number;
     name: string;

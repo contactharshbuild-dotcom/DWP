@@ -7,7 +7,8 @@ import {
   FiCheckCircle, 
   FiAlertCircle, 
   FiAlertTriangle,
-  FiLoader
+  FiLoader,
+  FiTrash2
 } from 'react-icons/fi';
 import { materialBankService } from '../services/materialBankService';
 
@@ -22,8 +23,9 @@ interface ScannedFile {
   file: File;
   relativePath: string;
   dirPath: string; // Directory path relative to the root (e.g. "RootFolder/SubFolder")
-  status: 'pending' | 'uploading' | 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'uploading' | 'completed' | 'failed' | 'skipped' | 'deselected';
   error?: string;
+  selected?: boolean;
 }
 
 const MAX_TOTAL_FILES = 200;
@@ -117,12 +119,59 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
         relativePath: normalizedPath,
         dirPath,
         status: isOverSize ? 'skipped' : 'pending',
-        error: isOverSize ? 'Exceeds 15MB limit' : undefined
+        error: isOverSize ? 'Exceeds 15MB limit' : undefined,
+        selected: !isOverSize
       };
     });
 
     setScannedFiles(processed);
     setSkippedCount(skipped);
+  };
+
+  const toggleFileSelection = (index: number) => {
+    if (isUploading || isFinished) return;
+    setScannedFiles((prev) =>
+      prev.map((item, idx) => {
+        if (idx === index && item.status !== 'skipped') {
+          const nextSelected = item.selected === false;
+          return {
+            ...item,
+            selected: nextSelected,
+            status: nextSelected ? 'pending' : 'deselected'
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const removeFile = (index: number) => {
+    if (isUploading || isFinished) return;
+    setScannedFiles((prev) => {
+      const updated = prev.filter((_, idx) => idx !== index);
+      if (updated.length === 0) {
+        setRootFolderName('');
+      }
+      return updated;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (isUploading || isFinished) return;
+    const nonSkipped = scannedFiles.filter((f) => f.status !== 'skipped');
+    const allSelected = nonSkipped.length > 0 && nonSkipped.every((f) => f.selected !== false);
+    const newSelected = !allSelected;
+
+    setScannedFiles((prev) =>
+      prev.map((item) => {
+        if (item.status === 'skipped') return item;
+        return {
+          ...item,
+          selected: newSelected,
+          status: newSelected ? 'pending' : 'deselected'
+        };
+      })
+    );
   };
 
   // Handle standard folder input change (webkitdirectory)
@@ -240,7 +289,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
 
   // Start folder hierarchy creation and batched upload
   const handleStartUpload = async () => {
-    const uploadQueue = scannedFiles.filter((f) => f.status === 'pending');
+    const uploadQueue = scannedFiles.filter((f) => f.status === 'pending' && f.selected !== false);
     if (uploadQueue.length === 0) return;
 
     setIsUploading(true);
@@ -378,10 +427,18 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
     }
   };
 
-  const totalValid = scannedFiles.filter((f) => f.status !== 'skipped').length;
+  const nonSkippedFiles = scannedFiles.filter((f) => f.status !== 'skipped');
+  const selectedFiles = scannedFiles.filter((f) => (isUploading || isFinished) ? f.status !== 'skipped' && f.status !== 'deselected' : f.status === 'pending' && f.selected !== false);
+  const totalValid = selectedFiles.length;
+  const deselectedCount = nonSkippedFiles.filter((f) => f.status === 'deselected' || f.selected === false).length;
+  const allSelectableSelected = nonSkippedFiles.length > 0 && nonSkippedFiles.every((f) => f.selected !== false && f.status !== 'deselected');
+
   const progressPercent = totalValid > 0 ? Math.round((processedCount / totalValid) * 100) : 0;
   const totalSizeMB = (
     scannedFiles.reduce((acc, f) => acc + f.file.size, 0) / (1024 * 1024)
+  ).toFixed(2);
+  const selectedSizeMB = (
+    selectedFiles.reduce((acc, f) => acc + f.file.size, 0) / (1024 * 1024)
   ).toFixed(2);
 
   return (
@@ -572,10 +629,10 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
 
                 <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#64748b', flexWrap: 'wrap' }}>
                   <span>
-                    <strong>{scannedFiles.length}</strong> {scannedFiles.length === 1 ? 'file' : 'files'} found
+                    <strong>{totalValid}</strong> of <strong>{scannedFiles.length}</strong> {scannedFiles.length === 1 ? 'file' : 'files'} selected
                   </span>
                   <span>
-                    Total: <strong>{totalSizeMB} MB</strong>
+                    Selected: <strong>{selectedSizeMB} MB</strong> {selectedSizeMB !== totalSizeMB && `(Total: ${totalSizeMB} MB)`}
                   </span>
                   <span>
                     Batch Queue: <strong>{Math.ceil(totalValid / BATCH_SIZE)} batches</strong> ({BATCH_SIZE}/batch)
@@ -700,6 +757,72 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                 </div>
               )}
 
+              {/* Select All / Deselect All Controls */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '8px',
+                  padding: '4px 2px',
+                  fontSize: '12px'
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: isUploading || isFinished ? 'default' : 'pointer',
+                    fontWeight: '600',
+                    color: 'var(--light-text-primary)'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    onChange={toggleSelectAll}
+                    disabled={isUploading || isFinished || nonSkippedFiles.length === 0}
+                    style={{
+                      cursor: isUploading || isFinished ? 'default' : 'pointer',
+                      accentColor: 'var(--light-primary)',
+                      width: '15px',
+                      height: '15px'
+                    }}
+                  />
+                  <span>
+                    Select All ({totalValid}/{nonSkippedFiles.length} files)
+                  </span>
+                </label>
+
+                {!isUploading && !isFinished && (
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    {deselectedCount > 0 && (
+                      <span style={{ color: '#d97706', fontWeight: '500' }}>
+                        {deselectedCount} {deselectedCount === 1 ? 'file' : 'files'} excluded
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannedFiles(prev => prev.filter(f => f.status === 'pending' && f.selected !== false));
+                      }}
+                      disabled={deselectedCount === 0 && skippedCount === 0}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: (deselectedCount > 0 || skippedCount > 0) ? '#dc2626' : '#94a3b8',
+                        fontSize: '12px',
+                        cursor: (deselectedCount > 0 || skippedCount > 0) ? 'pointer' : 'default',
+                        textDecoration: 'underline'
+                      }}
+                    >
+                      Clear excluded
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Scrollable File List */}
               <div
                 style={{
@@ -710,65 +833,117 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                   backgroundColor: 'var(--light-card)'
                 }}
               >
-                {scannedFiles.map((item, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderBottom: idx === scannedFiles.length - 1 ? 'none' : '1px solid var(--light-border)',
-                      fontSize: '12px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
-                      <FiFile size={15} style={{ color: 'var(--light-text-muted)', flexShrink: 0 }} />
-                      <span
-                        style={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          color: 'var(--light-text-primary)'
-                        }}
-                        title={item.relativePath}
-                      >
-                        {item.relativePath}
-                      </span>
-                    </div>
+                {scannedFiles.map((item, idx) => {
+                  const isDeselected = item.status === 'deselected' || item.selected === false;
+                  const isSkipped = item.status === 'skipped';
+                  const isInteractive = !isUploading && !isFinished;
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                      <span style={{ color: '#94a3b8', fontSize: '11px' }}>
-                        {(item.file.size / (1024 * 1024)).toFixed(2)} MB
-                      </span>
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderBottom: idx === scannedFiles.length - 1 ? 'none' : '1px solid var(--light-border)',
+                        fontSize: '12px',
+                        opacity: isDeselected ? 0.6 : isSkipped ? 0.75 : 1,
+                        backgroundColor: isDeselected ? 'rgba(241, 245, 249, 0.5)' : 'transparent',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
+                        {isInteractive ? (
+                          <input
+                            type="checkbox"
+                            checked={!isDeselected && !isSkipped}
+                            disabled={isSkipped}
+                            onChange={() => toggleFileSelection(idx)}
+                            style={{
+                              cursor: isSkipped ? 'not-allowed' : 'pointer',
+                              accentColor: 'var(--light-primary)',
+                              width: '14px',
+                              height: '14px'
+                            }}
+                            title={isSkipped ? 'Exceeds 15MB size limit' : isDeselected ? 'Select file' : 'Deselect file'}
+                          />
+                        ) : null}
+                        <FiFile size={15} style={{ color: isDeselected ? 'var(--light-text-muted)' : 'var(--light-primary)', flexShrink: 0 }} />
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            color: isDeselected ? 'var(--light-text-muted)' : 'var(--light-text-primary)',
+                            textDecoration: isDeselected ? 'line-through' : 'none'
+                          }}
+                          title={item.relativePath}
+                        >
+                          {item.relativePath}
+                        </span>
+                      </div>
 
-                      {/* Status indicator */}
-                      {item.status === 'completed' && (
-                        <span style={{ color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <FiCheckCircle size={14} /> Done
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                        <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                          {(item.file.size / (1024 * 1024)).toFixed(2)} MB
                         </span>
-                      )}
-                      {item.status === 'uploading' && (
-                        <span style={{ color: 'var(--light-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <FiLoader className="spin" size={14} /> Uploading
-                        </span>
-                      )}
-                      {item.status === 'failed' && (
-                        <span style={{ color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }} title={item.error}>
-                          <FiAlertCircle size={14} /> Failed
-                        </span>
-                      )}
-                      {item.status === 'skipped' && (
-                        <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }} title="Size > 15MB">
-                          <FiAlertTriangle size={14} /> Skipped
-                        </span>
-                      )}
-                      {item.status === 'pending' && (
-                        <span style={{ color: '#94a3b8' }}>Queued</span>
-                      )}
+
+                        {/* Status indicator */}
+                        {item.status === 'completed' && (
+                          <span style={{ color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FiCheckCircle size={14} /> Done
+                          </span>
+                        )}
+                        {item.status === 'uploading' && (
+                          <span style={{ color: 'var(--light-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FiLoader className="spin" size={14} /> Uploading
+                          </span>
+                        )}
+                        {item.status === 'failed' && (
+                          <span style={{ color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }} title={item.error}>
+                            <FiAlertCircle size={14} /> Failed
+                          </span>
+                        )}
+                        {item.status === 'skipped' && (
+                          <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }} title="Size > 15MB">
+                            <FiAlertTriangle size={14} /> Skipped
+                          </span>
+                        )}
+                        {item.status === 'pending' && (
+                          <span style={{ color: '#10b981', fontSize: '11px', fontWeight: '600' }}>Ready</span>
+                        )}
+                        {item.status === 'deselected' && (
+                          <span style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '500' }}>Deselected</span>
+                        )}
+
+                        {/* Remove file button */}
+                        {isInteractive && (
+                          <button
+                            type="button"
+                            onClick={() => removeFile(idx)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: '#94a3b8',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              transition: 'color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
+                            title="Remove file from upload"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

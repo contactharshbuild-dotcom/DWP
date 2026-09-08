@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   FiChevronRight, FiPlus, FiYoutube, FiFolderPlus, FiUploadCloud, 
   FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud,
-  FiChevronDown
+  FiChevronDown, FiEdit2, FiX, FiMoreVertical, FiShare2
 } from 'react-icons/fi';
 import { getServerUrl } from '../../services/api';
 
@@ -10,6 +10,7 @@ import { getServerUrl } from '../../services/api';
 interface Folder {
   id: number;
   name: string;
+  order_index?: number;
   created_at: string;
 }
 
@@ -24,6 +25,7 @@ interface Resource {
   visibility: string;
   batch: string | null;
   assigned_student_ids?: number[];
+  order_index?: number;
   uploader?: {
     id: number;
     name: string;
@@ -46,6 +48,7 @@ interface ResourcesTabProps {
   handleDrop: (e: React.DragEvent) => void;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDeleteFolder: (folderId: number, e: React.MouseEvent) => void;
+  handleRenameFolder?: (folderId: number, newName: string) => Promise<any>;
   handleDeleteResource: (resourceId: number) => void;
   openAssignModal: (type: 'material' | 'folder', item: any) => void;
   isPreviewable: (res: Resource) => boolean;
@@ -69,6 +72,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   handleDrop,
   handleFileChange,
   handleDeleteFolder,
+  handleRenameFolder,
   handleDeleteResource,
   openAssignModal,
   isPreviewable,
@@ -77,6 +81,36 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   onOpenFolderModal,
   onOpenImportBankModal
 }) => {
+  // Rename Folder modal state
+  const [renameTargetFolder, setRenameTargetFolder] = useState<Folder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
+  const [renameFolderLoading, setRenameFolderLoading] = useState(false);
+  const [renameFolderError, setRenameFolderError] = useState<string | null>(null);
+
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTargetFolder || !handleRenameFolder) return;
+    if (!renameFolderName.trim()) {
+      setRenameFolderError('Folder name is required.');
+      return;
+    }
+    if (renameFolderName.trim() === renameTargetFolder.name.trim()) {
+      setRenameTargetFolder(null);
+      return;
+    }
+
+    setRenameFolderLoading(true);
+    setRenameFolderError(null);
+    try {
+      await handleRenameFolder(renameTargetFolder.id, renameFolderName.trim());
+      setRenameTargetFolder(null);
+    } catch (err: any) {
+      setRenameFolderError(err.response?.data?.message || err.message || 'Failed to rename folder.');
+    } finally {
+      setRenameFolderLoading(false);
+    }
+  };
+
   // Dropdown menu state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -104,6 +138,51 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
     };
   }, [isDropdownOpen]);
 
+  // Row action three-dots menu state
+  const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setActiveActionMenu(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveActionMenu(null);
+      }
+    };
+
+    if (activeActionMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeActionMenu]);
+
+  // Sort resources & folders by order_index to match exact Material Bank display order
+  const sortedResources = [...currentResources].sort((a, b) => {
+    const orderA = a.order_index ?? 0;
+    const orderB = b.order_index ?? 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return 0;
+  });
+
+  const sortedFolders = [...currentFolders].sort((a, b) => {
+    const orderA = a.order_index ?? 0;
+    const orderB = b.order_index ?? 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return 0;
+  });
+
   return (
     <div>
       {/* Breadcrumb path navigation */}
@@ -118,7 +197,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
           <>
             <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
             <span style={{ color: 'var(--light-text)' }}>
-              {folders.find(f => f.id === currentFolderId)?.name || 'Folder'}
+              {folders.find(f => Number(f.id) === Number(currentFolderId))?.name || 'Folder'}
             </span>
           </>
         )}
@@ -340,7 +419,9 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
       ) : currentFolders.length === 0 && currentResources.length === 0 ? (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--light-text-secondary)', backgroundColor: 'var(--light-card)', border: '1px solid var(--light-border)', borderRadius: '12px' }}>
           <FiFolder size={44} style={{ color: 'var(--light-text-muted)', marginBottom: '12px' }} />
-          <h4 style={{ color: 'var(--light-text-primary)' }}>This folder is empty</h4>
+          <h4 style={{ color: 'var(--light-text-primary)' }}>
+            {currentFolderId === null ? 'No materials or folders yet' : 'This folder is empty'}
+          </h4>
           <p style={{ fontSize: '13px', marginTop: '6px' }}>Share study materials, notes, recordings, or web links here.</p>
         </div>
       ) : (
@@ -359,7 +440,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
             </thead>
             <tbody>
               {/* Folders */}
-              {currentFolders.map((folder) => (
+              {sortedFolders.map((folder) => (
                 <tr 
                   key={`folder-${folder.id}`} 
                   onClick={() => setCurrentFolderId(folder.id)}
@@ -382,22 +463,132 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   </td>
                   <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     {user?.role !== 'student' && (
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <div 
+                        ref={activeActionMenu === `folder-${folder.id}` ? actionMenuRef : undefined}
+                        style={{ position: 'relative', display: 'inline-block' }}
+                      >
                         <button
+                          type="button"
                           className="btn-ld btn-ld-secondary btn-ld-small"
-                          onClick={(e) => { e.stopPropagation(); openAssignModal('folder', folder); }}
-                          title="Assign folder"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveActionMenu(activeActionMenu === `folder-${folder.id}` ? null : `folder-${folder.id}`);
+                          }}
+                          style={{
+                            padding: '5px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: '32px'
+                          }}
+                          title="Folder actions"
                         >
-                          <span>Assign</span>
+                          <FiMoreVertical size={16} />
                         </button>
-                        <button
-                          className="btn-ld btn-ld-danger btn-ld-small"
-                          onClick={(e) => handleDeleteFolder(folder.id, e)}
-                          title="Delete folder"
-                        >
-                          <FiTrash2 size={13} />
-                          <span>Delete</span>
-                        </button>
+
+                        {activeActionMenu === `folder-${folder.id}` && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 4px)',
+                              right: 0,
+                              minWidth: '150px',
+                              backgroundColor: 'var(--light-card, #fff)',
+                              border: '1px solid var(--light-border, #e2e8f0)',
+                              borderRadius: '8px',
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                              zIndex: 100,
+                              padding: '4px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px'
+                            }}
+                          >
+                            {handleRenameFolder && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRenameTargetFolder(folder);
+                                  setRenameFolderName(folder.name);
+                                  setRenameFolderError(null);
+                                  setActiveActionMenu(null);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'none',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  color: 'var(--light-text-primary)',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                              >
+                                <FiEdit2 size={14} style={{ color: 'var(--light-primary)' }} />
+                                <span>Rename</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openAssignModal('folder', folder);
+                                setActiveActionMenu(null);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '8px 12px',
+                                background: 'none',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                color: 'var(--light-text-primary)',
+                                textAlign: 'left'
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <FiShare2 size={14} style={{ color: '#6366f1' }} />
+                              <span>Assign</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                handleDeleteFolder(folder.id, e);
+                                setActiveActionMenu(null);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '8px 12px',
+                                background: 'none',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                color: '#ef4444',
+                                textAlign: 'left'
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fef2f2')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <FiTrash2 size={14} style={{ color: '#ef4444' }} />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
@@ -405,7 +596,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
               ))}
 
               {/* Files/Links */}
-              {currentResources.map((res) => {
+              {sortedResources.map((res) => {
                 const isPDF = res.mime_type === 'application/pdf' || res.name.toLowerCase().endsWith('.pdf');
                 const isImage = res.mime_type.startsWith('image/');
                 const isVideo = res.mime_type.startsWith('video/') || res.name.toLowerCase().endsWith('.mp4') || res.name.toLowerCase().endsWith('.webm');
@@ -483,31 +674,133 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                     <td>{res.uploader?.name}</td>
                     <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>{uploadDate}</td>
                     <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <div 
+                        ref={activeActionMenu === `res-${res.id}` ? actionMenuRef : undefined}
+                        style={{ position: 'relative', display: 'inline-block' }}
+                      >
                         <button
-                          onClick={() => setPreviewResource(res)}
+                          type="button"
                           className="btn-ld btn-ld-secondary btn-ld-small"
-                          title="Open material inside app"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveActionMenu(activeActionMenu === `res-${res.id}` ? null : `res-${res.id}`);
+                          }}
+                          style={{
+                            padding: '5px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: '32px'
+                          }}
+                          title="Actions"
                         >
-                          <FiVideo size={12} />
-                          <span>Open</span>
+                          <FiMoreVertical size={16} />
                         </button>
-                        {(user?.role === 'admin' || user?.role === 'teacher') && (
-                          <button
-                            className="btn-ld btn-ld-primary btn-ld-small"
-                            onClick={() => openAssignModal('material', res)}
+
+                        {activeActionMenu === `res-${res.id}` && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 4px)',
+                              right: 0,
+                              minWidth: '150px',
+                              backgroundColor: 'var(--light-card, #fff)',
+                              border: '1px solid var(--light-border, #e2e8f0)',
+                              borderRadius: '8px',
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                              zIndex: 100,
+                              padding: '4px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px'
+                            }}
                           >
-                            <span>Assign</span>
-                          </button>
-                        )}
-                        {(user?.role === 'admin' || res.uploader?.id === user?.id) && (
-                          <button
-                            className="btn-ld btn-ld-danger btn-ld-small"
-                            onClick={() => handleDeleteResource(res.id)}
-                          >
-                            <FiTrash2 size={12} />
-                            <span>Delete</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewResource(res);
+                                setActiveActionMenu(null);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '8px 12px',
+                                background: 'none',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                color: 'var(--light-text-primary)',
+                                textAlign: 'left'
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <FiVideo size={14} style={{ color: 'var(--light-primary)' }} />
+                              <span>Open</span>
+                            </button>
+
+                            {(user?.role === 'admin' || user?.role === 'teacher') && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  openAssignModal('material', res);
+                                  setActiveActionMenu(null);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'none',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  color: 'var(--light-text-primary)',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                              >
+                                <FiShare2 size={14} style={{ color: '#6366f1' }} />
+                                <span>Assign</span>
+                              </button>
+                            )}
+
+                            {(user?.role === 'admin' || res.uploader?.id === user?.id) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteResource(res.id);
+                                  setActiveActionMenu(null);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'none',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  color: '#ef4444',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fef2f2')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                              >
+                                <FiTrash2 size={14} style={{ color: '#ef4444' }} />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -516,6 +809,77 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Rename Folder Modal */}
+      {renameTargetFolder && (
+        <div className="modal-overlay-ld" onClick={() => setRenameTargetFolder(null)}>
+          <div 
+            className="modal-content-ld"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '440px', width: '100%' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)' }}>
+                  <FiEdit2 size={20} />
+                </div>
+                <h3 className="modal-title-ld" style={{ margin: 0 }}>
+                  Rename Folder
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setRenameTargetFolder(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {renameFolderError && (
+              <div className="alert-ld" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', marginBottom: '16px' }}>
+                {renameFolderError}
+              </div>
+            )}
+
+            <form onSubmit={handleRenameSubmit}>
+              <div style={{ marginBottom: '20px' }}>
+                <label className="form-label-ld" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
+                  Folder Name *
+                </label>
+                <input 
+                  type="text" 
+                  className="input-ld"
+                  placeholder="e.g., Mathematics Notes, Session 1..."
+                  value={renameFolderName}
+                  onChange={(e) => setRenameFolderName(e.target.value)}
+                  autoFocus
+                  disabled={renameFolderLoading}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-secondary"
+                  onClick={() => setRenameTargetFolder(null)}
+                  disabled={renameFolderLoading}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-ld btn-ld-primary"
+                  disabled={renameFolderLoading}
+                >
+                  {renameFolderLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

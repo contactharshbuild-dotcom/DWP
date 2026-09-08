@@ -1,5 +1,7 @@
 import { MaterialBankFolder, MaterialBankItem, User } from '../models/index.js';
 import { uploadFile, deleteFile } from '../services/storage.service.js';
+import sequelize from '../config/database.js';
+import { Op } from 'sequelize';
 
 // Guard helper to ensure teacher or admin role
 const checkTeacherOrAdmin = (req, res) => {
@@ -10,10 +12,23 @@ const checkTeacherOrAdmin = (req, res) => {
   return true;
 };
 
+let isTableMigrated = false;
+const ensureOrderIndexColumn = async () => {
+  if (isTableMigrated) return;
+  try {
+    await sequelize.query('ALTER TABLE material_bank_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE material_bank_folders ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    isTableMigrated = true;
+  } catch (err) {
+    // Silently ignore if already exists or dialect mismatch
+  }
+};
+
 // GET /api/material-bank?folderId=...
 export const getMaterialBank = async (req, res) => {
   try {
     if (!checkTeacherOrAdmin(req, res)) return;
+    await ensureOrderIndexColumn();
 
     const { folderId } = req.query;
     const organizationId = req.user.organizationId;
@@ -26,7 +41,10 @@ export const getMaterialBank = async (req, res) => {
         organization_id: organizationId,
         parent_id: parsedFolderId
       },
-      order: [['created_at', 'ASC']]
+      order: [
+        ['order_index', 'ASC'],
+        ['created_at', 'ASC']
+      ]
     });
 
     // Fetch items inside current folder level (or root level if folderId is null)
@@ -40,7 +58,10 @@ export const getMaterialBank = async (req, res) => {
         as: 'uploader',
         attributes: ['id', 'name', 'email']
       }],
-      order: [['created_at', 'DESC']]
+      order: [
+        ['order_index', 'ASC'],
+        ['created_at', 'DESC']
+      ]
     });
 
     // Fetch folder breadcrumbs hierarchy if inside a subfolder
@@ -115,6 +136,61 @@ export const createFolder = async (req, res) => {
     console.error('Error in createFolder:', error);
     return res.status(500).json({
       message: 'Failed to create folder.',
+      error: error.message
+    });
+  }
+};
+
+// PUT /api/material-bank/folders/:folderId
+export const renameFolder = async (req, res) => {
+  try {
+    if (!checkTeacherOrAdmin(req, res)) return;
+
+    const { folderId } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Folder name is required.' });
+    }
+
+    const folder = await MaterialBankFolder.findOne({
+      where: {
+        id: folderId,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found.' });
+    }
+
+    const trimmedName = name.trim();
+
+    // Check if sibling folder with the same name exists
+    const existingSibling = await MaterialBankFolder.findOne({
+      where: {
+        organization_id: req.user.organizationId,
+        parent_id: folder.parent_id,
+        name: trimmedName,
+        id: { [Op.ne]: folder.id }
+      }
+    });
+
+    if (existingSibling) {
+      return res.status(400).json({ message: 'A folder with this name already exists in this directory.' });
+    }
+
+    folder.name = trimmedName;
+    await folder.save();
+
+    return res.json({
+      message: 'Folder renamed successfully.',
+      folder
+    });
+  } catch (error) {
+    console.error('Error in renameFolder:', error);
+    return res.status(500).json({
+      message: 'Failed to rename folder.',
       error: error.message
     });
   }
@@ -296,3 +372,87 @@ export const deleteItem = async (req, res) => {
     });
   }
 };
+
+// PUT /api/material-bank/items/reorder
+export const reorderItems = async (req, res) => {
+  try {
+    if (!checkTeacherOrAdmin(req, res)) return;
+    await ensureOrderIndexColumn();
+
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds)) {
+      return res.status(400).json({ message: 'itemIds array is required.' });
+    }
+
+    const organizationId = req.user.organizationId;
+
+    // Update each item's order_index according to its array position
+    const updatePromises = itemIds.map((id, index) =>
+      MaterialBankItem.update(
+        { order_index: index },
+        {
+          where: {
+            id,
+            organization_id: organizationId
+          }
+        }
+      )
+    );
+
+    await Promise.all(updatePromises);
+
+    return res.json({
+      message: 'Items reordered successfully.',
+      success: true
+    });
+
+  } catch (error) {
+    console.error('Error in reorderItems:', error);
+    return res.status(500).json({
+      message: 'Failed to reorder items.',
+      error: error.message
+    });
+  }
+};
+
+// PUT /api/material-bank/folders/reorder
+export const reorderFolders = async (req, res) => {
+  try {
+    if (!checkTeacherOrAdmin(req, res)) return;
+    await ensureOrderIndexColumn();
+
+    const { folderIds } = req.body;
+    if (!Array.isArray(folderIds)) {
+      return res.status(400).json({ message: 'folderIds array is required.' });
+    }
+
+    const organizationId = req.user.organizationId;
+
+    const updatePromises = folderIds.map((id, index) =>
+      MaterialBankFolder.update(
+        { order_index: index },
+        {
+          where: {
+            id,
+            organization_id: organizationId
+          }
+        }
+      )
+    );
+
+    await Promise.all(updatePromises);
+
+    return res.json({
+      message: 'Folders reordered successfully.',
+      success: true
+    });
+
+  } catch (error) {
+    console.error('Error in reorderFolders:', error);
+    return res.status(500).json({
+      message: 'Failed to reorder folders.',
+      error: error.message
+    });
+  }
+};
+

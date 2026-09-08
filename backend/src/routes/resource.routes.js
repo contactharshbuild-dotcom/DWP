@@ -7,6 +7,7 @@ import {
   deleteResource,
   addLinkResource,
   createFolder,
+  renameFolder,
   deleteFolder,
   assignResource,
   assignFolder,
@@ -47,6 +48,7 @@ router.put('/:resourceId/assign', assignResource);
 
 // Folders endpoints
 router.post('/folders', createFolder);
+router.put('/folders/:folderId', renameFolder);
 router.delete('/folders/:folderId', deleteFolder);
 router.put('/folders/:folderId/assign', assignFolder);
 

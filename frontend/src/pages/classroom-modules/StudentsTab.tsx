@@ -1,5 +1,5 @@
-import React from 'react';
-import { FiUsers, FiCopy, FiUserPlus, FiUserCheck, FiX, FiTrash2, FiSlash, FiCheckCircle } from 'react-icons/fi';
+import React, { useState, useEffect, useRef } from 'react';
+import { FiUsers, FiCopy, FiUserPlus, FiUserCheck, FiX, FiTrash2, FiSlash, FiCheckCircle, FiChevronDown } from 'react-icons/fi';
 
 interface StudentUser {
   id: number;
@@ -18,6 +18,7 @@ interface StudentsTabProps {
   user: { id: number; role: string } | null;
   classroomId: number | undefined;
   onOpenInviteOneStudent: () => void;
+  onOpenAssignExistingStudents?: () => void;
   onApproveStudentRequest?: (studentId: number) => Promise<void>;
   onRejectStudentRequest?: (studentId: number) => Promise<void>;
   onRemoveStudent: (studentId: number) => Promise<void>;
@@ -29,6 +30,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   user,
   classroomId,
   onOpenInviteOneStudent,
+  onOpenAssignExistingStudents,
   onRemoveStudent,
   onToggleSuspendStudent
 }) => {
@@ -41,6 +43,39 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       .slice(0, 2);
   };
 
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
+
+  const handleCopyInviteLink = () => {
+    if (!classroomId) return;
+    const link = `${window.location.origin}/join-classroom/${classroomId}?role=student`;
+    navigator.clipboard.writeText(link);
+    setIsDropdownOpen(false);
+    alert('Copied student registration link to clipboard!');
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
@@ -49,28 +84,150 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           <span>Active Students ({activeStudents.length})</span>
         </h3>
         {user?.role !== 'student' && (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div ref={dropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
             <button 
-              className="btn-ld btn-ld-secondary"
-              onClick={() => {
-                if (!classroomId) return;
-                const link = `${window.location.origin}/join-classroom/${classroomId}?role=student`;
-                navigator.clipboard.writeText(link);
-                alert('Copied student registration link to clipboard!');
-              }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              <FiCopy size={16} />
-              <span>Copy Student Invite Link</span>
-            </button>
-            <button
-              className="btn-ld btn-ld-primary"
-              onClick={onOpenInviteOneStudent}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              type="button"
+              className="btn-ld btn-ld-primary" 
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
             >
               <FiUserPlus size={16} />
-              <span>Invite One Student</span>
+              <span>+ Add Student</span>
+              <FiChevronDown
+                size={16}
+                style={{
+                  transition: 'transform 0.2s ease',
+                  transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}
+              />
             </button>
+
+            {isDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  width: '280px',
+                  backgroundColor: 'var(--light-card, #fff)',
+                  border: '1px solid var(--light-border, #e2e8f0)',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  padding: '6px',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px'
+                }}
+              >
+                {/* 1. Invite One Student */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenInviteOneStudent();
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <FiUserPlus size={16} />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)', display: 'block' }}>
+                      Invite One Student
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--light-text-secondary)', display: 'block' }}>
+                      Send invite with name and email
+                    </span>
+                  </div>
+                </button>
+
+                {/* 2. Assign from Other Classroom */}
+                {onOpenAssignExistingStudents && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenAssignExistingStudents();
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '9px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      textAlign: 'left',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                      <FiUserCheck size={16} />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)', display: 'block' }}>
+                        Assign from Other Classroom
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--light-text-secondary)', display: 'block' }}>
+                        Add students already in organization
+                      </span>
+                    </div>
+                  </button>
+                )}
+
+                {/* 3. Copy Student Invite Link */}
+                <button
+                  type="button"
+                  onClick={handleCopyInviteLink}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <FiCopy size={16} />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)', display: 'block' }}>
+                      Copy Student Invite Link
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--light-text-secondary)', display: 'block' }}>
+                      Share link for self-registration
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

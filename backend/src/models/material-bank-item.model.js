@@ -51,6 +51,11 @@ const MaterialBankItem = sequelize.define('MaterialBankItem', {
   drive_file_id: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  order_index: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'material_bank_items',

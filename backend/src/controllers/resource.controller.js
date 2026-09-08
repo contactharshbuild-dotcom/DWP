@@ -1,6 +1,19 @@
 import { ClassroomResource, User, Classroom, ClassroomTeacher, ClassroomFolder, MaterialBankFolder, MaterialBankItem } from '../models/index.js';
 import { uploadFile, deleteFile } from '../services/storage.service.js';
 import { Op } from 'sequelize';
+import sequelize from '../config/database.js';
+
+let isResourceTableMigrated = false;
+const ensureResourceOrderIndexColumn = async () => {
+  if (isResourceTableMigrated) return;
+  try {
+    await sequelize.query('ALTER TABLE classroom_resources ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE classroom_folders ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    isResourceTableMigrated = true;
+  } catch (err) {
+    // Ignore error
+  }
+};
 
 export const uploadResource = async (req, res) => {
   try {
@@ -220,17 +233,9 @@ export const getClassroomResources = async (req, res) => {
       }
 
       if (userObj.role === 'teacher') {
-        if (item.uploaded_by === userObj.id) {
-          return true;
-        }
-
         const assignedTeacherIds = item.assigned_teacher_ids || [];
         if (assignedTeacherIds.length > 0) {
           return assignedTeacherIds.includes(userObj.id);
-        }
-
-        if (item.visibility === 'hidden') {
-          return false;
         }
 
         return true;
@@ -238,6 +243,8 @@ export const getClassroomResources = async (req, res) => {
 
       return true; // Admin
     };
+
+    await ensureResourceOrderIndexColumn();
 
     // CASE 1: Fetching resources inside a specific folder (folderId query parameter provided)
     if (folderId) {
@@ -248,28 +255,47 @@ export const getClassroomResources = async (req, res) => {
         folder_id: targetFolderId
       };
 
-      const allResources = await ClassroomResource.findAll({
-        where: whereCondition,
-        include: [{
-          model: User,
-          as: 'uploader',
-          attributes: ['id', 'name', 'email']
-        }],
-        order: [['created_at', 'DESC']]
-      });
+      const [allResources, allFolders] = await Promise.all([
+        ClassroomResource.findAll({
+          where: whereCondition,
+          include: [{
+            model: User,
+            as: 'uploader',
+            attributes: ['id', 'name', 'email']
+          }],
+          order: [
+            ['order_index', 'ASC'],
+            ['created_at', 'ASC'],
+            ['id', 'ASC']
+          ]
+        }),
+        ClassroomFolder.findAll({
+          where: { classroom_id: classroomId },
+          order: [
+            ['order_index', 'ASC'],
+            ['created_at', 'ASC'],
+            ['id', 'ASC']
+          ]
+        })
+      ]);
 
       const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
       const studentBatch = student ? student.batch : null;
 
       const resources = allResources.filter(resrc => isAccessible(resrc, req.user, studentBatch));
+      const folders = allFolders.filter(f => isAccessible(f, req.user, studentBatch));
 
-      return res.json({ resources });
+      return res.json({ resources, folders });
     }
 
     // CASE 2: Fetching root Study Materials view (no folderId query parameter)
     const allFolders = await ClassroomFolder.findAll({
       where: { classroom_id: classroomId },
-      order: [['created_at', 'ASC']]
+      order: [
+        ['order_index', 'ASC'],
+        ['created_at', 'ASC'],
+        ['id', 'ASC']
+      ]
     });
 
     const whereCondition = {
@@ -284,7 +310,11 @@ export const getClassroomResources = async (req, res) => {
         as: 'uploader',
         attributes: ['id', 'name', 'email']
       }],
-      order: [['created_at', 'DESC']]
+      order: [
+        ['order_index', 'ASC'],
+        ['created_at', 'ASC'],
+        ['id', 'ASC']
+      ]
     });
 
     const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
@@ -351,6 +381,68 @@ export const createFolder = async (req, res) => {
     console.error('Error in createFolder:', error);
     return res.status(500).json({
       message: 'Internal server error while creating folder.',
+      error: error.message
+    });
+  }
+};
+
+export const renameFolder = async (req, res) => {
+  try {
+    const { folderId } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Folder name is required.' });
+    }
+
+    const folder = await ClassroomFolder.findByPk(folderId);
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found.' });
+    }
+
+    // Verify classroom authorization
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: {
+          classroom_id: folder.classroom_id,
+          user_id: req.user.id,
+          status: 'approved'
+        }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const trimmedName = name.trim();
+
+    // Check if another folder in the same classroom has the same name
+    const existingFolder = await ClassroomFolder.findOne({
+      where: {
+        classroom_id: folder.classroom_id,
+        name: trimmedName,
+        id: { [Op.ne]: folder.id }
+      }
+    });
+
+    if (existingFolder) {
+      return res.status(400).json({ message: 'A folder with this name already exists in this classroom.' });
+    }
+
+    folder.name = trimmedName;
+    await folder.save();
+
+    return res.json({
+      message: 'Folder renamed successfully.',
+      folder
+    });
+  } catch (error) {
+    console.error('Error in renameFolder:', error);
+    return res.status(500).json({
+      message: 'Internal server error while renaming folder.',
       error: error.message
     });
   }
@@ -549,6 +641,8 @@ export const importFromMaterialBank = async (req, res) => {
       }
     }
 
+    await ensureResourceOrderIndexColumn();
+
     let destFolderId = targetFolderId ? parseInt(targetFolderId, 10) : null;
     const createdResources = [];
 
@@ -558,10 +652,16 @@ export const importFromMaterialBank = async (req, res) => {
         where: {
           id: itemIds,
           organization_id: req.user.organizationId
-        }
+        },
+        order: [
+          ['order_index', 'ASC'],
+          ['created_at', 'DESC'],
+          ['id', 'ASC']
+        ]
       });
 
-      for (const item of bankItems) {
+      for (let i = 0; i < bankItems.length; i++) {
+        const item = bankItems[i];
         const resource = await ClassroomResource.create({
           classroom_id: classroomId,
           name: item.name,
@@ -570,7 +670,8 @@ export const importFromMaterialBank = async (req, res) => {
           mime_type: item.mime_type || (item.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
           uploaded_by: req.user.id,
           folder_id: destFolderId,
-          visibility: 'hidden'
+          order_index: item.order_index !== undefined && item.order_index !== null ? item.order_index : i,
+          visibility: req.body.visibility || 'hidden'
         });
         createdResources.push(resource);
       }
@@ -582,18 +683,26 @@ export const importFromMaterialBank = async (req, res) => {
         const bankFolder = await MaterialBankFolder.findByPk(bankFolderId);
         if (!bankFolder) return;
 
-        // Create matching ClassroomFolder
+        // Create matching ClassroomFolder (default hidden until published/assigned)
         const newClassroomFolder = await ClassroomFolder.create({
           classroom_id: classroomId,
-          name: bankFolder.name
+          name: bankFolder.name,
+          order_index: bankFolder.order_index !== undefined && bankFolder.order_index !== null ? bankFolder.order_index : 0,
+          visibility: req.body.visibility || 'hidden'
         });
 
-        // Copy items inside bankFolder
+        // Copy items inside bankFolder in the exact order as Material Bank
         const folderItems = await MaterialBankItem.findAll({
-          where: { folder_id: bankFolderId }
+          where: { folder_id: bankFolderId },
+          order: [
+            ['order_index', 'ASC'],
+            ['created_at', 'DESC'],
+            ['id', 'ASC']
+          ]
         });
 
-        for (const item of folderItems) {
+        for (let i = 0; i < folderItems.length; i++) {
+          const item = folderItems[i];
           const resource = await ClassroomResource.create({
             classroom_id: classroomId,
             name: item.name,
@@ -602,14 +711,20 @@ export const importFromMaterialBank = async (req, res) => {
             mime_type: item.mime_type || (item.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
             uploaded_by: req.user.id,
             folder_id: newClassroomFolder.id,
-            visibility: 'hidden'
+            order_index: item.order_index !== undefined && item.order_index !== null ? item.order_index : i,
+            visibility: req.body.visibility || 'hidden'
           });
           createdResources.push(resource);
         }
 
-        // Copy subfolders recursively
+        // Copy subfolders recursively in order
         const subfolders = await MaterialBankFolder.findAll({
-          where: { parent_id: bankFolderId }
+          where: { parent_id: bankFolderId },
+          order: [
+            ['order_index', 'ASC'],
+            ['created_at', 'ASC'],
+            ['id', 'ASC']
+          ]
         });
 
         for (const sf of subfolders) {

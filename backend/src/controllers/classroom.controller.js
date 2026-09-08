@@ -1066,6 +1066,25 @@ export const removeStudent = async (req, res) => {
       return res.status(404).json({ message: 'Student not found in this classroom.' });
     }
 
+    // Check if student is enrolled in other classrooms
+    const otherClassroomsCount = await ClassroomTeacher.count({
+      where: {
+        user_id: studentId,
+        classroom_id: { [Op.ne]: id }
+      }
+    });
+
+    if (otherClassroomsCount > 0) {
+      // Just unenroll from this classroom
+      await ClassroomTeacher.destroy({
+        where: {
+          classroom_id: id,
+          user_id: studentId
+        }
+      });
+      return res.json({ message: 'Student removed from this classroom successfully.' });
+    }
+
     const t = await sequelize.transaction();
     try {
       // Remove associations from classroom_teachers
@@ -1263,3 +1282,193 @@ export const rejectStudent = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };
+
+// Get available students from other classrooms / organization who are not yet in this classroom
+export const getAvailableStudentsForClassroom = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify classroom exists in user's organization
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // Verify authorization: admin or approved teacher
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    // Find all users already associated with this classroom (approved or pending)
+    const existingRelations = await ClassroomTeacher.findAll({
+      where: { classroom_id: id },
+      attributes: ['user_id']
+    });
+    const existingUserIds = existingRelations.map(r => r.user_id);
+
+    // Fetch other classrooms in the organization for filtering
+    const otherClassrooms = await Classroom.findAll({
+      where: {
+        organization_id: req.user.organizationId,
+        id: { [Op.ne]: id }
+      },
+      attributes: ['id', 'name', 'classroom_id', 'subject'],
+      order: [['name', 'ASC']]
+    });
+
+    // Query students in organization who are not currently members of this classroom
+    const whereClause = {
+      organization_id: req.user.organizationId,
+      role: 'student'
+    };
+    if (existingUserIds.length > 0) {
+      whereClause.id = { [Op.notIn]: existingUserIds };
+    }
+
+    const students = await User.findAll({
+      where: whereClause,
+      attributes: ['id', 'name', 'email', 'batch', 'status', 'profile_url'],
+      include: [{
+        model: Classroom,
+        as: 'classrooms',
+        attributes: ['id', 'name', 'classroom_id'],
+        through: {
+          where: { role: 'student', status: 'approved' },
+          attributes: ['role', 'status']
+        },
+        required: false
+      }],
+      order: [['name', 'ASC']]
+    });
+
+    return res.json({
+      students,
+      otherClassrooms
+    });
+  } catch (error) {
+    console.error('Error in getAvailableStudentsForClassroom:', error);
+    return res.status(500).json({
+      message: 'Internal server error while fetching available students.',
+      error: error.message
+    });
+  }
+};
+
+// Assign one or more existing students to this classroom
+export const assignStudentsToClassroom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { studentId, studentIds, batch } = req.body;
+
+    // Normalize student IDs
+    let idsToAssign = [];
+    if (Array.isArray(studentIds) && studentIds.length > 0) {
+      idsToAssign = studentIds.map(sId => parseInt(sId)).filter(Boolean);
+    } else if (studentId) {
+      idsToAssign = [parseInt(studentId)];
+    }
+
+    if (idsToAssign.length === 0) {
+      return res.status(400).json({ message: 'At least one Student ID is required.' });
+    }
+
+    // 1. Verify classroom exists in organization
+    const classroom = await Classroom.findOne({
+      where: {
+        id,
+        organization_id: req.user.organizationId
+      }
+    });
+
+    if (!classroom) {
+      return res.status(404).json({ message: 'Classroom not found.' });
+    }
+
+    // 2. Verify authorization: admin or approved teacher
+    if (req.user.role === 'teacher') {
+      const isMember = await ClassroomTeacher.findOne({
+        where: { classroom_id: id, user_id: req.user.id, status: 'approved' }
+      });
+      if (!isMember) {
+        return res.status(403).json({ message: 'Access denied. You are not authorized for this classroom.' });
+      }
+    }
+
+    // 3. Verify student users exist in organization and are students
+    const studentUsers = await User.findAll({
+      where: {
+        id: idsToAssign,
+        organization_id: req.user.organizationId,
+        role: 'student'
+      }
+    });
+
+    if (studentUsers.length === 0) {
+      return res.status(404).json({ message: 'No valid students found in your organization.' });
+    }
+
+    // 4. Assign each student to classroom
+    const assigned = [];
+    for (const studentUser of studentUsers) {
+      const [relation, created] = await ClassroomTeacher.findOrCreate({
+        where: {
+          classroom_id: id,
+          user_id: studentUser.id
+        },
+        defaults: {
+          classroom_id: id,
+          user_id: studentUser.id,
+          status: 'approved',
+          role: 'student'
+        }
+      });
+
+      if (!created) {
+        await relation.update({
+          status: 'approved',
+          role: 'student'
+        });
+      }
+
+      // If a batch was optionally specified, update student batch
+      if (batch && typeof batch === 'string' && batch.trim()) {
+        await studentUser.update({ batch: batch.trim() });
+      }
+
+      // Activate student if pending invite
+      if (studentUser.status === 'pending') {
+        await studentUser.update({ status: 'active' });
+      }
+
+      assigned.push({
+        id: studentUser.id,
+        name: studentUser.name,
+        email: studentUser.email
+      });
+    }
+
+    return res.json({
+      message: `${assigned.length} student(s) assigned to classroom successfully.`,
+      assignedCount: assigned.length,
+      assigned
+    });
+  } catch (error) {
+    console.error('Error in assignStudentsToClassroom:', error);
+    return res.status(500).json({
+      message: 'Internal server error while assigning students to classroom.',
+      error: error.message
+    });
+  }
+};
+
