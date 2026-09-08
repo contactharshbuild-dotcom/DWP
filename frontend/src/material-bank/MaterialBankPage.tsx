@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
@@ -16,7 +16,9 @@ import {
   FiExternalLink,
   FiFile,
   FiList,
-  FiGrid
+  FiGrid,
+  FiPlus,
+  FiChevronDown
 } from 'react-icons/fi';
 import { materialBankService } from './services/materialBankService';
 import type { MaterialBankFolder, MaterialBankItem, BreadcrumbItem } from './types/materialBank.types';
@@ -48,6 +50,33 @@ export const MaterialBankPage: React.FC = () => {
   const [isUploadFolderOpen, setIsUploadFolderOpen] = useState(false);
   const [isAddYoutubeOpen, setIsAddYoutubeOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<{ title: string; url: string } | null>(null);
+
+  // Dropdown menu state
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click or Escape key
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
 
   // Redirect students away from Material Bank
   useEffect(() => {
@@ -155,42 +184,164 @@ export const MaterialBankPage: React.FC = () => {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Action Dropdown Menu */}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
             <button
-              className="btn-ld btn-ld-secondary"
-              onClick={() => setIsCreateFolderOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-            >
-              <FiFolderPlus size={18} />
-              <span>+ New Folder</span>
-            </button>
-
-            <button
-              className="btn-ld btn-ld-secondary"
-              onClick={() => setIsAddYoutubeOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', borderColor: '#fca5a5' }}
-            >
-              <FiYoutube size={18} />
-              <span>+ Add YouTube Link</span>
-            </button>
-
-            <button
-              className="btn-ld btn-ld-secondary"
-              onClick={() => setIsUploadFolderOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-            >
-              <FiFolder size={18} />
-              <span>+ Upload Folder</span>
-            </button>
-
-            <button
+              type="button"
               className="btn-ld btn-ld-primary"
-              onClick={() => setIsUploadFileOpen(true)}
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
               style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              <FiUploadCloud size={18} />
-              <span>+ Upload File</span>
+              <FiPlus size={18} />
+              <span>+ Add New</span>
+              <FiChevronDown
+                size={16}
+                style={{
+                  transition: 'transform 0.2s ease',
+                  transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}
+              />
             </button>
+
+            {isDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  width: '220px',
+                  backgroundColor: 'var(--light-card)',
+                  border: '1px solid var(--light-border)',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+                  padding: '6px',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateFolderOpen(true);
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(5, 150, 105, 0.1)', color: '#059669', display: 'flex', alignItems: 'center' }}>
+                    <FiFolderPlus size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                    + New Folder
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddYoutubeOpen(true);
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', display: 'flex', alignItems: 'center' }}>
+                    <FiYoutube size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#dc2626' }}>
+                    + Add YouTube Link
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadFolderOpen(true);
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(2, 132, 199, 0.1)', color: '#0284c7', display: 'flex', alignItems: 'center' }}>
+                    <FiFolder size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                    + Upload Folder
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadFileOpen(true);
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)', display: 'flex', alignItems: 'center' }}>
+                    <FiUploadCloud size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                    + Upload File
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

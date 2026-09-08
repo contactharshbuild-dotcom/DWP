@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FiChevronRight, FiPlus, FiYoutube, FiFolderPlus, FiUploadCloud, 
-  FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud 
+  FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud,
+  FiChevronDown
 } from 'react-icons/fi';
 import { getServerUrl } from '../../services/api';
 
@@ -76,6 +77,33 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   onOpenFolderModal,
   onOpenImportBankModal
 }) => {
+  // Dropdown menu state
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click or Escape key
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
+
   return (
     <div>
       {/* Breadcrumb path navigation */}
@@ -98,39 +126,167 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
 
       {/* Management Actions - Teachers/Admin only */}
       {user?.role !== 'student' && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-          <button 
-            className="btn-ld btn-ld-primary" 
-            onClick={() => onOpenAddModal('file')}
-          >
-            <FiPlus size={16} />
-            <span>Add File</span>
-          </button>
-          <button 
-            className="btn-ld btn-ld-secondary" 
-            onClick={() => onOpenAddModal('link')}
-          >
-            <FiYoutube size={16} />
-            <span>Add YouTube / Link</span>
-          </button>
-          <button 
-            className="btn-ld btn-ld-secondary" 
-            onClick={onOpenFolderModal}
-          >
-            <FiFolderPlus size={16} />
-            <span>New Folder</span>
-          </button>
-
-          {onOpenImportBankModal && (
+        <div style={{ marginBottom: '20px' }}>
+          <div ref={dropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
             <button 
-              className="btn-ld btn-ld-secondary" 
-              onClick={onOpenImportBankModal}
-              style={{ color: 'var(--light-primary)', borderColor: 'var(--light-primary)' }}
+              type="button"
+              className="btn-ld btn-ld-primary" 
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              <FiDownloadCloud size={16} />
-              <span>Import from Material Bank</span>
+              <FiPlus size={18} />
+              <span>+ Add New</span>
+              <FiChevronDown
+                size={16}
+                style={{
+                  transition: 'transform 0.2s ease',
+                  transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}
+              />
             </button>
-          )}
+
+            {isDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: '240px',
+                  backgroundColor: 'var(--light-card)',
+                  border: '1px solid var(--light-border)',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+                  padding: '6px',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenAddModal('file');
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)', display: 'flex', alignItems: 'center' }}>
+                    <FiPlus size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                    Add File
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenAddModal('link');
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', display: 'flex', alignItems: 'center' }}>
+                    <FiYoutube size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#dc2626' }}>
+                    Add YouTube / Link
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenFolderModal();
+                    setIsDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '9px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(5, 150, 105, 0.1)', color: '#059669', display: 'flex', alignItems: 'center' }}>
+                    <FiFolderPlus size={16} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                    New Folder
+                  </span>
+                </button>
+
+                {onOpenImportBankModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenImportBankModal();
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '9px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      textAlign: 'left',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)', display: 'flex', alignItems: 'center' }}>
+                      <FiDownloadCloud size={16} />
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--light-primary)' }}>
+                      Import from Material Bank
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
