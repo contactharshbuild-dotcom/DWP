@@ -21,8 +21,8 @@ export const UploadFileModal: React.FC<UploadFileModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) {
-        setError('File size exceeds the 5MB limit. Please select a smaller file.');
+      if (file.size > 15 * 1024 * 1024) {
+        setError('File size exceeds the 15MB limit. Please select a smaller file.');
         setSelectedFile(null);
         return;
       }
@@ -98,7 +98,7 @@ export const UploadFileModal: React.FC<UploadFileModalProps> = ({
                 Click to browse file (PDF, DOCX, Images, Video)
               </p>
               <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
-                Maximum file size: 5MB
+                Maximum file size: 15MB
               </p>
               <input 
                 id="material-file-input"

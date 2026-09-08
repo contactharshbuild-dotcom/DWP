@@ -28,7 +28,7 @@ interface ScannedFile {
 
 const MAX_TOTAL_FILES = 200;
 const BATCH_SIZE = 10;
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
 export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
   isOpen,
@@ -117,7 +117,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
         relativePath: normalizedPath,
         dirPath,
         status: isOverSize ? 'skipped' : 'pending',
-        error: isOverSize ? 'Exceeds 5MB limit' : undefined
+        error: isOverSize ? 'Exceeds 15MB limit' : undefined
       };
     });
 
@@ -526,7 +526,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                     fontWeight: '600'
                   }}
                 >
-                  5MB max per file
+                  15MB max per file
                 </span>
               </div>
             </div>
@@ -621,7 +621,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                 >
                   <FiAlertCircle size={16} />
                   <span>
-                    <strong>{skippedCount} file(s)</strong> exceed the 5MB size limit and will be skipped.
+                    <strong>{skippedCount} file(s)</strong> exceed the 15MB size limit and will be skipped.
                   </span>
                 </div>
               )}
@@ -693,7 +693,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                           color: '#b45309'
                         }}
                       >
-                        ⚠ {skippedCount} Skipped (&gt;5MB)
+                        ⚠ {skippedCount} Skipped (&gt;15MB)
                       </span>
                     )}
                   </div>
@@ -759,7 +759,7 @@ export const UploadFolderModal: React.FC<UploadFolderModalProps> = ({
                         </span>
                       )}
                       {item.status === 'skipped' && (
-                        <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }} title="Size > 5MB">
+                        <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }} title="Size > 15MB">
                           <FiAlertTriangle size={14} /> Skipped
                         </span>
                       )}

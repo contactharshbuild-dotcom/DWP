@@ -43,18 +43,18 @@ app.get("/", (req, res) => {
     res.send("LMS Backend is running");
 });
 
-// Express Error Handling Middleware (Handles Multer LIMIT_FILE_SIZE & 5MB Upload errors cleanly)
+// Express Error Handling Middleware (Handles Multer LIMIT_FILE_SIZE & Upload limit errors cleanly)
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({
       success: false,
-      message: 'File size exceeds the 5MB limit. Please select a smaller file (under 5MB).'
+      message: 'File size exceeds the allowed limit. Please select a smaller file.'
     });
   }
-  if (err && (err.code === 'LIMIT_FILE_SIZE' || err.message?.includes('LIMIT_FILE_SIZE') || err.message?.includes('exceeds the maximum server-side limit of 5MB'))) {
+  if (err && (err.code === 'LIMIT_FILE_SIZE' || err.message?.includes('LIMIT_FILE_SIZE') || err.message?.includes('exceeds the maximum server-side limit'))) {
     return res.status(400).json({
       success: false,
-      message: 'File size exceeds the 5MB limit. Please select a smaller file (under 5MB).'
+      message: err.message || 'File size exceeds the allowed limit. Please select a smaller file.'
     });
   }
   if (err) {
