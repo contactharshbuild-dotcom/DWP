@@ -1005,6 +1005,7 @@ const ClassroomDetails: React.FC = () => {
       if (addType === 'file' && selectedFile) {
         const formData = new FormData();
         formData.append('file', selectedFile);
+        formData.append('fileName', selectedFile.name);
         formData.append('classroomId', id || '');
         formData.append('folderId', folderVal);
         formData.append('moduleSession', materialModuleSession);

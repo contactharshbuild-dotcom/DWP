@@ -8,6 +8,7 @@ import {
   deleteFolder,
   uploadMaterialFile,
   addYoutubeLink,
+  renameItem,
   deleteItem,
   reorderItems,
   reorderFolders
@@ -49,6 +50,9 @@ router.post('/link', addYoutubeLink);
 
 // Reorder items (files & links)
 router.put('/items/reorder', reorderItems);
+
+// Rename item
+router.put('/items/:itemId', renameItem);
 
 // Delete item
 router.delete('/items/:itemId', deleteItem);

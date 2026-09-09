@@ -1,9 +1,38 @@
 import api from '../../services/api';
 import type { MaterialBankResponse, MaterialBankFolder, MaterialBankItem } from '../types/materialBank.types';
 
+export interface GetMaterialBankParams {
+  folderId?: number | null;
+  page?: number;
+  limit?: number;
+  folderPage?: number;
+  folderLimit?: number;
+  search?: string;
+  filterType?: 'all' | 'file' | 'youtube';
+  sortBy?: string;
+}
+
 export const materialBankService = {
-  getContents: async (folderId?: number | null): Promise<MaterialBankResponse> => {
-    const params = folderId ? { folderId } : {};
+  getContents: async (
+    folderIdOrParams?: number | null | GetMaterialBankParams,
+    page?: number,
+    limit?: number,
+    folderPage?: number,
+    folderLimit?: number
+  ): Promise<MaterialBankResponse> => {
+    let params: any = {};
+    if (typeof folderIdOrParams === 'object' && folderIdOrParams !== null) {
+      params = { ...folderIdOrParams };
+      if (params.folderId === null || params.folderId === undefined) {
+        delete params.folderId;
+      }
+    } else {
+      if (folderIdOrParams) params.folderId = folderIdOrParams;
+      if (page !== undefined) params.page = page;
+      if (limit !== undefined) params.limit = limit;
+      if (folderPage !== undefined) params.folderPage = folderPage;
+      if (folderLimit !== undefined) params.folderLimit = folderLimit;
+    }
     const res = await api.get('/material-bank', { params });
     return res.data;
   },
@@ -25,6 +54,7 @@ export const materialBankService = {
   uploadFile: async (file: File, folderId?: number | null): Promise<MaterialBankItem> => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('fileName', file.name);
     if (folderId) {
       formData.append('folderId', folderId.toString());
     }
@@ -43,15 +73,20 @@ export const materialBankService = {
     return res.data.item;
   },
 
+  renameItem: async (itemId: number, name: string): Promise<MaterialBankItem> => {
+    const res = await api.put(`/material-bank/items/${itemId}`, { name });
+    return res.data.item;
+  },
+
   deleteItem: async (itemId: number): Promise<void> => {
     await api.delete(`/material-bank/items/${itemId}`);
   },
 
-  reorderItems: async (itemIds: number[]): Promise<void> => {
-    await api.put('/material-bank/items/reorder', { itemIds });
+  reorderItems: async (itemIds: number[], startIndex?: number): Promise<void> => {
+    await api.put('/material-bank/items/reorder', { itemIds, startIndex });
   },
 
-  reorderFolders: async (folderIds: number[]): Promise<void> => {
-    await api.put('/material-bank/folders/reorder', { folderIds });
+  reorderFolders: async (folderIds: number[], startIndex?: number): Promise<void> => {
+    await api.put('/material-bank/folders/reorder', { folderIds, startIndex });
   }
 };

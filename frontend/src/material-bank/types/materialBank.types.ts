@@ -34,8 +34,27 @@ export interface BreadcrumbItem {
   name: string;
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export interface MaterialBankResponse {
   folders: MaterialBankFolder[];
   items: MaterialBankItem[];
   breadcrumbs?: BreadcrumbItem[];
+  totalFolders?: number;
+  totalItems?: number;
+  folderPage?: number;
+  folderLimit?: number;
+  folderTotalPages?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+  pagination?: {
+    items?: PaginationMeta;
+    folders?: PaginationMeta;
+  };
 }

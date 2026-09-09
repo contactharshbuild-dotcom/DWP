@@ -12,6 +12,7 @@ import {
   FiFileText, 
   FiVideo, 
   FiChevronRight, 
+  FiChevronLeft,
   FiHome,
   FiExternalLink,
   FiFile,
@@ -28,6 +29,7 @@ import type { RootState } from '../store';
 import { getServerUrl } from '../services/api';
 import { CreateFolderModal } from './components/CreateFolderModal';
 import { RenameFolderModal } from './components/RenameFolderModal';
+import { RenameItemModal } from './components/RenameItemModal';
 import { UploadFileModal } from './components/UploadFileModal';
 import { UploadFolderModal } from './components/UploadFolderModal';
 import { AddYoutubeModal } from './components/AddYoutubeModal';
@@ -38,13 +40,26 @@ export const MaterialBankPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useSelector((state: RootState) => state.auth.user);
 
-  // Sync folder state with URL parameter (?folderId=...) so it persists on page refresh
+  const PAGE_SIZE = 10;
+
+  // Sync folder state and pagination with URL parameters so they persist on page refresh
   const folderParam = searchParams.get('folderId');
   const currentFolderId = folderParam && !isNaN(parseInt(folderParam, 10)) ? parseInt(folderParam, 10) : null;
+
+  const pageParam = searchParams.get('page');
+  const itemsPage = pageParam && !isNaN(parseInt(pageParam, 10)) ? Math.max(1, parseInt(pageParam, 10)) : 1;
+
+  const folderPageParam = searchParams.get('folderPage');
+  const foldersPage = folderPageParam && !isNaN(parseInt(folderPageParam, 10)) ? Math.max(1, parseInt(folderPageParam, 10)) : 1;
 
   const [folders, setFolders] = useState<MaterialBankFolder[]>([]);
   const [items, setItems] = useState<MaterialBankItem[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
+
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalFolders, setTotalFolders] = useState(0);
+  const [folderTotalPages, setFolderTotalPages] = useState(1);
 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,6 +77,7 @@ export const MaterialBankPage: React.FC = () => {
   // Modals state
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [renameFolderTarget, setRenameFolderTarget] = useState<MaterialBankFolder | null>(null);
+  const [renameItemTarget, setRenameItemTarget] = useState<MaterialBankItem | null>(null);
   const [isUploadFileOpen, setIsUploadFileOpen] = useState(false);
   const [isUploadFolderOpen, setIsUploadFolderOpen] = useState(false);
   const [isAddYoutubeOpen, setIsAddYoutubeOpen] = useState(false);
@@ -101,13 +117,33 @@ export const MaterialBankPage: React.FC = () => {
     }
   }, [user, navigate]);
 
-  const loadContents = async (folderId?: number | null) => {
+  const loadContents = async (
+    folderId = currentFolderId,
+    itemP = itemsPage,
+    folderP = foldersPage,
+    search = searchQuery,
+    filter = filterType,
+    sort = sortBy
+  ) => {
     setLoading(true);
     try {
-      const data = await materialBankService.getContents(folderId);
+      const data = await materialBankService.getContents({
+        folderId,
+        page: itemP,
+        limit: PAGE_SIZE,
+        folderPage: folderP,
+        folderLimit: PAGE_SIZE,
+        search: search.trim() || undefined,
+        filterType: filter !== 'all' ? filter : undefined,
+        sortBy: sort !== 'manual' ? sort : undefined
+      });
       setFolders(data.folders || []);
       setItems(data.items || []);
       setBreadcrumbs(data.breadcrumbs || []);
+      setTotalItems(data.totalItems ?? (data.items || []).length);
+      setTotalPages(data.totalPages ?? Math.max(1, Math.ceil((data.totalItems ?? 0) / PAGE_SIZE)));
+      setTotalFolders(data.totalFolders ?? (data.folders || []).length);
+      setFolderTotalPages(data.folderTotalPages ?? Math.max(1, Math.ceil((data.totalFolders ?? 0) / PAGE_SIZE)));
     } catch (err: any) {
       console.error('Failed to load Material Bank contents:', err);
     } finally {
@@ -117,14 +153,19 @@ export const MaterialBankPage: React.FC = () => {
 
   useEffect(() => {
     if (user && user.role !== 'student') {
-      loadContents(currentFolderId);
+      const timer = setTimeout(() => {
+        loadContents(currentFolderId, itemsPage, foldersPage, searchQuery, filterType, sortBy);
+      }, 250);
+      return () => clearTimeout(timer);
     }
-  }, [user, currentFolderId]);
+  }, [user, currentFolderId, itemsPage, foldersPage, searchQuery, filterType, sortBy]);
 
   const handleOpenFolder = (folderId: number) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.set('folderId', folderId.toString());
+      next.delete('page');
+      next.delete('folderPage');
       return next;
     });
   };
@@ -137,8 +178,69 @@ export const MaterialBankPage: React.FC = () => {
       } else {
         next.delete('folderId');
       }
+      next.delete('page');
+      next.delete('folderPage');
       return next;
     });
+  };
+
+  const handleItemsPageChange = (newPage: number) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (newPage > 1) {
+        next.set('page', newPage.toString());
+      } else {
+        next.delete('page');
+      }
+      return next;
+    });
+  };
+
+  const handleFoldersPageChange = (newFolderPage: number) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (newFolderPage > 1) {
+        next.set('folderPage', newFolderPage.toString());
+      } else {
+        next.delete('folderPage');
+      }
+      return next;
+    });
+  };
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    if (itemsPage !== 1 || foldersPage !== 1) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('page');
+        next.delete('folderPage');
+        return next;
+      });
+    }
+  };
+
+  const handleFilterChange = (type: 'all' | 'file' | 'youtube') => {
+    setFilterType(type);
+    if (itemsPage !== 1) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('page');
+        return next;
+      });
+    }
+  };
+
+  const handleSortChange = (sort: typeof sortBy) => {
+    setSortBy(sort);
+    if (itemsPage !== 1 || foldersPage !== 1) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('page');
+        next.delete('folderPage');
+        return next;
+      });
+    }
   };
 
   const handleCreateFolder = async (name: string) => {
@@ -153,6 +255,12 @@ export const MaterialBankPage: React.FC = () => {
     if (currentFolderId === updated.id) {
       setBreadcrumbs(prev => prev.map(b => b.id === updated.id ? { ...b, name: updated.name } : b));
     }
+  };
+
+  const handleRenameItem = async (newName: string) => {
+    if (!renameItemTarget) return;
+    const updated = await materialBankService.renameItem(renameItemTarget.id, newName);
+    setItems(prev => prev.map(i => i.id === updated.id ? { ...i, name: updated.name } : i));
   };
 
   const handleDeleteFolder = async (e: React.MouseEvent, folderId: number, folderName: string) => {
@@ -192,34 +300,9 @@ export const MaterialBankPage: React.FC = () => {
     }
   };
 
-  // Filter folders and items
-  const filteredFolders = folders.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-    if (filterType !== 'all' && item.type !== filterType) return false;
-    return true;
-  });
-
-  const sortedItems = [...filteredItems].sort((a, b) => {
-    if (sortBy === 'name-asc') {
-      return a.name.localeCompare(b.name);
-    }
-    if (sortBy === 'name-desc') {
-      return b.name.localeCompare(a.name);
-    }
-    if (sortBy === 'date-desc') {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    if (sortBy === 'date-asc') {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    }
-    // 'manual': preserve array order as loaded / modified
-    return 0;
-  });
+  // Server handles filtering & sorting across the dataset
+  const filteredFolders = folders;
+  const sortedItems = items;
 
   // Reordering via drag & drop is active when viewing full list in manual sort mode
   const canDrag = sortBy === 'manual' && searchQuery.trim() === '' && filterType === 'all';
@@ -293,12 +376,12 @@ export const MaterialBankPage: React.FC = () => {
     setDragOverItemId(null);
     setDropPosition(null);
 
-    // Persist new ordering to database
+    // Persist new ordering to database with offset startIndex
     setIsSavingOrder(true);
     setSaveMessage('Saving order...');
     try {
       const itemIds = currentItems.map(i => i.id);
-      await materialBankService.reorderItems(itemIds);
+      await materialBankService.reorderItems(itemIds, (itemsPage - 1) * PAGE_SIZE);
       setSaveMessage('Order saved ✓');
       setTimeout(() => {
         setSaveMessage(null);
@@ -320,6 +403,119 @@ export const MaterialBankPage: React.FC = () => {
     setDraggedItemId(null);
     setDragOverItemId(null);
     setDropPosition(null);
+  };
+
+  const renderPagination = (
+    currentPage: number,
+    totalPagesCount: number,
+    totalCount: number,
+    unitLabel: string,
+    onPageChange: (p: number) => void
+  ) => {
+    if (totalPagesCount <= 1 || totalCount <= PAGE_SIZE) return null;
+
+    const start = (currentPage - 1) * PAGE_SIZE + 1;
+    const end = Math.min(currentPage * PAGE_SIZE, totalCount);
+
+    const pages: (number | string)[] = [];
+    if (totalPagesCount <= 7) {
+      for (let i = 1; i <= totalPagesCount; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (currentPage > 3) pages.push('...');
+      const pStart = Math.max(2, currentPage - 1);
+      const pEnd = Math.min(totalPagesCount - 1, currentPage + 1);
+      for (let i = pStart; i <= pEnd; i++) pages.push(i);
+      if (currentPage < totalPagesCount - 2) pages.push('...');
+      pages.push(totalPagesCount);
+    }
+
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: '16px',
+        padding: '12px 16px',
+        backgroundColor: 'var(--light-card)',
+        border: '1px solid var(--light-border)',
+        borderRadius: '10px',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
+          Showing {start} to {end} of {totalCount} {unitLabel}
+        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            className="btn-ld btn-ld-secondary"
+            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+            disabled={currentPage <= 1 || loading}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 12px',
+              fontSize: '13px',
+              opacity: currentPage <= 1 ? 0.5 : 1,
+              cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <FiChevronLeft size={16} />
+            <span>Previous</span>
+          </button>
+
+          {pages.map((p, idx) => {
+            if (typeof p === 'string') {
+              return (
+                <span key={`ellipsis-${idx}`} style={{ padding: '4px 6px', color: 'var(--light-text-muted)', fontSize: '13px' }}>
+                  ...
+                </span>
+              );
+            }
+            const isActive = p === currentPage;
+            return (
+              <button
+                key={p}
+                type="button"
+                className={`btn-ld ${isActive ? 'btn-ld-primary' : 'btn-ld-secondary'}`}
+                onClick={() => onPageChange(p)}
+                disabled={loading}
+                style={{
+                  minWidth: '32px',
+                  padding: '6px 10px',
+                  fontSize: '13px',
+                  fontWeight: isActive ? '700' : '500'
+                }}
+              >
+                {p}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            className="btn-ld btn-ld-secondary"
+            onClick={() => onPageChange(Math.min(totalPagesCount, currentPage + 1))}
+            disabled={currentPage >= totalPagesCount || loading}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 12px',
+              fontSize: '13px',
+              opacity: currentPage >= totalPagesCount ? 0.5 : 1,
+              cursor: currentPage >= totalPagesCount ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <span>Next</span>
+            <FiChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const getFullFileUrl = (url: string) => {
@@ -561,7 +757,7 @@ export const MaterialBankPage: React.FC = () => {
               className="input-ld"
               placeholder="Search folders or materials..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               style={{ paddingLeft: '40px' }}
             />
           </div>
@@ -570,7 +766,7 @@ export const MaterialBankPage: React.FC = () => {
             <select
               className="input-ld"
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
+              onChange={(e) => handleFilterChange(e.target.value as any)}
               style={{ width: '150px' }}
             >
               <option value="all">All Content</option>
@@ -581,7 +777,7 @@ export const MaterialBankPage: React.FC = () => {
             <select
               className="input-ld"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={(e) => handleSortChange(e.target.value as any)}
               style={{ width: '195px' }}
               title="Sort items"
             >
@@ -658,7 +854,7 @@ export const MaterialBankPage: React.FC = () => {
             <span className="spinner" style={{ width: '32px', height: '32px', borderTopColor: 'var(--light-primary)' }}></span>
             <p style={{ marginTop: '12px', color: 'var(--light-text-secondary)', fontSize: '14px' }}>Loading materials...</p>
           </div>
-        ) : filteredFolders.length === 0 && sortedItems.length === 0 ? (
+        ) : totalFolders === 0 && totalItems === 0 ? (
           /* Empty State */
           <div style={{ 
             padding: '60px 20px', 
@@ -713,7 +909,7 @@ export const MaterialBankPage: React.FC = () => {
             {filteredFolders.length > 0 && (
               <div style={{ marginBottom: '28px' }}>
                 <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--light-text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Folders ({filteredFolders.length})
+                  Folders ({totalFolders})
                 </h3>
                 {viewMode === 'list' ? (
                   <div style={{
@@ -908,6 +1104,8 @@ export const MaterialBankPage: React.FC = () => {
                     ))}
                   </div>
                 )}
+
+                {renderPagination(foldersPage, folderTotalPages, totalFolders, 'folders', handleFoldersPageChange)}
               </div>
             )}
 
@@ -917,7 +1115,7 @@ export const MaterialBankPage: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--light-text-secondary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Files & Links ({sortedItems.length})
+                      Files & Links ({totalItems})
                     </h3>
                     {canDrag && (
                       <span style={{ 
@@ -1157,6 +1355,26 @@ export const MaterialBankPage: React.FC = () => {
                                   )}
 
                                   <button
+                                     onClick={() => setRenameItemTarget(item)}
+                                     style={{
+                                       background: 'none',
+                                       border: 'none',
+                                       cursor: 'pointer',
+                                       color: 'var(--light-text-muted)',
+                                       padding: '4px',
+                                       borderRadius: '4px',
+                                       display: 'flex',
+                                       alignItems: 'center',
+                                       transition: 'color 0.2s'
+                                     }}
+                                     onMouseEnter={(e) => e.currentTarget.style.color = 'var(--light-primary)'}
+                                     onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                                     title={item.type === 'youtube' ? 'Rename Video Link' : 'Rename File'}
+                                   >
+                                     <FiEdit2 size={15} />
+                                   </button>
+
+                                  <button
                                     onClick={() => handleDeleteItem(item.id, item.name)}
                                     style={{
                                       background: 'none',
@@ -1305,27 +1523,51 @@ export const MaterialBankPage: React.FC = () => {
                               </a>
                             )}
 
-                            <button
-                              onClick={() => handleDeleteItem(item.id, item.name)}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                color: 'var(--light-text-muted)',
-                                padding: '4px'
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
-                              title="Delete Material"
-                            >
-                              <FiTrash2 size={16} />
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <button
+                                onClick={() => setRenameItemTarget(item)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  color: 'var(--light-text-muted)',
+                                  padding: '4px',
+                                  borderRadius: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  transition: 'color 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--light-primary)'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                                title={item.type === 'youtube' ? 'Rename Video Link' : 'Rename File'}
+                              >
+                                <FiEdit2 size={15} />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteItem(item.id, item.name)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  color: 'var(--light-text-muted)',
+                                  padding: '4px'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--light-text-muted)'}
+                                title="Delete Material"
+                              >
+                                <FiTrash2 size={16} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
+
+                {renderPagination(itemsPage, totalPages, totalItems, 'materials', handleItemsPageChange)}
               </div>
             )}
           </div>
@@ -1344,6 +1586,14 @@ export const MaterialBankPage: React.FC = () => {
         currentName={renameFolderTarget?.name || ''}
         onClose={() => setRenameFolderTarget(null)}
         onSuccess={handleRenameFolder}
+      />
+
+      <RenameItemModal
+        isOpen={Boolean(renameItemTarget)}
+        currentName={renameItemTarget?.name || ''}
+        itemType={renameItemTarget?.type}
+        onClose={() => setRenameItemTarget(null)}
+        onSuccess={handleRenameItem}
       />
 
       <UploadFileModal

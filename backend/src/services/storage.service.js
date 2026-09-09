@@ -157,6 +157,39 @@ export const uploadFile = async (fileBuffer, fileName, mimeType) => {
 };
 
 /**
+ * Extracts S3 object key from URL or fileId
+ * @param {string} fileId 
+ * @param {string} driveLink 
+ * @returns {string|null}
+ */
+export const extractS3Key = (fileId, driveLink) => {
+  const urlToParse = (typeof driveLink === 'string' && (driveLink.startsWith('http://') || driveLink.startsWith('https://')))
+    ? driveLink
+    : (typeof fileId === 'string' && (fileId.startsWith('http://') || fileId.startsWith('https://')) ? fileId : null);
+
+  if (urlToParse) {
+    try {
+      const parsed = new URL(urlToParse);
+      if (parsed.hostname.includes('amazonaws.com') || parsed.hostname.includes('.s3.')) {
+        let pathname = decodeURIComponent(parsed.pathname);
+        if (s3BucketName && pathname.startsWith(`/${s3BucketName}/`)) {
+          pathname = pathname.substring(s3BucketName.length + 2);
+        } else if (pathname.startsWith('/')) {
+          pathname = pathname.substring(1);
+        }
+        if (pathname) return pathname;
+      }
+    } catch (e) {}
+  }
+
+  if (fileId && typeof fileId === 'string' && !fileId.startsWith('http') && !fileId.startsWith('/') && !fileId.startsWith('mock_')) {
+    return fileId;
+  }
+
+  return null;
+};
+
+/**
  * Delete file from S3, Drive, or local storage
  * @param {string} fileId 
  * @param {string} driveLink 
@@ -166,29 +199,25 @@ export const deleteFile = async (fileId, driveLink) => {
   const targetUrl = driveLink || (typeof fileId === 'string' && (fileId.startsWith('http://') || fileId.startsWith('https://') || fileId.startsWith('/uploads/')) ? fileId : null);
 
   // 1. Handle S3 deletion
-  if (targetUrl && targetUrl.includes('.s3.') && targetUrl.includes('amazonaws.com')) {
-    if (isS3Configured && s3Client) {
-      try {
-        let key = fileId;
-        if (!key || key.startsWith('http://') || key.startsWith('https://')) {
-          key = targetUrl.split('.amazonaws.com/')[1];
-        }
-        if (key) {
-          await s3Client.send(new DeleteObjectCommand({
-            Bucket: s3BucketName,
-            Key: key
-          }));
-          console.log(`[Storage Service] Deleted from S3: ${key}`);
-          return;
-        }
-      } catch (error) {
-        console.error('[Storage Service] Failed to delete from S3:', error.message);
+  const s3Key = extractS3Key(fileId, targetUrl);
+  if (s3Key && isS3Configured && s3Client) {
+    try {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: s3BucketName,
+        Key: s3Key
+      }));
+      console.log(`[Storage Service] Deleted from AWS S3: ${s3Key}`);
+      return;
+    } catch (error) {
+      console.error('[Storage Service] Failed to delete from AWS S3:', error.message);
+      if (error.message && error.message.includes('AWSCompromisedKeyQuarantine')) {
+        console.error('[Storage Service] NOTE: AWS IAM user has AWSCompromisedKeyQuarantine policy attached. Please remove this quarantine policy or generate a new IAM Access Key in AWS Console to allow S3 deletions.');
       }
     }
   }
 
   // 2. Handle Google Drive deletion
-  if (driveClient && fileId && !fileId.startsWith('mock_') && (!targetUrl || (!targetUrl.includes('.s3.') && !targetUrl.startsWith('/uploads/')))) {
+  if (driveClient && fileId && !fileId.startsWith('mock_') && (!targetUrl || (!targetUrl.includes('.s3.') && !targetUrl.includes('amazonaws.com') && !targetUrl.startsWith('/uploads/')))) {
     try {
       await driveClient.files.delete({ fileId });
       console.log(`[Storage Service] Deleted from Google Drive: ${fileId}`);

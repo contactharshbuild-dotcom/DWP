@@ -24,45 +24,137 @@ const ensureOrderIndexColumn = async () => {
   }
 };
 
-// GET /api/material-bank?folderId=...
+/**
+ * Fixes filenames that were corrupted by multipart/form-data Latin-1 header parsing (mojibake).
+ * E.g. "S1â\x80\x93Excel" -> "S1–Excel"
+ */
+export const fixFilenameEncoding = (filename) => {
+  if (!filename || typeof filename !== 'string') return filename;
+  try {
+    if (filename.includes('â')) {
+      const fixed = Buffer.from(filename, 'latin1').toString('utf8');
+      if (!fixed.includes('\uFFFD')) return fixed;
+    }
+    const decoded = Buffer.from(filename, 'latin1').toString('utf8');
+    if (decoded !== filename && !decoded.includes('\uFFFD')) {
+      if (Buffer.from(decoded, 'utf8').toString('latin1') === filename) {
+        return decoded;
+      }
+    }
+  } catch (err) {}
+  return filename;
+};
+
+// GET /api/material-bank?folderId=...&page=...&limit=...
 export const getMaterialBank = async (req, res) => {
   try {
     if (!checkTeacherOrAdmin(req, res)) return;
     await ensureOrderIndexColumn();
 
-    const { folderId } = req.query;
+    const { folderId, page, limit, folderPage, folderLimit, search, filterType, sortBy } = req.query;
     const organizationId = req.user.organizationId;
 
     const parsedFolderId = folderId ? parseInt(folderId, 10) : null;
+    const trimmedSearch = typeof search === 'string' ? search.trim() : '';
 
-    // Fetch folders inside current folder level (or root level if folderId is null)
-    const folders = await MaterialBankFolder.findAll({
-      where: {
-        organization_id: organizationId,
-        parent_id: parsedFolderId
-      },
-      order: [
-        ['order_index', 'ASC'],
-        ['created_at', 'ASC']
-      ]
-    });
+    // Folders query & pagination
+    const folderWhere = {
+      organization_id: organizationId,
+      parent_id: parsedFolderId
+    };
+    if (trimmedSearch) {
+      folderWhere.name = { [Op.iLike]: `%${trimmedSearch}%` };
+    }
 
-    // Fetch items inside current folder level (or root level if folderId is null)
-    const items = await MaterialBankItem.findAll({
-      where: {
-        organization_id: organizationId,
-        folder_id: parsedFolderId
-      },
-      include: [{
-        model: User,
-        as: 'uploader',
-        attributes: ['id', 'name', 'email']
-      }],
-      order: [
-        ['order_index', 'ASC'],
-        ['created_at', 'DESC']
-      ]
-    });
+    let folderOrder = [
+      ['order_index', 'ASC'],
+      ['created_at', 'ASC']
+    ];
+    if (sortBy === 'name-asc') folderOrder = [['name', 'ASC']];
+    else if (sortBy === 'name-desc') folderOrder = [['name', 'DESC']];
+    else if (sortBy === 'date-desc') folderOrder = [['created_at', 'DESC']];
+    else if (sortBy === 'date-asc') folderOrder = [['created_at', 'ASC']];
+
+    const hasFolderPagination = folderPage !== undefined || folderLimit !== undefined;
+    const fPage = folderPage ? Math.max(1, parseInt(folderPage, 10)) : 1;
+    const fLimit = folderLimit !== undefined ? parseInt(folderLimit, 10) : (hasFolderPagination ? 10 : null);
+    const fOffset = fLimit ? (fPage - 1) * fLimit : 0;
+
+    let folders = [];
+    let totalFolders = 0;
+
+    if (fLimit && fLimit > 0) {
+      const folderResult = await MaterialBankFolder.findAndCountAll({
+        where: folderWhere,
+        order: folderOrder,
+        limit: fLimit,
+        offset: fOffset
+      });
+      folders = folderResult.rows;
+      totalFolders = folderResult.count;
+    } else {
+      folders = await MaterialBankFolder.findAll({
+        where: folderWhere,
+        order: folderOrder
+      });
+      totalFolders = folders.length;
+    }
+
+    // Items query & pagination
+    const itemWhere = {
+      organization_id: organizationId,
+      folder_id: parsedFolderId
+    };
+    if (filterType && (filterType === 'file' || filterType === 'youtube')) {
+      itemWhere.type = filterType;
+    }
+    if (trimmedSearch) {
+      itemWhere.name = { [Op.iLike]: `%${trimmedSearch}%` };
+    }
+
+    let itemOrder = [
+      ['order_index', 'ASC'],
+      ['created_at', 'DESC']
+    ];
+    if (sortBy === 'name-asc') itemOrder = [['name', 'ASC']];
+    else if (sortBy === 'name-desc') itemOrder = [['name', 'DESC']];
+    else if (sortBy === 'date-desc') itemOrder = [['created_at', 'DESC']];
+    else if (sortBy === 'date-asc') itemOrder = [['created_at', 'ASC']];
+
+    const hasItemPagination = page !== undefined || limit !== undefined;
+    const itemPage = page ? Math.max(1, parseInt(page, 10)) : 1;
+    const itemLimit = limit !== undefined ? parseInt(limit, 10) : (hasItemPagination ? 10 : null);
+    const itemOffset = itemLimit ? (itemPage - 1) * itemLimit : 0;
+
+    let items = [];
+    let totalItems = 0;
+
+    if (itemLimit && itemLimit > 0) {
+      const itemResult = await MaterialBankItem.findAndCountAll({
+        where: itemWhere,
+        include: [{
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }],
+        order: itemOrder,
+        limit: itemLimit,
+        offset: itemOffset
+      });
+      items = itemResult.rows;
+      totalItems = itemResult.count;
+    } else {
+      items = await MaterialBankItem.findAll({
+        where: itemWhere,
+        include: [{
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }],
+        order: itemOrder
+      });
+      totalItems = items.length;
+    }
 
     // Fetch folder breadcrumbs hierarchy if inside a subfolder
     let breadcrumbs = [];
@@ -78,10 +170,52 @@ export const getMaterialBank = async (req, res) => {
       }
     }
 
+    // Auto-heal any existing records with mojibake encoding corruption
+    items.forEach((item) => {
+      const fixedName = fixFilenameEncoding(item.name);
+      if (fixedName !== item.name) {
+        item.name = fixedName;
+        MaterialBankItem.update({ name: fixedName }, { where: { id: item.id } }).catch(() => {});
+      }
+    });
+
+    folders.forEach((folder) => {
+      const fixedName = fixFilenameEncoding(folder.name);
+      if (fixedName !== folder.name) {
+        folder.name = fixedName;
+        MaterialBankFolder.update({ name: fixedName }, { where: { id: folder.id } }).catch(() => {});
+      }
+    });
+
+    const folderTotalPages = fLimit ? Math.ceil(totalFolders / fLimit) : 1;
+    const itemTotalPages = itemLimit ? Math.ceil(totalItems / itemLimit) : 1;
+
     return res.json({
       folders,
       items,
-      breadcrumbs
+      breadcrumbs,
+      totalFolders,
+      totalItems,
+      folderPage: fPage,
+      folderLimit: fLimit || totalFolders,
+      folderTotalPages,
+      page: itemPage,
+      limit: itemLimit || totalItems,
+      totalPages: itemTotalPages,
+      pagination: {
+        items: {
+          page: itemPage,
+          limit: itemLimit || totalItems,
+          total: totalItems,
+          totalPages: itemTotalPages
+        },
+        folders: {
+          page: fPage,
+          limit: fLimit || totalFolders,
+          total: totalFolders,
+          totalPages: folderTotalPages
+        }
+      }
     });
 
   } catch (error) {
@@ -227,7 +361,7 @@ export const deleteFolder = async (req, res) => {
       });
 
       for (const item of items) {
-        if (item.type === 'file' && item.drive_file_id) {
+        if (item.type === 'file') {
           await deleteFile(item.drive_file_id, item.file_url);
         }
         await item.destroy();
@@ -254,20 +388,24 @@ export const uploadMaterialFile = async (req, res) => {
   try {
     if (!checkTeacherOrAdmin(req, res)) return;
 
-    const { folderId } = req.body;
+    const { folderId, fileName } = req.body;
     const file = req.file;
 
     if (!file) {
       return res.status(400).json({ message: 'No file provided for upload.' });
     }
 
-    const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
+    const resolvedName = (fileName && typeof fileName === 'string' && fileName.trim())
+      ? fileName.trim()
+      : fixFilenameEncoding(file.originalname);
+
+    const { fileId, webViewLink } = await uploadFile(file.buffer, resolvedName, file.mimetype);
 
     const item = await MaterialBankItem.create({
       organization_id: req.user.organizationId,
       folder_id: folderId ? parseInt(folderId, 10) : null,
       uploaded_by: req.user.id,
-      name: file.originalname,
+      name: resolvedName,
       type: 'file',
       mime_type: file.mimetype,
       file_url: webViewLink,
@@ -339,6 +477,50 @@ export const addYoutubeLink = async (req, res) => {
   }
 };
 
+// PUT /api/material-bank/items/:itemId
+export const renameItem = async (req, res) => {
+  try {
+    if (!checkTeacherOrAdmin(req, res)) return;
+
+    const { itemId } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Item name is required.' });
+    }
+
+    const item = await MaterialBankItem.findOne({
+      where: {
+        id: itemId,
+        organization_id: req.user.organizationId
+      },
+      include: [{
+        model: User,
+        as: 'uploader',
+        attributes: ['id', 'name', 'email']
+      }]
+    });
+
+    if (!item) {
+      return res.status(404).json({ message: 'Material item not found.' });
+    }
+
+    item.name = name.trim();
+    await item.save();
+
+    return res.json({
+      message: 'Item renamed successfully.',
+      item
+    });
+  } catch (error) {
+    console.error('Error in renameItem:', error);
+    return res.status(500).json({
+      message: 'Failed to rename item.',
+      error: error.message
+    });
+  }
+};
+
 // DELETE /api/material-bank/items/:itemId
 export const deleteItem = async (req, res) => {
   try {
@@ -356,7 +538,7 @@ export const deleteItem = async (req, res) => {
       return res.status(404).json({ message: 'Material item not found.' });
     }
 
-    if (item.type === 'file' && item.drive_file_id) {
+    if (item.type === 'file') {
       await deleteFile(item.drive_file_id, item.file_url);
     }
 
@@ -385,11 +567,12 @@ export const reorderItems = async (req, res) => {
     }
 
     const organizationId = req.user.organizationId;
+    const startIndex = typeof req.body.startIndex === 'number' ? req.body.startIndex : 0;
 
     // Update each item's order_index according to its array position
     const updatePromises = itemIds.map((id, index) =>
       MaterialBankItem.update(
-        { order_index: index },
+        { order_index: startIndex + index },
         {
           where: {
             id,
@@ -427,10 +610,11 @@ export const reorderFolders = async (req, res) => {
     }
 
     const organizationId = req.user.organizationId;
+    const startIndex = typeof req.body.startIndex === 'number' ? req.body.startIndex : 0;
 
     const updatePromises = folderIds.map((id, index) =>
       MaterialBankFolder.update(
-        { order_index: index },
+        { order_index: startIndex + index },
         {
           where: {
             id,

@@ -2,6 +2,7 @@ import { ClassroomResource, User, Classroom, ClassroomTeacher, ClassroomFolder, 
 import { uploadFile, deleteFile } from '../services/storage.service.js';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
+import { fixFilenameEncoding } from './material-bank.controller.js';
 
 let isResourceTableMigrated = false;
 const ensureResourceOrderIndexColumn = async () => {
@@ -54,15 +55,19 @@ export const uploadResource = async (req, res) => {
     }
 
     // Upload using S3/Google Drive / local storage fallback
-    const { fileId, webViewLink } = await uploadFile(file.buffer, file.originalname, file.mimetype);
+    const { assignedStudentIds, fileName } = req.body;
+    const resolvedName = (fileName && typeof fileName === 'string' && fileName.trim())
+      ? fileName.trim()
+      : fixFilenameEncoding(file.originalname);
+
+    const { fileId, webViewLink } = await uploadFile(file.buffer, resolvedName, file.mimetype);
 
     let targetFolderId = folderId ? parseInt(folderId, 10) : null;
 
     // Save metadata in database
-    const { assignedStudentIds } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
-      name: file.originalname,
+      name: resolvedName,
       drive_file_id: fileId,
       drive_link: webViewLink,
       mime_type: file.mimetype,
@@ -480,11 +485,24 @@ export const deleteFolder = async (req, res) => {
     });
 
     for (const resrc of resources) {
-      if (resrc.drive_file_id) {
-        const usedInBank = await MaterialBankItem.findOne({ where: { drive_file_id: resrc.drive_file_id } });
-        const otherRefs = await ClassroomResource.findOne({
-          where: { drive_file_id: resrc.drive_file_id, id: { [Op.ne]: resrc.id } }
-        });
+      if (resrc.drive_file_id || resrc.drive_link) {
+        const matchConditions = [];
+        if (resrc.drive_file_id) matchConditions.push({ drive_file_id: resrc.drive_file_id });
+        if (resrc.drive_link) matchConditions.push({ file_url: resrc.drive_link });
+
+        const usedInBank = matchConditions.length > 0 ? await MaterialBankItem.findOne({ where: { [Op.or]: matchConditions } }) : null;
+
+        const otherResourceConditions = [];
+        if (resrc.drive_file_id) otherResourceConditions.push({ drive_file_id: resrc.drive_file_id });
+        if (resrc.drive_link) otherResourceConditions.push({ drive_link: resrc.drive_link });
+
+        const otherRefs = otherResourceConditions.length > 0 ? await ClassroomResource.findOne({
+          where: {
+            [Op.or]: otherResourceConditions,
+            id: { [Op.ne]: resrc.id }
+          }
+        }) : null;
+
         if (!usedInBank && !otherRefs) {
           await deleteFile(resrc.drive_file_id, resrc.drive_link);
         }
@@ -533,11 +551,24 @@ export const deleteResource = async (req, res) => {
     }
 
     // Safely delete from Google Drive / S3 / local filesystem only if not referenced anywhere else
-    if (resource.drive_file_id) {
-      const usedInBank = await MaterialBankItem.findOne({ where: { drive_file_id: resource.drive_file_id } });
-      const otherRefs = await ClassroomResource.findOne({
-        where: { drive_file_id: resource.drive_file_id, id: { [Op.ne]: resource.id } }
-      });
+    if (resource.drive_file_id || resource.drive_link) {
+      const matchConditions = [];
+      if (resource.drive_file_id) matchConditions.push({ drive_file_id: resource.drive_file_id });
+      if (resource.drive_link) matchConditions.push({ file_url: resource.drive_link });
+
+      const usedInBank = matchConditions.length > 0 ? await MaterialBankItem.findOne({ where: { [Op.or]: matchConditions } }) : null;
+
+      const otherResourceConditions = [];
+      if (resource.drive_file_id) otherResourceConditions.push({ drive_file_id: resource.drive_file_id });
+      if (resource.drive_link) otherResourceConditions.push({ drive_link: resource.drive_link });
+
+      const otherRefs = otherResourceConditions.length > 0 ? await ClassroomResource.findOne({
+        where: {
+          [Op.or]: otherResourceConditions,
+          id: { [Op.ne]: resource.id }
+        }
+      }) : null;
+
       if (!usedInBank && !otherRefs) {
         await deleteFile(resource.drive_file_id, resource.drive_link);
       }
