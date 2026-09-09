@@ -142,7 +142,7 @@ const UserProfile: React.FC = () => {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px' }}>
+      <div className="ld-two-col-layout">
         {/* Left Column: Avatar & Summary Card */}
         <div className="ld-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <div style={{ position: 'relative', margin: '16px 0 20px' }}>
@@ -209,7 +209,7 @@ const UserProfile: React.FC = () => {
           </div>
 
           <form onSubmit={handleSaveProfile}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '20px' }}>
               <div className="form-group-ld">
                 <label className="form-label-ld" htmlFor="userFullName">Full Name *</label>
                 <div style={{ position: 'relative' }}>
@@ -238,7 +238,7 @@ const UserProfile: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '20px' }}>
               <div className="form-group-ld">
                 <label className="form-label-ld" htmlFor="userRole">Account Role</label>
                 <input

@@ -14,6 +14,7 @@ interface AssignQuizModalProps {
   classroomId: number;
   classroomStudents: Student[];
   quizToEdit?: Quiz | null;
+  mode?: 'quiz' | 'exam';
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -23,9 +24,11 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
   classroomId,
   classroomStudents,
   quizToEdit,
+  mode = 'quiz',
   onClose,
   onSuccess
 }) => {
+  const isExam = mode === 'exam';
   const [orgQuizzes, setOrgQuizzes] = useState<Quiz[]>([]);
   const [loadingQuizzes, setLoadingQuizzes] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('');
@@ -145,12 +148,12 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quizToEdit && !selectedTemplateId) {
-      setError('Please select a Quiz Template created via Quiz Builder.');
+      setError(`Please select a ${isExam ? 'Template created via Quiz Builder' : 'Quiz Template created via Quiz Builder'}.`);
       return;
     }
 
     if (selectedStudentIds.length === 0) {
-      setError('Please select at least one student to assign this quiz.');
+      setError(`Please select at least one student to assign this ${isExam ? 'exam' : 'quiz'}.`);
       return;
     }
 
@@ -173,7 +176,8 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
           proctorExtensionRequired: proctorExtension,
           shuffleQuestions,
           shuffleOptions,
-          assignedStudentIds: selectedStudentIds
+          assignedStudentIds: selectedStudentIds,
+          testType: isExam ? 'exam' : 'session'
         });
       } else {
         await quizBuilderService.assignQuizToClassroom({
@@ -192,14 +196,15 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
           proctorExtensionRequired: proctorExtension,
           shuffleQuestions,
           shuffleOptions,
-          assignedStudentIds: selectedStudentIds
+          assignedStudentIds: selectedStudentIds,
+          testType: isExam ? 'exam' : 'session'
         });
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to save assigned quiz.');
+      setError(err.response?.data?.message || err.message || `Failed to save assigned ${isExam ? 'exam' : 'quiz'}.`);
     } finally {
       setSubmitting(false);
     }
@@ -243,12 +248,16 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
         }}>
           <div>
             <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>
-              {quizToEdit ? 'Edit Assigned Quiz' : 'Assign Quiz to Classroom'}
+              {quizToEdit
+                ? (isExam ? 'Edit Assigned Exam' : 'Edit Assigned Quiz')
+                : (isExam ? 'Assign Exam to Classroom' : 'Assign Quiz to Classroom')}
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
               {quizToEdit
                 ? 'Modify schedules, proctoring options, time limits, and assigned students.'
-                : 'Select a Quiz Builder template, configure schedules, proctoring options, and target students.'}
+                : (isExam
+                    ? 'Select a Quiz Builder template, configure exam schedules, proctoring options, and target students.'
+                    : 'Select a Quiz Builder template, configure schedules, proctoring options, and target students.')}
             </p>
           </div>
 
@@ -284,7 +293,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             {/* 1. Quiz Template Selection */}
             {!quizToEdit && (
               <div style={{ marginBottom: '20px' }}>
-                <label className="form-label-ld">Select Quiz Template (From Quiz Builder) *</label>
+                <label className="form-label-ld">Select {isExam ? 'Exam Template (From Quiz Builder)' : 'Quiz Template (From Quiz Builder)'} *</label>
                 {loadingQuizzes ? (
                   <div style={{ fontSize: '13px', color: 'var(--light-text-muted)' }}>Loading organization templates...</div>
                 ) : (
@@ -294,7 +303,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                     onChange={(e) => handleTemplateChange(e.target.value)}
                     required
                   >
-                    <option value="">-- Choose Quiz Template --</option>
+                    <option value="">-- Choose {isExam ? 'Exam / Quiz Template' : 'Quiz Template'} --</option>
                     {orgQuizzes.map(quiz => (
                       <option key={quiz.id} value={quiz.id}>
                         {quiz.title} ({quiz.total_questions || (quiz.questions?.length || 0)} Questions)
@@ -306,7 +315,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             )}
 
             {/* 2. Opening Window & Duration */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-3" style={{ marginBottom: '20px' }}>
               <div>
                 <label className="form-label-ld">Start Opening Window</label>
                 <input
@@ -341,7 +350,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
             </div>
 
             {/* 3. Activation Mode & Score Release Policy */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '20px' }}>
               <div style={{ border: '1px solid var(--light-border)', padding: '14px', borderRadius: '10px', backgroundColor: 'var(--light-table-header-bg)' }}>
                 <label className="form-label-ld" style={{ marginBottom: '8px' }}>Quiz Activation Mode</label>
                 <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
@@ -389,7 +398,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                 <span>Anti-Cheating & Proctoring Prevention Options</span>
               </h4>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div className="form-grid-2" style={{ gap: '12px', marginBottom: '12px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -409,7 +418,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+              <div className="form-grid-2-1" style={{ gap: '12px' }}>
                 <div>
                   <label className="form-label-ld">Tab Switch / New Tab Monitoring</label>
                   <select
@@ -482,7 +491,7 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
                   No students currently enrolled in this classroom.
                 </div>
               ) : (
-                <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div className="form-grid-2" style={{ maxHeight: '160px', overflowY: 'auto', gap: '8px' }}>
                   {classroomStudents.map(student => {
                     const isChecked = selectedStudentIds.includes(student.id);
 
@@ -538,7 +547,9 @@ export const AssignQuizModal: React.FC<AssignQuizModalProps> = ({
               className="btn-ld btn-ld-primary"
               disabled={submitting}
             >
-              {submitting ? 'Assigning Quiz...' : 'Assign Quiz'}
+              {submitting
+                ? (quizToEdit ? 'Saving...' : (isExam ? 'Assigning Exam...' : 'Assigning Quiz...'))
+                : (quizToEdit ? 'Save Changes' : (isExam ? 'Assign Exam' : 'Assign Quiz'))}
             </button>
           </div>
         </form>

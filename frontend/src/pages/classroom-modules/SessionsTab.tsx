@@ -1298,17 +1298,20 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
             </div>
           </div>
 
-          {/* Weekday Header Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', marginBottom: '10px', textAlign: 'center' }}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(dayName => (
-              <div key={`head-${dayName}`} style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', padding: '6px 0' }}>
-                {dayName}
+          {/* Responsive Calendar Wrapper */}
+          <div style={{ overflowX: 'auto', width: '100%', WebkitOverflowScrolling: 'touch', paddingBottom: '8px' }}>
+            <div style={{ minWidth: '700px' }}>
+              {/* Weekday Header Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', marginBottom: '10px', textAlign: 'center' }}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(dayName => (
+                  <div key={`head-${dayName}`} style={{ fontSize: '12px', fontWeight: '700', color: 'var(--light-text-secondary)', textTransform: 'uppercase', padding: '6px 0' }}>
+                    {dayName}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Calendar Day Grid */}
-          <div className="calendar-grid">
+              {/* Calendar Day Grid */}
+              <div className="calendar-grid">
             {calendarGrid.map((cell, idx) => {
               const isToday = cell.dateStr === todayStr;
               
@@ -1386,9 +1389,11 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                       );
                     })}
                   </div>
-                </div>
-              );
-            })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

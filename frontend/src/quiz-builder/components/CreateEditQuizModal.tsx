@@ -176,7 +176,7 @@ export const CreateEditQuizModal: React.FC<CreateEditQuizModalProps> = ({
             )}
 
             {/* Quiz Metadata */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '16px' }}>
               <div>
                 <label className="form-label-ld">Quiz Name / Title *</label>
                 <input

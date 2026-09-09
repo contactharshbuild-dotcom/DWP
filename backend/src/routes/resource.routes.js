@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { 
   uploadResource, 
   getClassroomResources, 
+  renameResource,
   deleteResource,
   addLinkResource,
   createFolder,
@@ -46,10 +47,16 @@ router.delete('/:resourceId', deleteResource);
 // Assign resource
 router.put('/:resourceId/assign', assignResource);
 
+// Rename resource
+router.put('/:resourceId/rename', renameResource);
+
 // Folders endpoints
 router.post('/folders', createFolder);
 router.put('/folders/:folderId', renameFolder);
 router.delete('/folders/:folderId', deleteFolder);
 router.put('/folders/:folderId/assign', assignFolder);
+
+// Fallback update resource endpoint
+router.put('/:resourceId', renameResource);
 
 export default router;

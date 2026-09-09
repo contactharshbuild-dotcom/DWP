@@ -100,11 +100,13 @@ export const getClassroomQuizzes = async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 5;
     const search = req.query.search ? String(req.query.search) : '';
+    const testType = req.query.test_type || req.query.testType;
 
     const result = await QuizBuilderService.getClassroomAssignedQuizzes(classroomId, organizationId, {
       page,
       limit,
-      search
+      search,
+      testType
     });
     return res.json(result);
   } catch (error) {

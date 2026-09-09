@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   FiChevronRight, FiPlus, FiYoutube, FiFolderPlus, FiUploadCloud, 
   FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud,
@@ -49,6 +50,7 @@ interface ResourcesTabProps {
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDeleteFolder: (folderId: number, e: React.MouseEvent) => void;
   handleRenameFolder?: (folderId: number, newName: string) => Promise<any>;
+  handleRenameResource?: (resourceId: number, newName: string) => Promise<any>;
   handleDeleteResource: (resourceId: number) => void;
   openAssignModal: (type: 'material' | 'folder', item: any) => void;
   isPreviewable: (res: Resource) => boolean;
@@ -73,6 +75,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   handleFileChange,
   handleDeleteFolder,
   handleRenameFolder,
+  handleRenameResource,
   handleDeleteResource,
   openAssignModal,
   isPreviewable,
@@ -111,6 +114,36 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
     }
   };
 
+  // Rename File / Resource modal state
+  const [renameTargetResource, setRenameTargetResource] = useState<Resource | null>(null);
+  const [renameResourceName, setRenameResourceName] = useState('');
+  const [renameResourceLoading, setRenameResourceLoading] = useState(false);
+  const [renameResourceError, setRenameResourceError] = useState<string | null>(null);
+
+  const handleRenameResourceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTargetResource || !handleRenameResource) return;
+    if (!renameResourceName.trim()) {
+      setRenameResourceError('File name is required.');
+      return;
+    }
+    if (renameResourceName.trim() === renameTargetResource.name.trim()) {
+      setRenameTargetResource(null);
+      return;
+    }
+
+    setRenameResourceLoading(true);
+    setRenameResourceError(null);
+    try {
+      await handleRenameResource(renameTargetResource.id, renameResourceName.trim());
+      setRenameTargetResource(null);
+    } catch (err: any) {
+      setRenameResourceError(err.response?.data?.message || err.message || 'Failed to rename file.');
+    } finally {
+      setRenameResourceLoading(false);
+    }
+  };
+
   // Dropdown menu state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -139,28 +172,66 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   }, [isDropdownOpen]);
 
   // Row action three-dots menu state
+  interface MenuPosition {
+    top?: number;
+    bottom?: number;
+    left: number;
+  }
+
   const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  const toggleActionMenu = (menuId: string, buttonEl: HTMLElement) => {
+    if (activeActionMenu === menuId) {
+      setActiveActionMenu(null);
+      setMenuPosition(null);
+      return;
+    }
+
+    const rect = buttonEl.getBoundingClientRect();
+    const menuWidth = 160;
+    const menuEstimatedHeight = 190;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpwards = spaceBelow < menuEstimatedHeight && rect.top > menuEstimatedHeight;
+
+    setMenuPosition({
+      top: openUpwards ? undefined : rect.bottom + 4,
+      bottom: openUpwards ? window.innerHeight - rect.top + 4 : undefined,
+      left: Math.max(10, rect.right - menuWidth)
+    });
+    setActiveActionMenu(menuId);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
         setActiveActionMenu(null);
+        setMenuPosition(null);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setActiveActionMenu(null);
+        setMenuPosition(null);
       }
+    };
+    const handleScrollOrResize = () => {
+      setActiveActionMenu(null);
+      setMenuPosition(null);
     };
 
     if (activeActionMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
     };
   }, [activeActionMenu]);
 
@@ -463,16 +534,13 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   </td>
                   <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     {user?.role !== 'student' && (
-                      <div 
-                        ref={activeActionMenu === `folder-${folder.id}` ? actionMenuRef : undefined}
-                        style={{ position: 'relative', display: 'inline-block' }}
-                      >
+                      <div style={{ position: 'relative', display: 'inline-block' }}>
                         <button
                           type="button"
                           className="btn-ld btn-ld-secondary btn-ld-small"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActiveActionMenu(activeActionMenu === `folder-${folder.id}` ? null : `folder-${folder.id}`);
+                            toggleActionMenu(`folder-${folder.id}`, e.currentTarget);
                           }}
                           style={{
                             padding: '5px 8px',
@@ -486,19 +554,21 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                           <FiMoreVertical size={16} />
                         </button>
 
-                        {activeActionMenu === `folder-${folder.id}` && (
+                        {activeActionMenu === `folder-${folder.id}` && menuPosition && createPortal(
                           <div
+                            ref={actionMenuRef}
                             onClick={(e) => e.stopPropagation()}
                             style={{
-                              position: 'absolute',
-                              top: 'calc(100% + 4px)',
-                              right: 0,
-                              minWidth: '150px',
+                              position: 'fixed',
+                              top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto',
+                              bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto',
+                              left: `${menuPosition.left}px`,
+                              width: '160px',
                               backgroundColor: 'var(--light-card, #fff)',
                               border: '1px solid var(--light-border, #e2e8f0)',
                               borderRadius: '8px',
-                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                              zIndex: 100,
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                              zIndex: 99999,
                               padding: '4px',
                               display: 'flex',
                               flexDirection: 'column',
@@ -513,6 +583,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                                   setRenameFolderName(folder.name);
                                   setRenameFolderError(null);
                                   setActiveActionMenu(null);
+                                  setMenuPosition(null);
                                 }}
                                 style={{
                                   display: 'flex',
@@ -540,6 +611,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                               onClick={() => {
                                 openAssignModal('folder', folder);
                                 setActiveActionMenu(null);
+                                setMenuPosition(null);
                               }}
                               style={{
                                 display: 'flex',
@@ -566,6 +638,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                               onClick={(e) => {
                                 handleDeleteFolder(folder.id, e);
                                 setActiveActionMenu(null);
+                                setMenuPosition(null);
                               }}
                               style={{
                                 display: 'flex',
@@ -587,7 +660,8 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                               <FiTrash2 size={14} style={{ color: '#ef4444' }} />
                               <span>Delete</span>
                             </button>
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     )}
@@ -674,16 +748,13 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                     <td>{res.uploader?.name}</td>
                     <td style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>{uploadDate}</td>
                     <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                      <div 
-                        ref={activeActionMenu === `res-${res.id}` ? actionMenuRef : undefined}
-                        style={{ position: 'relative', display: 'inline-block' }}
-                      >
+                      <div style={{ position: 'relative', display: 'inline-block' }}>
                         <button
                           type="button"
                           className="btn-ld btn-ld-secondary btn-ld-small"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActiveActionMenu(activeActionMenu === `res-${res.id}` ? null : `res-${res.id}`);
+                            toggleActionMenu(`res-${res.id}`, e.currentTarget);
                           }}
                           style={{
                             padding: '5px 8px',
@@ -697,19 +768,21 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                           <FiMoreVertical size={16} />
                         </button>
 
-                        {activeActionMenu === `res-${res.id}` && (
+                        {activeActionMenu === `res-${res.id}` && menuPosition && createPortal(
                           <div
+                            ref={actionMenuRef}
                             onClick={(e) => e.stopPropagation()}
                             style={{
-                              position: 'absolute',
-                              top: 'calc(100% + 4px)',
-                              right: 0,
-                              minWidth: '150px',
+                              position: 'fixed',
+                              top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto',
+                              bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto',
+                              left: `${menuPosition.left}px`,
+                              width: '160px',
                               backgroundColor: 'var(--light-card, #fff)',
                               border: '1px solid var(--light-border, #e2e8f0)',
                               borderRadius: '8px',
-                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                              zIndex: 100,
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                              zIndex: 99999,
                               padding: '4px',
                               display: 'flex',
                               flexDirection: 'column',
@@ -721,6 +794,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                               onClick={() => {
                                 setPreviewResource(res);
                                 setActiveActionMenu(null);
+                                setMenuPosition(null);
                               }}
                               style={{
                                 display: 'flex',
@@ -743,12 +817,45 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                               <span>Open</span>
                             </button>
 
+                            {handleRenameResource && (user?.role === 'admin' || user?.role === 'teacher' || res.uploader?.id === user?.id) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRenameTargetResource(res);
+                                  setRenameResourceName(res.name);
+                                  setRenameResourceError(null);
+                                  setActiveActionMenu(null);
+                                  setMenuPosition(null);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'none',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  color: 'var(--light-text-primary)',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--light-nav-hover, #f1f5f9)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                              >
+                                <FiEdit2 size={14} style={{ color: 'var(--light-primary)' }} />
+                                <span>Rename</span>
+                              </button>
+                            )}
+
                             {(user?.role === 'admin' || user?.role === 'teacher') && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   openAssignModal('material', res);
                                   setActiveActionMenu(null);
+                                  setMenuPosition(null);
                                 }}
                                 style={{
                                   display: 'flex',
@@ -778,6 +885,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                                 onClick={() => {
                                   handleDeleteResource(res.id);
                                   setActiveActionMenu(null);
+                                  setMenuPosition(null);
                                 }}
                                 style={{
                                   display: 'flex',
@@ -800,7 +908,8 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                                 <span>Delete</span>
                               </button>
                             )}
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </td>
@@ -846,7 +955,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
 
             <form onSubmit={handleRenameSubmit}>
               <div style={{ marginBottom: '20px' }}>
-                <label className="form-label-ld" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
+                <label className="form-label-ld" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
                   Folder Name *
                 </label>
                 <input 
@@ -876,6 +985,77 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   disabled={renameFolderLoading}
                 >
                   {renameFolderLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rename File / Resource Modal */}
+      {renameTargetResource && (
+        <div className="modal-overlay-ld" onClick={() => setRenameTargetResource(null)}>
+          <div 
+            className="modal-content-ld"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '440px', width: '100%' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--light-primary)' }}>
+                  <FiEdit2 size={20} />
+                </div>
+                <h3 className="modal-title-ld" style={{ margin: 0 }}>
+                  Rename File
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setRenameTargetResource(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--light-text-secondary, #64748b)', display: 'flex', alignItems: 'center' }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {renameResourceError && (
+              <div className="alert-ld" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', marginBottom: '16px' }}>
+                {renameResourceError}
+              </div>
+            )}
+
+            <form onSubmit={handleRenameResourceSubmit}>
+              <div style={{ marginBottom: '20px' }}>
+                <label className="form-label-ld" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: 'var(--light-text-primary)' }}>
+                  File Name *
+                </label>
+                <input 
+                  type="text" 
+                  className="input-ld"
+                  placeholder="e.g., Chapter 1 Lecture Notes.pdf"
+                  value={renameResourceName}
+                  onChange={(e) => setRenameResourceName(e.target.value)}
+                  autoFocus
+                  disabled={renameResourceLoading}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-ld btn-ld-secondary"
+                  onClick={() => setRenameTargetResource(null)}
+                  disabled={renameResourceLoading}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-ld btn-ld-primary"
+                  disabled={renameResourceLoading}
+                >
+                  {renameResourceLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

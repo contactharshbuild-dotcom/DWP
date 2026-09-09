@@ -19,7 +19,8 @@ import {
   FiCalendar,
   FiUserPlus,
   FiChevronDown,
-  FiEdit2
+  FiEdit2,
+  FiFileText
 } from 'react-icons/fi';
 import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -35,6 +36,8 @@ import { AssignContentModal } from './classroom-modules/modals/AssignContentModa
 import { ImportMaterialBankModal } from './classroom-modules/modals/ImportMaterialBankModal';
 import { AssignExistingStudentsModal } from './classroom-modules/modals/AssignExistingStudentsModal';
 import { materialBankService } from '../material-bank/services/materialBankService';
+import { quizBuilderService } from '../quiz-builder/services/quizBuilderService';
+import { useTheme } from '../context/ThemeContext';
 
 interface Teacher {
   id: number;
@@ -261,7 +264,7 @@ function shuffleArray<T>(array: T[]): T[] {
   return arr;
 }
 
-const validTabs = ['active', 'pending', 'students', 'resources', 'mcqs', 'practicals', 'sessions', 'assign_quiz'];
+const validTabs = ['active', 'pending', 'students', 'resources', 'mcqs', 'practicals', 'sessions', 'assign_quiz', 'exam', 'assign_exam'];
 
 const ClassroomDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -269,6 +272,8 @@ const ClassroomDetails: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
   const { fetchClassrooms } = useClassrooms();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   // Classroom Detail State
   const [classroom, setClassroom] = useState<Classroom | null>(null);
@@ -281,7 +286,7 @@ const ClassroomDetails: React.FC = () => {
     ? tabParam
     : (user?.role === 'student' ? 'resources' : 'active');
 
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions' | 'assign_quiz'>(initialTab as any);
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'students' | 'resources' | 'mcqs' | 'practicals' | 'sessions' | 'assign_quiz' | 'exam' | 'assign_exam'>(initialTab as any);
 
   // Loaded tab flags for lazy on-demand data fetching
   const [resourcesLoaded, setResourcesLoaded] = useState(false);
@@ -308,6 +313,50 @@ const ClassroomDetails: React.FC = () => {
     });
   };
   const [pendingQuizCount, setPendingQuizCount] = useState<number>(0);
+  const [pendingExamCount, setPendingExamCount] = useState<number>(0);
+
+  // Pre-fetch pending quiz & exam counts on classroom load for students
+  useEffect(() => {
+    if (user?.role === 'student' && id) {
+      const now = new Date();
+
+      // Fetch pending quizzes count
+      quizBuilderService.getClassroomQuizzes(Number(id), { test_type: 'quiz', limit: 100 })
+        .then(data => {
+          const count = (data.quizzes || []).filter((quiz: any) => {
+            const start = quiz.start_window ? new Date(quiz.start_window) : null;
+            const end = quiz.end_window ? new Date(quiz.end_window) : null;
+            const isWindowActive = (!start || now >= start) && (!end || now <= end);
+            const isExpired = !!end && now > end;
+            const isScheduled = quiz.status === 'scheduled';
+            const isActive = (quiz.status === 'active' || isWindowActive) && !isExpired;
+            const attempts = quiz.attempts || [];
+            const hasAttempt = user ? attempts.some((a: any) => a.user_id === user.id) : false;
+            return (isActive || isScheduled) && !hasAttempt;
+          }).length;
+          setPendingQuizCount(count);
+        })
+        .catch(err => console.error('Failed to pre-fetch pending quiz count:', err));
+
+      // Fetch pending exams count
+      quizBuilderService.getClassroomQuizzes(Number(id), { test_type: 'exam', limit: 100 })
+        .then(data => {
+          const count = (data.quizzes || []).filter((quiz: any) => {
+            const start = quiz.start_window ? new Date(quiz.start_window) : null;
+            const end = quiz.end_window ? new Date(quiz.end_window) : null;
+            const isWindowActive = (!start || now >= start) && (!end || now <= end);
+            const isExpired = !!end && now > end;
+            const isScheduled = quiz.status === 'scheduled';
+            const isActive = (quiz.status === 'active' || isWindowActive) && !isExpired;
+            const attempts = quiz.attempts || [];
+            const hasAttempt = user ? attempts.some((a: any) => a.user_id === user.id) : false;
+            return (isActive || isScheduled) && !hasAttempt;
+          }).length;
+          setPendingExamCount(count);
+        })
+        .catch(err => console.error('Failed to pre-fetch pending exam count:', err));
+    }
+  }, [user, id]);
 
   // Student Invitation States
   const [showStudentInviteModal, setShowStudentInviteModal] = useState(false);
@@ -1227,6 +1276,18 @@ const ClassroomDetails: React.FC = () => {
     }
   };
 
+  // Rename Resource / File
+  const handleRenameResource = async (resourceId: number, newName: string) => {
+    try {
+      const response = await api.put(`/resources/${resourceId}/rename`, { name: newName });
+      setResources(prev => prev.map(r => r.id === resourceId ? { ...r, name: response.data.resource.name } : r));
+      return response.data.resource;
+    } catch (err: any) {
+      console.error('Failed to rename file:', err);
+      throw err;
+    }
+  };
+
   const copyToClipboard = async (link: string) => {
     try {
       await navigator.clipboard.writeText(link);
@@ -1987,7 +2048,8 @@ const ClassroomDetails: React.FC = () => {
           left: 0,
           width: '100vw',
           height: '100vh',
-          backgroundColor: '#f3f4f6',
+          backgroundColor: isDark ? '#0b0f19' : '#f3f4f6',
+          color: isDark ? '#f9fafb' : '#0f172a',
           zIndex: 9999,
           overflowY: 'auto',
           padding: '24px 16px',
@@ -2010,19 +2072,20 @@ const ClassroomDetails: React.FC = () => {
               padding: '24px'
             }}>
               <div style={{
-                backgroundColor: '#ffffff',
+                backgroundColor: isDark ? '#141c2e' : '#ffffff',
+                border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
                 borderRadius: '16px',
                 padding: '36px',
                 maxWidth: '520px',
                 width: '100%',
                 textAlign: 'center',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+                boxShadow: isDark ? '0 25px 50px -12px rgba(0, 0, 0, 0.5)' : '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
               }}>
                 <div style={{
                   width: '64px',
                   height: '64px',
                   borderRadius: '50%',
-                  backgroundColor: '#fef2f2',
+                  backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#fef2f2',
                   color: '#dc2626',
                   display: 'flex',
                   alignItems: 'center',
@@ -2032,11 +2095,11 @@ const ClassroomDetails: React.FC = () => {
                   <FiShield size={34} />
                 </div>
 
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '20px', fontWeight: '800', color: isDark ? '#f9fafb' : '#0f172a' }}>
                   Full-Screen Mode Required
                 </h3>
 
-                <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '24px' }}>
+                <p style={{ fontSize: '14px', color: isDark ? '#9ca3af' : '#64748b', lineHeight: '1.6', marginBottom: '24px' }}>
                   You have exited full-screen mode. To maintain academic integrity, this examination requires active full-screen mode. Your exit has been logged in your proctor report.
                 </p>
 
@@ -2093,16 +2156,36 @@ const ClassroomDetails: React.FC = () => {
           )}
           {/* Pledge Screen */}
           {activeAttempt.status === 'started' && !pledgeConfirmed ? (
-            <div style={{ maxWidth: '600px', margin: '80px auto', backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 10px 25px rgba(0,0,0,0.08)' }}>
+            <div style={{
+              maxWidth: '600px',
+              margin: '80px auto',
+              backgroundColor: isDark ? '#141c2e' : '#ffffff',
+              border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+              borderRadius: '16px',
+              padding: '32px',
+              boxShadow: isDark ? '0 10px 25px rgba(0,0,0,0.4)' : '0 10px 25px rgba(0,0,0,0.08)'
+            }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <FiShield size={48} style={{ color: 'var(--light-primary)' }} />
-                <h2 style={{ fontWeight: 700, marginTop: '12px' }}>Academic Integrity Pledge</h2>
-                <p style={{ color: 'var(--light-text-secondary)', fontSize: '14px', marginTop: '6px' }}>
+                <h2 style={{ fontWeight: 700, marginTop: '12px', color: isDark ? '#f9fafb' : '#0f172a' }}>
+                  Academic Integrity Pledge
+                </h2>
+                <p style={{ color: isDark ? '#9ca3af' : 'var(--light-text-secondary)', fontSize: '14px', marginTop: '6px' }}>
                   Please confirm the honor pledge before beginning the examination.
                 </p>
               </div>
 
-              <div style={{ padding: '16px', backgroundColor: 'var(--light-bg-hover)', borderRadius: '8px', borderLeft: '4px solid var(--light-primary)', fontSize: '14.5px', lineHeight: '1.6', color: 'var(--light-text)', marginBottom: '24px' }}>
+              <div style={{
+                padding: '16px',
+                backgroundColor: isDark ? '#1a2234' : '#f8fafc',
+                border: `1px solid ${isDark ? '#2e3a50' : '#e2e8f0'}`,
+                borderRadius: '8px',
+                borderLeft: '4px solid var(--light-primary)',
+                fontSize: '14.5px',
+                lineHeight: '1.6',
+                color: isDark ? '#e2e8f0' : '#334155',
+                marginBottom: '24px'
+              }}>
                 "I pledge my honor as a student that I have not and will not give or receive unauthorized aid on this examination. I understand that my tab switches, loss of browser focus, and fullscreen exits will be actively monitored and logged."
               </div>
 
@@ -2113,7 +2196,9 @@ const ClassroomDetails: React.FC = () => {
                   onChange={(e) => setActivePledgeChecked(e.target.checked)} 
                   style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
-                <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--light-text)' }}>I confirm and agree to this pledge.</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: isDark ? '#f9fafb' : '#1e293b' }}>
+                  I confirm and agree to this pledge.
+                </span>
               </label>
 
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -2157,10 +2242,25 @@ const ClassroomDetails: React.FC = () => {
             /* Active questions panel */
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
               {/* Sticky Header Bar with Live Clock Timer */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '14px',
+                backgroundColor: isDark ? '#141c2e' : 'white',
+                padding: '16px 20px',
+                borderRadius: '12px',
+                boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 12px rgba(0,0,0,0.05)',
+                border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+                marginBottom: '20px',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
+              }}>
                 <div>
-                  <h3 style={{ margin: '0 0 4px 0', fontWeight: 700, fontSize: '18px', color: '#0f172a' }}>{activeTest.title}</h3>
-                  <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
+                  <h3 style={{ margin: '0 0 4px 0', fontWeight: 700, fontSize: '18px', color: isDark ? '#f9fafb' : '#0f172a' }}>{activeTest.title}</h3>
+                  <span style={{ fontSize: '13px', color: isDark ? '#9ca3af' : 'var(--light-text-secondary)' }}>
                     Total Questions: {activeTest.questions?.length || activeTest.total_questions}
                     {proctorWarningCount > 0 && ` • Warnings: ${proctorWarningCount}/${activeTest.security_max_warnings}`}
                   </span>
@@ -2171,9 +2271,9 @@ const ClassroomDetails: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    color: attemptTimeRemaining < 180 ? '#dc2626' : 'var(--light-primary)',
-                    backgroundColor: attemptTimeRemaining < 180 ? '#fef2f2' : '#eef2ff',
-                    border: attemptTimeRemaining < 180 ? '1px solid #fca5a5' : '1px solid #c7d2fe',
+                    color: attemptTimeRemaining < 180 ? '#ef4444' : 'var(--light-primary)',
+                    backgroundColor: attemptTimeRemaining < 180 ? (isDark ? 'rgba(239, 68, 68, 0.15)' : '#fef2f2') : (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eef2ff'),
+                    border: attemptTimeRemaining < 180 ? `1px solid ${isDark ? '#ef4444' : '#fca5a5'}` : `1px solid ${isDark ? '#4f46e5' : '#c7d2fe'}`,
                     padding: '8px 16px',
                     borderRadius: '30px',
                     fontWeight: 800,
@@ -2195,14 +2295,25 @@ const ClassroomDetails: React.FC = () => {
 
               {/* Proctor Warning Toast */}
               {proctorWarningMsg && (
-                <div style={{ padding: '12px 16px', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', fontWeight: '600', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2',
+                  border: `1px solid ${isDark ? '#ef4444' : '#fca5a5'}`,
+                  borderRadius: '8px',
+                  color: isDark ? '#fca5a5' : '#b91c1c',
+                  fontWeight: '600',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <FiAlertCircle size={20} />
                     <span>{proctorWarningMsg}</span>
                   </div>
                   <button 
                     onClick={() => setProctorWarningMsg(null)}
-                    style={{ background: 'transparent', border: 'none', color: '#b91c1c', cursor: 'pointer', fontWeight: 'bold' }}
+                    style={{ background: 'transparent', border: 'none', color: isDark ? '#fca5a5' : '#b91c1c', cursor: 'pointer', fontWeight: 'bold' }}
                   >
                     Dismiss
                   </button>
@@ -2217,7 +2328,14 @@ const ClassroomDetails: React.FC = () => {
 
                 if (!currentQuestion) {
                   return (
-                    <div style={{ padding: '40px', backgroundColor: '#fff', borderRadius: '12px', textAlign: 'center' }}>
+                    <div style={{
+                      padding: '40px',
+                      backgroundColor: isDark ? '#141c2e' : '#fff',
+                      border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+                      borderRadius: '12px',
+                      textAlign: 'center',
+                      color: isDark ? '#f9fafb' : '#0f172a'
+                    }}>
                       No questions found in this examination.
                     </div>
                   );
@@ -2243,11 +2361,20 @@ const ClassroomDetails: React.FC = () => {
                 const notVisitedCount = Math.max(0, questions.length - visitedCount);
 
                 return (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 310px', gap: '24px', alignItems: 'start', marginBottom: '40px' }}>
+                  <div className="exam-layout-grid">
                     {/* Left Column: Current Question Card */}
-                    <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{
+                      backgroundColor: isDark ? '#141c2e' : 'white',
+                      borderRadius: '14px',
+                      padding: '28px',
+                      boxShadow: isDark ? '0 4px 14px rgba(0,0,0,0.3)' : '0 4px 14px rgba(0,0,0,0.04)',
+                      border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '20px'
+                    }}>
                       {/* Question Top Meta */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${isDark ? '#1f293d' : '#f1f5f9'}`, paddingBottom: '14px' }}>
                         <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--light-primary)' }}>
                           Question {safeIndex + 1} of {questions.length} ({isSubjective ? 'Subjective / Essay' : 'MCQ'})
                         </span>
@@ -2257,14 +2384,14 @@ const ClassroomDetails: React.FC = () => {
                       </div>
 
                       {/* Question Text */}
-                      <p style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>
+                      <p style={{ fontSize: '16px', fontWeight: '600', color: isDark ? '#f9fafb' : '#0f172a', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>
                         {currentQuestion.question_text}
                       </p>
 
                       {/* Question Answers Panel */}
                       {isSubjective ? (
                         <div>
-                          <label className="form-label-ld" style={{ marginBottom: '8px', fontSize: '13px', color: '#475569' }}>
+                          <label className="form-label-ld" style={{ marginBottom: '8px', fontSize: '13px', color: isDark ? '#9ca3af' : '#475569' }}>
                             Type your detailed response below:
                           </label>
                           <textarea
@@ -2281,11 +2408,12 @@ const ClassroomDetails: React.FC = () => {
                               fontSize: '14px',
                               lineHeight: '1.6',
                               borderRadius: '10px',
-                              backgroundColor: '#fff',
-                              border: '1.5px solid #cbd5e1'
+                              backgroundColor: isDark ? '#1a2234' : '#fff',
+                              border: `1.5px solid ${isDark ? '#2e3a50' : '#cbd5e1'}`,
+                              color: isDark ? '#f9fafb' : '#0f172a'
                             }}
                           />
-                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', textAlign: 'right' }}>
+                          <div style={{ fontSize: '12px', color: isDark ? '#9ca3af' : '#64748b', marginTop: '6px', textAlign: 'right' }}>
                             Word count: {(studentResponses[currentQuestion.id!] || '').trim().split(/\s+/).filter(Boolean).length} words
                           </div>
                         </div>
@@ -2303,11 +2431,11 @@ const ClassroomDetails: React.FC = () => {
                                   gap: '12px', 
                                   padding: '14px 18px', 
                                   borderRadius: '10px', 
-                                  border: isSelected ? '2px solid var(--light-primary)' : '1px solid #cbd5e1',
-                                  backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
+                                  border: isSelected ? '2px solid var(--light-primary)' : `1px solid ${isDark ? '#2e3a50' : '#cbd5e1'}`,
+                                  backgroundColor: isSelected ? (isDark ? 'rgba(99, 102, 241, 0.2)' : '#eef2ff') : (isDark ? '#1a2234' : '#ffffff'),
                                   cursor: 'pointer',
                                   transition: 'all 0.15s ease',
-                                  boxShadow: isSelected ? '0 2px 4px rgba(99, 102, 241, 0.1)' : 'none'
+                                  boxShadow: isSelected ? '0 2px 4px rgba(99, 102, 241, 0.15)' : 'none'
                                 }}
                               >
                                 <input 
@@ -2320,10 +2448,10 @@ const ClassroomDetails: React.FC = () => {
                                   }}
                                   style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                                 />
-                                <span style={{ fontWeight: '700', minWidth: '22px', fontSize: '15px', color: isSelected ? 'var(--light-primary)' : '#475569' }}>
+                                <span style={{ fontWeight: '700', minWidth: '22px', fontSize: '15px', color: isSelected ? 'var(--light-primary)' : (isDark ? '#9ca3af' : '#475569') }}>
                                   {opt.key}.
                                 </span>
-                                <span style={{ fontSize: '14.5px', color: '#0f172a', fontWeight: isSelected ? '600' : 'normal' }}>
+                                <span style={{ fontSize: '14.5px', color: isDark ? '#f9fafb' : '#0f172a', fontWeight: isSelected ? '600' : 'normal' }}>
                                   {opt.text}
                                 </span>
                               </label>
@@ -2333,7 +2461,7 @@ const ClassroomDetails: React.FC = () => {
                       )}
 
                       {/* Question Navigation Controls */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '18px', marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${isDark ? '#1f293d' : '#f1f5f9'}`, paddingTop: '18px', marginTop: '10px' }}>
                         <button
                           type="button"
                           className="btn-ld btn-ld-secondary"
@@ -2381,8 +2509,23 @@ const ClassroomDetails: React.FC = () => {
                     </div>
 
                     {/* Right Column: Question Palette matching standard exam UI */}
-                    <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', position: 'sticky', top: '90px' }}>
-                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                    <div style={{
+                      backgroundColor: isDark ? '#141c2e' : '#ffffff',
+                      borderRadius: '14px',
+                      padding: '20px',
+                      boxShadow: isDark ? '0 4px 14px rgba(0,0,0,0.3)' : '0 4px 14px rgba(0,0,0,0.04)',
+                      border: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+                      position: 'sticky',
+                      top: '90px'
+                    }}>
+                      <h4 style={{
+                        margin: '0 0 16px 0',
+                        fontSize: '15px',
+                        fontWeight: '700',
+                        color: isDark ? '#f9fafb' : '#0f172a',
+                        borderBottom: `1px solid ${isDark ? '#1f293d' : '#e2e8f0'}`,
+                        paddingBottom: '10px'
+                      }}>
                         Question Palette
                       </h4>
 
@@ -2393,8 +2536,8 @@ const ClassroomDetails: React.FC = () => {
                           const isAnswered = studentResponses[q.id!] !== undefined && studentResponses[q.id!] !== '';
                           const isVisited = visitedQuestionIndexes.includes(idx);
 
-                          let bgColor = '#e2e8f0'; // Gray (Not Visited)
-                          let textColor = '#475569';
+                          let bgColor = isDark ? '#1e293b' : '#e2e8f0'; // Gray (Not Visited)
+                          let textColor = isDark ? '#94a3af' : '#475569';
 
                           if (isCurrent) {
                             bgColor = '#2563eb'; // Blue (Current Active)
@@ -2415,7 +2558,7 @@ const ClassroomDetails: React.FC = () => {
                               style={{
                                 backgroundColor: bgColor,
                                 color: textColor,
-                                border: 'none',
+                                border: isDark && !isCurrent && !isAnswered && !isVisited ? '1px solid #334155' : 'none',
                                 borderRadius: '8px 8px 8px 2px',
                                 height: '38px',
                                 fontWeight: '700',
@@ -2433,22 +2576,30 @@ const ClassroomDetails: React.FC = () => {
                       </div>
 
                       {/* Palette Status Legend */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        fontSize: '12px',
+                        paddingTop: '14px',
+                        borderTop: `1px solid ${isDark ? '#1f293d' : '#f1f5f9'}`,
+                        color: isDark ? '#9ca3af' : '#475569'
+                      }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#16a34a', display: 'inline-block' }}></span>
-                          <span style={{ fontWeight: '600' }}>Answered ({answeredCount})</span>
+                          <span style={{ fontWeight: '600', color: isDark ? '#e2e8f0' : 'inherit' }}>Answered ({answeredCount})</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#dc2626', display: 'inline-block' }}></span>
-                          <span style={{ fontWeight: '600' }}>Unanswered / Skipped ({skippedCount})</span>
+                          <span style={{ fontWeight: '600', color: isDark ? '#e2e8f0' : 'inherit' }}>Unanswered / Skipped ({skippedCount})</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#2563eb', display: 'inline-block' }}></span>
-                          <span style={{ fontWeight: '600' }}>Current Active</span>
+                          <span style={{ fontWeight: '600', color: isDark ? '#e2e8f0' : 'inherit' }}>Current Active</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: '#e2e8f0', display: 'inline-block' }}></span>
-                          <span style={{ fontWeight: '600' }}>Not Visited ({notVisitedCount})</span>
+                          <span style={{ width: '14px', height: '14px', borderRadius: '4px 4px 4px 1px', backgroundColor: isDark ? '#1e293b' : '#e2e8f0', border: isDark ? '1px solid #334155' : 'none', display: 'inline-block' }}></span>
+                          <span style={{ fontWeight: '600', color: isDark ? '#e2e8f0' : 'inherit' }}>Not Visited ({notVisitedCount})</span>
                         </div>
                       </div>
                     </div>
@@ -2474,31 +2625,6 @@ const ClassroomDetails: React.FC = () => {
             <h2 className="ld-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiBookOpen style={{ color: 'var(--light-primary)' }} />
               <span>{classroom?.name || 'Classroom Details'}</span>
-              {classroom && (user?.role === 'admin' || user?.role === 'teacher') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenameClassName(classroom.name || '');
-                    setRenameClassSubject(classroom.subject || '');
-                    setRenameClassroomError(null);
-                    setShowRenameClassroomModal(true);
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--light-text-muted)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    marginLeft: '4px'
-                  }}
-                  title="Rename Classroom"
-                >
-                  <FiEdit2 size={16} />
-                </button>
-              )}
             </h2>
             <span className="ld-subtitle">
               Subject: {classroom?.subject} • Classroom ID: {classroom?.classroom_id}
@@ -2506,40 +2632,6 @@ const ClassroomDetails: React.FC = () => {
             </span>
           </div>
         </div>
-
-        {classroom && (user?.role === 'admin' || user?.role === 'teacher') && (
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              className="btn-ld btn-ld-secondary" 
-              onClick={() => {
-                setRenameClassName(classroom.name || '');
-                setRenameClassSubject(classroom.subject || '');
-                setRenameClassroomError(null);
-                setShowRenameClassroomModal(true);
-              }}
-            >
-              <FiEdit2 size={15} />
-              <span>Rename</span>
-            </button>
-            {user?.role === 'admin' && (
-              <button 
-                className="btn-ld" 
-                style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
-                onClick={() => {
-                  setDeleteClassroomError(null);
-                  setShowDeleteClassroomModal(true);
-                }}
-              >
-                <FiTrash2 size={16} />
-                <span>Delete Classroom</span>
-              </button>
-            )}
-            <button className="btn-ld btn-ld-primary" onClick={() => setShowModal(true)}>
-              <FiPlus size={18} />
-              <span>Invite Teacher</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {error && (
@@ -2556,7 +2648,7 @@ const ClassroomDetails: React.FC = () => {
       ) : classroom ? (
         <div className="ld-card">
           {/* Tabs header */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--light-border)', marginBottom: '24px' }}>
+          <div className="classroom-tabs-header">
             {!isStudentUser && (
               <>
                 <button
@@ -2570,30 +2662,14 @@ const ClassroomDetails: React.FC = () => {
                     fontWeight: '600',
                     cursor: 'pointer',
                     fontSize: '14px',
-                    outline: 'none'
-                  }}
-                >
-                  Active Teachers ({activeTeachers.length})
-                </button>
-                <button
-                  onClick={() => handleTabChange('pending')}
-                  style={{
-                    padding: '12px 20px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: activeTab === 'pending' ? '2px solid var(--light-primary)' : '2px solid transparent',
-                    color: activeTab === 'pending' ? 'var(--light-primary)' : 'var(--light-text-secondary)',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    fontSize: '14px',
                     outline: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px'
                   }}
                 >
-                  <span>Join Requests</span>
-                  {totalJoinRequestsCount > 0 && (
+                  <span>Teachers ({activeTeachers.length})</span>
+                  {pendingRequests.length > 0 && (
                     <span style={{
                       backgroundColor: '#ef4444',
                       color: 'white',
@@ -2602,7 +2678,7 @@ const ClassroomDetails: React.FC = () => {
                       borderRadius: '99px',
                       fontWeight: '700'
                     }}>
-                      {totalJoinRequestsCount}
+                      {pendingRequests.length}
                     </span>
                   )}
                 </button>
@@ -2677,7 +2753,7 @@ const ClassroomDetails: React.FC = () => {
               }}
             >
               <FiAward size={16} />
-              <span>{user?.role === 'student' ? 'MCQ Exams' : 'Assign Quiz'}</span>
+              <span>{user?.role === 'student' ? 'Quiz' : 'Assign Quiz'}</span>
               {user?.role === 'student' && pendingQuizCount > 0 && (
                 <span style={{
                   backgroundColor: '#ef4444',
@@ -2690,6 +2766,40 @@ const ClassroomDetails: React.FC = () => {
                   marginLeft: '2px'
                 }}>
                   {pendingQuizCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('exam')}
+              style={{
+                padding: '12px 20px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: (activeTab === 'exam' || activeTab === 'assign_exam') ? '2px solid var(--light-primary)' : '2px solid transparent',
+                color: (activeTab === 'exam' || activeTab === 'assign_exam') ? 'var(--light-primary)' : 'var(--light-text-secondary)',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '14px',
+                outline: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FiFileText size={16} />
+              <span>{user?.role === 'student' ? 'Exam' : 'Assign Exam'}</span>
+              {user?.role === 'student' && pendingExamCount > 0 && (
+                <span style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  lineHeight: '1',
+                  marginLeft: '2px'
+                }}>
+                  {pendingExamCount}
                 </span>
               )}
             </button>
@@ -2735,19 +2845,22 @@ const ClassroomDetails: React.FC = () => {
             </button>
           </div>
 
-          {/* Active Teachers Tab */}
+          {/* Teachers Tab */}
           {activeTab === 'active' && !isStudentUser && (
             <TeachersTab
               activeTeachers={activeTeachers}
+              pendingTeachers={pendingRequests}
               user={user}
+              classroomId={classroom?.classroom_id}
               onUpgradeTeacher={handleUpgradeTeacher}
               onToggleTeacherRole={handleToggleTeacherRole}
               onRejectTeacher={handleRejectTeacher}
+              onApproveTeacher={handleApproveTeacher}
               onOpenAssignModal={handleOpenAssignTeacherModal}
             />
           )}
 
-          {/* Pending Join Requests Tab (Students & Teachers) */}
+          {/* Pending Join Requests Tab (Fallback if visited directly via URL) */}
           {activeTab === 'pending' && !isStudentUser && (
             <JoinRequestsTab
               user={user}
@@ -2764,6 +2877,7 @@ const ClassroomDetails: React.FC = () => {
           {activeTab === 'students' && (
             <StudentsTab
               activeStudents={activeStudents}
+              pendingStudents={pendingStudents}
               user={user}
               classroomId={classroom?.classroom_id}
               onOpenInviteOneStudent={() => {
@@ -2774,6 +2888,8 @@ const ClassroomDetails: React.FC = () => {
                 setShowStudentInviteModal(true);
               }}
               onOpenAssignExistingStudents={() => setShowAssignExistingStudentsModal(true)}
+              onApproveStudentRequest={handleApproveStudentRequest}
+              onRejectStudentRequest={handleRejectStudentRequest}
               onRemoveStudent={handleRemoveStudent}
               onToggleSuspendStudent={handleToggleSuspendStudent}
             />
@@ -2796,6 +2912,7 @@ const ClassroomDetails: React.FC = () => {
               handleFileChange={handleFileChange}
               handleDeleteFolder={handleDeleteFolder}
               handleRenameFolder={handleRenameFolder}
+              handleRenameResource={handleRenameResource}
               handleDeleteResource={handleDeleteResource}
               openAssignModal={openAssignModal}
               isPreviewable={isPreviewable}
@@ -2829,9 +2946,10 @@ const ClassroomDetails: React.FC = () => {
             />
           )}
 
-          {/* Assign Quiz / MCQ Exams Tab */}
+          {/* Assign Quiz Tab */}
           {activeTab === 'assign_quiz' && (
             <AssignQuizTab
+              mode="quiz"
               classroomId={Number(id)}
               userRole={user?.role || 'student'}
               user={user}
@@ -2846,6 +2964,27 @@ const ClassroomDetails: React.FC = () => {
                 setActiveAttempt({ status: 'started' } as any);
               }}
               onPendingCountChange={(count) => setPendingQuizCount(count)}
+            />
+          )}
+
+          {/* Assign Exam / Exam Tab */}
+          {(activeTab === 'exam' || activeTab === 'assign_exam') && (
+            <AssignQuizTab
+              mode="exam"
+              classroomId={Number(id)}
+              userRole={user?.role || 'student'}
+              user={user}
+              classroomStudents={activeStudents.map(s => ({ id: s.id, name: s.name, email: s.email }))}
+              onViewReport={handleViewResultDetails}
+              onPreviewTest={handlePreviewTest}
+              onOpenAnalytics={handleOpenAnalytics}
+              onStartAttempt={(test) => {
+                setActiveTest(test);
+                setActivePledgeChecked(false);
+                setPledgeConfirmed(false);
+                setActiveAttempt({ status: 'started' } as any);
+              }}
+              onPendingCountChange={(count) => setPendingExamCount(count)}
             />
           )}
 
@@ -4565,7 +4704,7 @@ const ClassroomDetails: React.FC = () => {
 
                       {/* Standings List Container */}
                       <div style={{
-                        backgroundColor: '#d8b4fe',
+                        backgroundColor: isDark ? '#2e1065' : '#d8b4fe',
                         borderRadius: '24px',
                         padding: '16px',
                         display: 'flex',
@@ -4575,7 +4714,7 @@ const ClassroomDetails: React.FC = () => {
                         overflowY: 'auto'
                       }}>
                         {sortedAttempts.length === 0 ? (
-                          <p style={{ color: '#581c87', fontSize: '13.5px', fontWeight: '600', margin: 0, textAlign: 'center' }}>No standings available yet.</p>
+                          <p style={{ color: isDark ? '#e9d5ff' : '#581c87', fontSize: '13.5px', fontWeight: '600', margin: 0, textAlign: 'center' }}>No standings available yet.</p>
                         ) : (
                           sortedAttempts.map((att: any, index: number) => {
                             const trend = (att.id % 3 === 0) ? 'up' : (att.id % 3 === 1) ? 'down' : 'stable';
@@ -4584,11 +4723,12 @@ const ClassroomDetails: React.FC = () => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                backgroundColor: '#ffffff',
+                                backgroundColor: isDark ? '#141c2e' : '#ffffff',
+                                border: isDark ? '1px solid #1f293d' : 'none',
                                 borderRadius: '16px',
                                 padding: '12px 16px',
                                 boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                                color: '#1e1b4b'
+                                color: isDark ? '#f9fafb' : '#1e1b4b'
                               }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                   
@@ -4601,7 +4741,7 @@ const ClassroomDetails: React.FC = () => {
                                     ) : (
                                       <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' }}>•</span>
                                     )}
-                                    <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--light-text)' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: '800', color: isDark ? '#f9fafb' : 'var(--light-text)' }}>
                                       {index + 1}
                                     </span>
                                   </div>
@@ -4625,14 +4765,14 @@ const ClassroomDetails: React.FC = () => {
 
                                   {/* Name and Progress bar */}
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <span style={{ fontWeight: '700', fontSize: '14px', color: '#1e1b4b' }}>
+                                    <span style={{ fontWeight: '700', fontSize: '14px', color: isDark ? '#f9fafb' : '#1e1b4b' }}>
                                       {att.user?.name}
                                     </span>
                                     {/* Progress Bar */}
                                     <div style={{
                                       width: '180px',
                                       height: '14px',
-                                      backgroundColor: '#f3e8ff',
+                                      backgroundColor: isDark ? '#1e1b4b' : '#f3e8ff',
                                       borderRadius: '7px',
                                       overflow: 'hidden',
                                       position: 'relative'
@@ -4657,10 +4797,10 @@ const ClassroomDetails: React.FC = () => {
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '60px' }}>
-                                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#581c87' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '700', color: isDark ? '#c084fc' : '#581c87' }}>
                                       {att.score} Marks
                                     </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--light-text-secondary)' }}>
+                                    <span style={{ fontSize: '10px', color: isDark ? '#9ca3af' : 'var(--light-text-secondary)' }}>
                                       {Math.floor(att.time_taken / 60)}m {att.time_taken % 60}s
                                     </span>
                                   </div>
@@ -4670,9 +4810,9 @@ const ClassroomDetails: React.FC = () => {
                                     style={{
                                       padding: '4px 8px',
                                       fontSize: '11px',
-                                      backgroundColor: '#f3e8ff',
-                                      border: '1px solid #c084fc',
-                                      color: '#6b21a8'
+                                      backgroundColor: isDark ? 'rgba(168, 85, 247, 0.2)' : '#f3e8ff',
+                                      border: isDark ? '1px solid #a855f7' : '1px solid #c084fc',
+                                      color: isDark ? '#e9d5ff' : '#6b21a8'
                                     }}
                                   >
                                     Report
@@ -4726,14 +4866,19 @@ const ClassroomDetails: React.FC = () => {
 
                 {/* Proctor violation logs */}
                 {user?.role !== 'student' && (
-                  <div style={{ padding: '12px', backgroundColor: '#fff5f5', border: '1px solid #fed7d7', borderRadius: '8px' }}>
-                    <h4 style={{ margin: '0 0 6px 0', color: '#c53030', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fff5f5',
+                    border: `1px solid ${isDark ? 'rgba(239, 68, 68, 0.3)' : '#fed7d7'}`,
+                    borderRadius: '8px'
+                  }}>
+                    <h4 style={{ margin: '0 0 6px 0', color: isDark ? '#f87171' : '#c53030', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <FiShield />
                       <span>Security proctoring log</span>
                     </h4>
-                    <span style={{ fontSize: '13px', display: 'block' }}>Tab switches: <strong>{viewAttemptDetails.tab_switch_count}</strong> times</span>
-                    <span style={{ fontSize: '13px', display: 'block' }}>Fullscreen exits: <strong>{viewAttemptDetails.fullscreen_exit_count}</strong> times</span>
-                    <span style={{ fontSize: '13px', display: 'block' }}>Submission trigger: <strong>{viewAttemptDetails.submit_type.toUpperCase()}</strong></span>
+                    <span style={{ fontSize: '13px', display: 'block', color: isDark ? '#e2e8f0' : 'inherit' }}>Tab switches: <strong>{viewAttemptDetails.tab_switch_count}</strong> times</span>
+                    <span style={{ fontSize: '13px', display: 'block', color: isDark ? '#e2e8f0' : 'inherit' }}>Fullscreen exits: <strong>{viewAttemptDetails.fullscreen_exit_count}</strong> times</span>
+                    <span style={{ fontSize: '13px', display: 'block', color: isDark ? '#e2e8f0' : 'inherit' }}>Submission trigger: <strong>{viewAttemptDetails.submit_type.toUpperCase()}</strong></span>
                   </div>
                 )}
 
@@ -4751,7 +4896,11 @@ const ClassroomDetails: React.FC = () => {
                           padding: '16px',
                           border: '1.5px solid var(--light-border)',
                           borderRadius: '8px',
-                          backgroundColor: isSubjective ? '#f8fafc' : (isCorrect ? '#f0fdf4' : '#fef2f2')
+                          backgroundColor: isSubjective
+                            ? (isDark ? '#1a2234' : '#f8fafc')
+                            : (isCorrect
+                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#f0fdf4')
+                                : (isDark ? 'rgba(239, 68, 68, 0.15)' : '#fef2f2'))
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                             <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--light-text-secondary)' }}>
@@ -4762,23 +4911,38 @@ const ClassroomDetails: React.FC = () => {
                             </span>
                           </div>
 
-                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0', whiteSpace: 'pre-wrap' }}>{q.question_text}</p>
+                          <p style={{ fontWeight: '700', margin: '4px 0 10px 0', whiteSpace: 'pre-wrap', color: isDark ? '#f9fafb' : '#0f172a' }}>{q.question_text}</p>
 
                           {isSubjective ? (
                             <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
-                              <div style={{ fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Your Answer:</div>
-                              <div style={{ padding: '10px 14px', backgroundColor: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1', whiteSpace: 'pre-wrap', color: '#0f172a' }}>
-                                {studentChoice || <em style={{ color: '#94a3b8' }}>No response submitted</em>}
+                              <div style={{ fontWeight: '600', color: isDark ? '#9ca3af' : '#475569', marginBottom: '4px' }}>Your Answer:</div>
+                              <div style={{
+                                padding: '10px 14px',
+                                backgroundColor: isDark ? '#141c2e' : '#ffffff',
+                                borderRadius: '6px',
+                                border: `1px solid ${isDark ? '#2e3a50' : '#cbd5e1'}`,
+                                whiteSpace: 'pre-wrap',
+                                color: isDark ? '#f9fafb' : '#0f172a'
+                              }}>
+                                {studentChoice || <em style={{ color: isDark ? '#64748b' : '#94a3b8' }}>No response submitted</em>}
                               </div>
                               {q.explanation && (
-                                <div style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: '#f0fdf4', borderLeft: '3px solid #22c55e', borderRadius: '4px', fontSize: '12.5px', color: '#15803d' }}>
+                                <div style={{
+                                  marginTop: '8px',
+                                  padding: '8px 12px',
+                                  backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : '#f0fdf4',
+                                  borderLeft: '3px solid #22c55e',
+                                  borderRadius: '4px',
+                                  fontSize: '12.5px',
+                                  color: isDark ? '#86efac' : '#15803d'
+                                }}>
                                   <strong>Rubric / Model Answer:</strong> {q.explanation}
                                 </div>
                               )}
                             </div>
                           ) : (
                             <div>
-                              <div style={{ fontSize: '13.5px', marginBottom: '8px' }}>
+                              <div style={{ fontSize: '13.5px', marginBottom: '8px', color: isDark ? '#f9fafb' : '#0f172a' }}>
                                 <span>Your Answer: <strong>{studentChoice || 'None'}</strong></span>
                                 {q.correct_answer && (
                                   <span style={{ marginLeft: '20px' }}>Correct Answer: <strong style={{ color: 'var(--light-success)' }}>{q.correct_answer}</strong></span>

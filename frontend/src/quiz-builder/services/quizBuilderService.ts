@@ -62,12 +62,13 @@ export const quizBuilderService = {
    */
   async getClassroomQuizzes(
     classroomId: number,
-    params?: { page?: number; limit?: number; search?: string }
+    params?: { page?: number; limit?: number; search?: string; test_type?: string }
   ): Promise<{ quizzes: Quiz[]; total: number; page: number; limit: number; totalPages: number }> {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', String(params.page));
     if (params?.limit) queryParams.append('limit', String(params.limit));
     if (params?.search) queryParams.append('search', params.search);
+    if (params?.test_type) queryParams.append('test_type', params.test_type);
 
     const queryString = queryParams.toString();
     const url = `/quiz-builder/classroom/${classroomId}${queryString ? `?${queryString}` : ''}`;

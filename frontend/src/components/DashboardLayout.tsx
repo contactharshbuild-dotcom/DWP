@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -7,16 +7,17 @@ import {
   FiPlus, 
   FiLogOut, 
   FiBookOpen, 
-  FiAlertCircle,
-  FiHelpCircle,
-  FiFolder,
-  FiCamera,
-  FiUpload,
-  FiEdit2,
-  FiCheck,
-  FiX,
-  FiInfo,
-  FiTrash2
+  FiAlertCircle, 
+  FiHelpCircle, 
+  FiFolder, 
+  FiCamera, 
+  FiUpload, 
+  FiEdit2, 
+  FiCheck, 
+  FiX, 
+  FiInfo, 
+  FiTrash2,
+  FiMenu
 } from 'react-icons/fi';
 import type { RootState } from '../store';
 import { logout, updateOrganization, updateUserProfile } from '../store/authSlice';
@@ -74,6 +75,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [userProfileSaving, setUserProfileSaving] = useState(false);
   const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [userProfileSuccess, setUserProfileSuccess] = useState<string | null>(null);
+
+  // Mobile Navigation Drawer State
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Automatically close mobile nav on route transition
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     dispatch(logout());
@@ -300,60 +309,127 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
   return (
     <div className={`light-dashboard ${theme === 'dark' ? 'dark-dashboard' : ''}`}>
+      {/* Mobile Top Navigation Header */}
+      <header className="ld-mobile-topbar">
+        <button 
+          className="ld-mobile-hamburger-btn" 
+          onClick={() => setIsMobileNavOpen(prev => !prev)}
+          aria-label={isMobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+        >
+          {isMobileNavOpen ? <FiX size={22} /> : <FiMenu size={22} />}
+        </button>
+
+        <div className="ld-mobile-brand" onClick={() => navigate('/')}>
+          {currentOrgLogo ? (
+            <img 
+              src={currentOrgLogo} 
+              alt={organization?.name || 'Logo'} 
+              className="ld-mobile-logo-img"
+              onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+            />
+          ) : (
+            <div className="ld-mobile-logo-icon">{getInitials(organization?.name)}</div>
+          )}
+          <span className="ld-mobile-brand-title">{organization?.name || 'Academy'}</span>
+        </div>
+
+        <div className="ld-mobile-actions">
+          <ThemeToggle />
+          <div 
+            className="ld-mobile-avatar"
+            onClick={() => navigate('/profile')}
+            title="User Profile"
+          >
+            {currentProfileLogo ? (
+              <img 
+                src={currentProfileLogo} 
+                alt={user?.name || 'User Profile'} 
+                className="ld-mobile-avatar-img"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="ld-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
+                {getInitials(user?.name)}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Backdrop overlay for mobile drawer */}
+      {isMobileNavOpen && (
+        <div 
+          className="ld-sidebar-backdrop" 
+          onClick={() => setIsMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       <div className="ld-container">
         {/* Left Sidebar */}
-        <aside className="ld-sidebar">
+        <aside className={`ld-sidebar ${isMobileNavOpen ? 'ld-sidebar-open' : ''}`}>
           <div className="ld-sidebar-top">
 
             {/* Organization Logo & Details Section */}
-            <div 
-              className="ld-logo-section"
-              onClick={() => {
-                if (user?.role === 'admin') navigate('/about');
-              }}
-              style={{ cursor: user?.role === 'admin' ? 'pointer' : 'default' }}
-              title={user?.role === 'admin' ? 'View Organization Details (About)' : undefined}
-            >
-              <div className="ld-org-logo-wrapper">
-                {currentOrgLogo ? (
-                  <img 
-                    src={currentOrgLogo} 
-                    alt={organization?.name || 'Org Logo'} 
-                    className="ld-org-logo-img"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <div className="ld-logo-icon">
-                    {getInitials(organization?.name)}
-                  </div>
-                )}
-                
-                {user?.role === 'admin' && (
-                  <button 
-                    className="ld-org-logo-edit-badge"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewUrl(currentOrgLogo || null);
-                      setCustomLogoUrl(currentOrgLogo || '');
-                      setSelectedFile(null);
-                      setOrgModalError(null);
-                      setOrgModalSuccess(null);
-                      setShowOrgLogoModal(true);
-                    }}
-                    title="Change Organization Logo"
-                  >
-                    <FiCamera size={11} />
-                  </button>
-                )}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div 
+                className="ld-logo-section"
+                onClick={() => {
+                  if (user?.role === 'admin') navigate('/about');
+                }}
+                style={{ cursor: user?.role === 'admin' ? 'pointer' : 'default', flex: 1, margin: 0 }}
+                title={user?.role === 'admin' ? 'View Organization Details (About)' : undefined}
+              >
+                <div className="ld-org-logo-wrapper">
+                  {currentOrgLogo ? (
+                    <img 
+                      src={currentOrgLogo} 
+                      alt={organization?.name || 'Org Logo'} 
+                      className="ld-org-logo-img"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="ld-logo-icon">
+                      {getInitials(organization?.name)}
+                    </div>
+                  )}
+                  
+                  {user?.role === 'admin' && (
+                    <button 
+                      className="ld-org-logo-edit-badge"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewUrl(currentOrgLogo || null);
+                        setCustomLogoUrl(currentOrgLogo || '');
+                        setSelectedFile(null);
+                        setOrgModalError(null);
+                        setOrgModalSuccess(null);
+                        setShowOrgLogoModal(true);
+                      }}
+                      title="Change Organization Logo"
+                    >
+                      <FiCamera size={11} />
+                    </button>
+                  )}
+                </div>
 
-              <div className="ld-org-details">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="ld-org-name">{organization?.name || 'Academy'}</span>
+                <div className="ld-org-details">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="ld-org-name">{organization?.name || 'Academy'}</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Close button inside sidebar on mobile */}
+              <button 
+                className="ld-sidebar-mobile-close"
+                onClick={() => setIsMobileNavOpen(false)}
+                title="Close sidebar"
+              >
+                <FiX size={20} />
+              </button>
             </div>
 
             {/* Navigation Menu */}

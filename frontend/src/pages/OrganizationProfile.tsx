@@ -238,7 +238,7 @@ const OrganizationProfile: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px' }}>
+      <div className="ld-two-col-layout">
         {/* Left Column: Logo & Branding Card */}
         <div className="ld-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <div style={{ position: 'relative', margin: '16px 0 20px' }}>
@@ -316,7 +316,7 @@ const OrganizationProfile: React.FC = () => {
           </div>
 
           <form onSubmit={handleSaveOrganization}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '20px' }}>
               <div className="form-group-ld">
                 <label className="form-label-ld" htmlFor="orgNameInput">Organization / Academy Name *</label>
                 <input
@@ -344,7 +344,7 @@ const OrganizationProfile: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className="form-grid-2" style={{ marginBottom: '20px' }}>
               <div className="form-group-ld">
                 <label className="form-label-ld" htmlFor="orgEmailInput">Official Contact Email</label>
                 <input

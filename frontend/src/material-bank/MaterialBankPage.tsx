@@ -12,7 +12,6 @@ import {
   FiFileText, 
   FiVideo, 
   FiChevronRight, 
-  FiChevronLeft,
   FiHome,
   FiExternalLink,
   FiFile,
@@ -20,7 +19,8 @@ import {
   FiGrid,
   FiPlus,
   FiChevronDown,
-  FiEdit2
+  FiEdit2,
+  FiCheck
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { materialBankService } from './services/materialBankService';
@@ -42,15 +42,14 @@ export const MaterialBankPage: React.FC = () => {
 
   const PAGE_SIZE = 10;
 
-  // Sync folder state and pagination with URL parameters so they persist on page refresh
+  // Sync folder state with URL parameters so it persists on page refresh
   const folderParam = searchParams.get('folderId');
   const currentFolderId = folderParam && !isNaN(parseInt(folderParam, 10)) ? parseInt(folderParam, 10) : null;
 
-  const pageParam = searchParams.get('page');
-  const itemsPage = pageParam && !isNaN(parseInt(pageParam, 10)) ? Math.max(1, parseInt(pageParam, 10)) : 1;
-
-  const folderPageParam = searchParams.get('folderPage');
-  const foldersPage = folderPageParam && !isNaN(parseInt(folderPageParam, 10)) ? Math.max(1, parseInt(folderPageParam, 10)) : 1;
+  const [itemsPage, setItemsPage] = useState(1);
+  const [foldersPage, setFoldersPage] = useState(1);
+  const [loadingMoreItems, setLoadingMoreItems] = useState(false);
+  const [loadingMoreFolders, setLoadingMoreFolders] = useState(false);
 
   const [folders, setFolders] = useState<MaterialBankFolder[]>([]);
   const [items, setItems] = useState<MaterialBankItem[]>([]);
@@ -119,8 +118,8 @@ export const MaterialBankPage: React.FC = () => {
 
   const loadContents = async (
     folderId = currentFolderId,
-    itemP = itemsPage,
-    folderP = foldersPage,
+    itemLimit = PAGE_SIZE,
+    folderLimit = PAGE_SIZE,
     search = searchQuery,
     filter = filterType,
     sort = sortBy
@@ -129,10 +128,10 @@ export const MaterialBankPage: React.FC = () => {
     try {
       const data = await materialBankService.getContents({
         folderId,
-        page: itemP,
-        limit: PAGE_SIZE,
-        folderPage: folderP,
-        folderLimit: PAGE_SIZE,
+        page: 1,
+        limit: itemLimit,
+        folderPage: 1,
+        folderLimit: folderLimit,
         search: search.trim() || undefined,
         filterType: filter !== 'all' ? filter : undefined,
         sortBy: sort !== 'manual' ? sort : undefined
@@ -144,6 +143,8 @@ export const MaterialBankPage: React.FC = () => {
       setTotalPages(data.totalPages ?? Math.max(1, Math.ceil((data.totalItems ?? 0) / PAGE_SIZE)));
       setTotalFolders(data.totalFolders ?? (data.folders || []).length);
       setFolderTotalPages(data.folderTotalPages ?? Math.max(1, Math.ceil((data.totalFolders ?? 0) / PAGE_SIZE)));
+      setItemsPage(Math.max(1, Math.ceil((data.items || []).length / PAGE_SIZE)));
+      setFoldersPage(Math.max(1, Math.ceil((data.folders || []).length / PAGE_SIZE)));
     } catch (err: any) {
       console.error('Failed to load Material Bank contents:', err);
     } finally {
@@ -154,11 +155,11 @@ export const MaterialBankPage: React.FC = () => {
   useEffect(() => {
     if (user && user.role !== 'student') {
       const timer = setTimeout(() => {
-        loadContents(currentFolderId, itemsPage, foldersPage, searchQuery, filterType, sortBy);
+        loadContents(currentFolderId, PAGE_SIZE, PAGE_SIZE, searchQuery, filterType, sortBy);
       }, 250);
       return () => clearTimeout(timer);
     }
-  }, [user, currentFolderId, itemsPage, foldersPage, searchQuery, filterType, sortBy]);
+  }, [user, currentFolderId, searchQuery, filterType, sortBy]);
 
   const handleOpenFolder = (folderId: number) => {
     setSearchParams(prev => {
@@ -184,68 +185,84 @@ export const MaterialBankPage: React.FC = () => {
     });
   };
 
-  const handleItemsPageChange = (newPage: number) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (newPage > 1) {
-        next.set('page', newPage.toString());
-      } else {
-        next.delete('page');
-      }
-      return next;
-    });
-  };
-
-  const handleFoldersPageChange = (newFolderPage: number) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (newFolderPage > 1) {
-        next.set('folderPage', newFolderPage.toString());
-      } else {
-        next.delete('folderPage');
-      }
-      return next;
-    });
-  };
-
   const handleSearchChange = (q: string) => {
     setSearchQuery(q);
-    if (itemsPage !== 1 || foldersPage !== 1) {
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('page');
-        next.delete('folderPage');
-        return next;
-      });
-    }
   };
 
   const handleFilterChange = (type: 'all' | 'file' | 'youtube') => {
     setFilterType(type);
-    if (itemsPage !== 1) {
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('page');
-        return next;
-      });
-    }
   };
 
   const handleSortChange = (sort: typeof sortBy) => {
     setSortBy(sort);
-    if (itemsPage !== 1 || foldersPage !== 1) {
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('page');
-        next.delete('folderPage');
-        return next;
+  };
+
+  const handleLoadMoreItems = async () => {
+    if (loadingMoreItems || items.length >= totalItems) return;
+    setLoadingMoreItems(true);
+    const nextPage = itemsPage + 1;
+    try {
+      const data = await materialBankService.getContents({
+        folderId: currentFolderId,
+        page: nextPage,
+        limit: PAGE_SIZE,
+        folderLimit: 1,
+        search: searchQuery.trim() || undefined,
+        filterType: filterType !== 'all' ? filterType : undefined,
+        sortBy: sortBy !== 'manual' ? sortBy : undefined
       });
+
+      setItems(prev => {
+        const existingIds = new Set(prev.map(i => i.id));
+        const newItems = (data.items || []).filter(i => !existingIds.has(i.id));
+        return [...prev, ...newItems];
+      });
+      setItemsPage(nextPage);
+      if (data.totalItems !== undefined) {
+        setTotalItems(data.totalItems);
+        setTotalPages(data.totalPages ?? Math.max(1, Math.ceil(data.totalItems / PAGE_SIZE)));
+      }
+    } catch (err: any) {
+      console.error('Failed to load more materials:', err);
+    } finally {
+      setLoadingMoreItems(false);
+    }
+  };
+
+  const handleLoadMoreFolders = async () => {
+    if (loadingMoreFolders || folders.length >= totalFolders) return;
+    setLoadingMoreFolders(true);
+    const nextFolderPage = foldersPage + 1;
+    try {
+      const data = await materialBankService.getContents({
+        folderId: currentFolderId,
+        folderPage: nextFolderPage,
+        folderLimit: PAGE_SIZE,
+        limit: 1,
+        search: searchQuery.trim() || undefined,
+        sortBy: sortBy !== 'manual' ? sortBy : undefined
+      });
+
+      setFolders(prev => {
+        const existingIds = new Set(prev.map(f => f.id));
+        const newFolders = (data.folders || []).filter(f => !existingIds.has(f.id));
+        return [...prev, ...newFolders];
+      });
+      setFoldersPage(nextFolderPage);
+      if (data.totalFolders !== undefined) {
+        setTotalFolders(data.totalFolders);
+        setFolderTotalPages(data.folderTotalPages ?? Math.max(1, Math.ceil(data.totalFolders / PAGE_SIZE)));
+      }
+    } catch (err: any) {
+      console.error('Failed to load more folders:', err);
+    } finally {
+      setLoadingMoreFolders(false);
     }
   };
 
   const handleCreateFolder = async (name: string) => {
     await materialBankService.createFolder(name, currentFolderId);
-    await loadContents(currentFolderId);
+    await loadContents(currentFolderId, Math.max(PAGE_SIZE, items.length), Math.max(PAGE_SIZE, folders.length + 1));
   };
 
   const handleRenameFolder = async (newName: string) => {
@@ -271,7 +288,8 @@ export const MaterialBankPage: React.FC = () => {
         if (currentFolderId === folderId) {
           handleBreadcrumbClick(null);
         } else {
-          await loadContents(currentFolderId);
+          setFolders(prev => prev.filter(f => f.id !== folderId));
+          setTotalFolders(prev => Math.max(0, prev - 1));
         }
       } catch (err: any) {
         alert('Failed to delete folder: ' + (err.response?.data?.message || err.message));
@@ -281,19 +299,20 @@ export const MaterialBankPage: React.FC = () => {
 
   const handleUploadFile = async (file: File) => {
     await materialBankService.uploadFile(file, currentFolderId);
-    await loadContents(currentFolderId);
+    await loadContents(currentFolderId, Math.max(PAGE_SIZE, items.length + 1));
   };
 
   const handleAddYoutubeLink = async (name: string, link: string) => {
     await materialBankService.addYoutubeLink(name, link, currentFolderId);
-    await loadContents(currentFolderId);
+    await loadContents(currentFolderId, Math.max(PAGE_SIZE, items.length + 1));
   };
 
   const handleDeleteItem = async (itemId: number, itemName: string) => {
     if (window.confirm(`Are you sure you want to delete "${itemName}"?`)) {
       try {
         await materialBankService.deleteItem(itemId);
-        await loadContents(currentFolderId);
+        setItems(prev => prev.filter(i => i.id !== itemId));
+        setTotalItems(prev => Math.max(0, prev - 1));
       } catch (err: any) {
         alert('Failed to delete item: ' + (err.response?.data?.message || err.message));
       }
@@ -376,12 +395,12 @@ export const MaterialBankPage: React.FC = () => {
     setDragOverItemId(null);
     setDropPosition(null);
 
-    // Persist new ordering to database with offset startIndex
+    // Persist new ordering to database with offset startIndex (0 since all items are accumulated in state)
     setIsSavingOrder(true);
     setSaveMessage('Saving order...');
     try {
       const itemIds = currentItems.map(i => i.id);
-      await materialBankService.reorderItems(itemIds, (itemsPage - 1) * PAGE_SIZE);
+      await materialBankService.reorderItems(itemIds, 0);
       setSaveMessage('Order saved ✓');
       setTimeout(() => {
         setSaveMessage(null);
@@ -405,115 +424,118 @@ export const MaterialBankPage: React.FC = () => {
     setDropPosition(null);
   };
 
-  const renderPagination = (
-    currentPage: number,
-    totalPagesCount: number,
+  const renderLoadMore = (
+    loadedCount: number,
     totalCount: number,
     unitLabel: string,
-    onPageChange: (p: number) => void
+    isLoadingMore: boolean,
+    onLoadMore: () => void
   ) => {
-    if (totalPagesCount <= 1 || totalCount <= PAGE_SIZE) return null;
+    if (totalCount <= PAGE_SIZE && loadedCount >= totalCount) return null;
 
-    const start = (currentPage - 1) * PAGE_SIZE + 1;
-    const end = Math.min(currentPage * PAGE_SIZE, totalCount);
-
-    const pages: (number | string)[] = [];
-    if (totalPagesCount <= 7) {
-      for (let i = 1; i <= totalPagesCount; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (currentPage > 3) pages.push('...');
-      const pStart = Math.max(2, currentPage - 1);
-      const pEnd = Math.min(totalPagesCount - 1, currentPage + 1);
-      for (let i = pStart; i <= pEnd; i++) pages.push(i);
-      if (currentPage < totalPagesCount - 2) pages.push('...');
-      pages.push(totalPagesCount);
-    }
+    const hasMore = loadedCount < totalCount;
+    const remainingCount = Math.max(0, totalCount - loadedCount);
+    const percentage = Math.min(100, Math.round((loadedCount / Math.max(1, totalCount)) * 100));
 
     return (
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         alignItems: 'center',
-        marginTop: '16px',
-        padding: '12px 16px',
+        justifyContent: 'center',
+        marginTop: '20px',
+        padding: '16px 20px',
         backgroundColor: 'var(--light-card)',
         border: '1px solid var(--light-border)',
-        borderRadius: '10px',
-        flexWrap: 'wrap',
-        gap: '12px'
+        borderRadius: '12px',
+        gap: '12px',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
       }}>
-        <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-          Showing {start} to {end} of {totalCount} {unitLabel}
-        </span>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            type="button"
-            className="btn-ld btn-ld-secondary"
-            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-            disabled={currentPage <= 1 || loading}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '6px 12px',
-              fontSize: '13px',
-              opacity: currentPage <= 1 ? 0.5 : 1,
-              cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
-            }}
-          >
-            <FiChevronLeft size={16} />
-            <span>Previous</span>
-          </button>
-
-          {pages.map((p, idx) => {
-            if (typeof p === 'string') {
-              return (
-                <span key={`ellipsis-${idx}`} style={{ padding: '4px 6px', color: 'var(--light-text-muted)', fontSize: '13px' }}>
-                  ...
-                </span>
-              );
-            }
-            const isActive = p === currentPage;
-            return (
-              <button
-                key={p}
-                type="button"
-                className={`btn-ld ${isActive ? 'btn-ld-primary' : 'btn-ld-secondary'}`}
-                onClick={() => onPageChange(p)}
-                disabled={loading}
-                style={{
-                  minWidth: '32px',
-                  padding: '6px 10px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? '700' : '500'
-                }}
-              >
-                {p}
-              </button>
-            );
-          })}
-
-          <button
-            type="button"
-            className="btn-ld btn-ld-secondary"
-            onClick={() => onPageChange(Math.min(totalPagesCount, currentPage + 1))}
-            disabled={currentPage >= totalPagesCount || loading}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '6px 12px',
-              fontSize: '13px',
-              opacity: currentPage >= totalPagesCount ? 0.5 : 1,
-              cursor: currentPage >= totalPagesCount ? 'not-allowed' : 'pointer'
-            }}
-          >
-            <span>Next</span>
-            <FiChevronRight size={16} />
-          </button>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '13px',
+          color: 'var(--light-text-secondary)',
+          flexWrap: 'wrap',
+          justifyContent: 'center'
+        }}>
+          <span>
+            Showing <strong style={{ color: 'var(--light-text-primary)', fontWeight: '700' }}>{loadedCount}</strong> of{' '}
+            <strong style={{ color: 'var(--light-text-primary)', fontWeight: '700' }}>{totalCount}</strong> {unitLabel}
+          </span>
+          <span style={{
+            fontSize: '11px',
+            fontWeight: '700',
+            backgroundColor: hasMore ? 'rgba(79, 70, 229, 0.08)' : 'rgba(5, 150, 105, 0.08)',
+            color: hasMore ? 'var(--light-primary)' : '#059669',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            border: `1px solid ${hasMore ? 'rgba(79, 70, 229, 0.15)' : 'rgba(5, 150, 105, 0.15)'}`
+          }}>
+            {percentage}%
+          </span>
         </div>
+
+        {hasMore ? (
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              fontWeight: '700',
+              padding: '9px 24px',
+              borderRadius: '24px',
+              background: 'var(--light-card)',
+              border: '1.5px solid var(--light-primary)',
+              color: 'var(--light-primary)',
+              boxShadow: '0 2px 10px rgba(79, 70, 229, 0.12)',
+              cursor: isLoadingMore ? 'not-allowed' : 'pointer',
+              opacity: isLoadingMore ? 0.7 : 1,
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoadingMore) {
+                e.currentTarget.style.background = 'var(--light-primary)';
+                e.currentTarget.style.color = '#ffffff';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isLoadingMore) {
+                e.currentTarget.style.background = 'var(--light-card)';
+                e.currentTarget.style.color = 'var(--light-primary)';
+              }
+            }}
+          >
+            {isLoadingMore ? (
+              <>
+                <span className="spinner" style={{ width: '14px', height: '14px', borderColor: 'rgba(79,70,229,0.3)', borderTopColor: 'var(--light-primary)' }}></span>
+                <span>Loading more {unitLabel}...</span>
+              </>
+            ) : (
+              <>
+                <FiChevronDown size={16} />
+                <span>Load More {unitLabel === 'materials' ? 'Files' : 'Folders'} ({remainingCount} remaining)</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '13px',
+            color: 'var(--light-text-muted)',
+            fontWeight: '500'
+          }}>
+            <FiCheck size={16} style={{ color: '#059669' }} />
+            <span>All {totalCount} {unitLabel} loaded</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -529,14 +551,12 @@ export const MaterialBankPage: React.FC = () => {
     <DashboardLayout>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {/* Top Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '800', color: 'var(--light-text-primary)' }}>
-              Material Bank
-            </h2>
-            <p style={{ margin: 0, fontSize: '14px', color: 'var(--light-text-secondary)' }}>
-              Create, manage, and clone organization quiz templates (MCQ & Subjective) to assign across classrooms.
-            </p>
+        <div className="ld-header">
+          <div className="ld-header-left">
+            <h2 className="ld-title">Material Bank</h2>
+            <span className="ld-subtitle">
+              Organize, store, and share course documents, PDFs, and YouTube video lectures.
+            </span>
           </div>
 
           {/* Action Dropdown Menu */}
@@ -701,17 +721,7 @@ export const MaterialBankPage: React.FC = () => {
         </div>
 
         {/* Breadcrumb Navigation */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px', 
-          padding: '12px 16px', 
-          backgroundColor: 'var(--light-card)', 
-          borderRadius: '8px', 
-          border: '1px solid var(--light-border)', 
-          marginBottom: '20px',
-          fontSize: '14px'
-        }}>
+        <div className="material-breadcrumb-container">
           <button 
             onClick={() => handleBreadcrumbClick(null)}
             style={{ 
@@ -1105,7 +1115,7 @@ export const MaterialBankPage: React.FC = () => {
                   </div>
                 )}
 
-                {renderPagination(foldersPage, folderTotalPages, totalFolders, 'folders', handleFoldersPageChange)}
+                {renderLoadMore(filteredFolders.length, totalFolders, 'folders', loadingMoreFolders, handleLoadMoreFolders)}
               </div>
             )}
 
@@ -1567,7 +1577,7 @@ export const MaterialBankPage: React.FC = () => {
                   </div>
                 )}
 
-                {renderPagination(itemsPage, totalPages, totalItems, 'materials', handleItemsPageChange)}
+                {renderLoadMore(sortedItems.length, totalItems, 'materials', loadingMoreItems, handleLoadMoreItems)}
               </div>
             )}
           </div>

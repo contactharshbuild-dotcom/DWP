@@ -30,6 +30,7 @@ interface AssignQuizTabProps {
   userRole: string;
   user?: { id: number; role: string } | null;
   classroomStudents: Student[];
+  mode?: 'quiz' | 'exam';
   onViewReport?: (attemptId: number) => void;
   onPreviewTest?: (test: any) => void;
   onOpenAnalytics?: (testId: number) => void;
@@ -42,12 +43,14 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
   userRole,
   user,
   classroomStudents,
+  mode = 'quiz',
   onViewReport,
   onPreviewTest,
   onOpenAnalytics,
   onStartAttempt,
   onPendingCountChange
 }) => {
+  const isExam = mode === 'exam';
   const [assignedQuizzes, setAssignedQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -67,7 +70,8 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
       const data = await quizBuilderService.getClassroomQuizzes(classroomId, {
         page: pageToFetch,
         limit,
-        search: searchToFetch
+        search: searchToFetch,
+        test_type: mode
       });
 
       setAssignedQuizzes(data.quizzes);
@@ -92,7 +96,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
         onPendingCountChange(pendingCount);
       }
     } catch (err: any) {
-      console.error('Failed to fetch assigned classroom quizzes:', err);
+      console.error(`Failed to fetch assigned classroom ${isExam ? 'exams' : 'quizzes'}:`, err);
     } finally {
       setLoading(false);
     }
@@ -102,7 +106,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
     if (classroomId) {
       fetchClassroomQuizzes(page, activeSearch);
     }
-  }, [classroomId, page, activeSearch]);
+  }, [classroomId, page, activeSearch, mode]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,39 +125,39 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
       await quizBuilderService.manualStart(quizId);
       await fetchClassroomQuizzes(page, activeSearch);
     } catch (err: any) {
-      alert('Failed to start quiz: ' + (err.message || 'Error'));
+      alert((isExam ? 'Failed to start exam: ' : 'Failed to start quiz: ') + (err.message || 'Error'));
     }
   };
 
   const handleManualEnd = async (quizId: number) => {
-    if (window.confirm('Are you sure you want to end this quiz now? Unsubmitted student attempts will be auto-submitted.')) {
+    if (window.confirm(isExam ? 'Are you sure you want to end this exam now? Unsubmitted student attempts will be auto-submitted.' : 'Are you sure you want to end this quiz now? Unsubmitted student attempts will be auto-submitted.')) {
       try {
         await quizBuilderService.manualEnd(quizId);
         await fetchClassroomQuizzes(page, activeSearch);
       } catch (err: any) {
-        alert('Failed to end quiz: ' + (err.message || 'Error'));
+        alert((isExam ? 'Failed to end exam: ' : 'Failed to end quiz: ') + (err.message || 'Error'));
       }
     }
   };
 
   const handleReleaseScores = async (quizId: number) => {
-    if (window.confirm('Release scores to students for this quiz? Students will immediately be able to view their results.')) {
+    if (window.confirm(isExam ? 'Release scores to students for this exam? Students will immediately be able to view their results.' : 'Release scores to students for this quiz? Students will immediately be able to view their results.')) {
       try {
         await quizBuilderService.releaseScores(quizId);
         await fetchClassroomQuizzes(page, activeSearch);
       } catch (err: any) {
-        alert('Failed to release scores: ' + (err.message || 'Error'));
+        alert((isExam ? 'Failed to release exam scores: ' : 'Failed to release scores: ') + (err.message || 'Error'));
       }
     }
   };
 
   const handleDeleteAssignment = async (quizId: number) => {
-    if (window.confirm('Are you sure you want to delete this classroom quiz assignment?')) {
+    if (window.confirm(isExam ? 'Are you sure you want to delete this classroom exam assignment?' : 'Are you sure you want to delete this classroom quiz assignment?')) {
       try {
         await quizBuilderService.deleteQuiz(quizId);
         await fetchClassroomQuizzes(page, activeSearch);
       } catch (err: any) {
-        alert('Failed to delete assignment: ' + (err.message || 'Error'));
+        alert((isExam ? 'Failed to delete exam assignment: ' : 'Failed to delete assignment: ') + (err.message || 'Error'));
       }
     }
   };
@@ -180,10 +184,12 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div>
             <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>
-              Assigned Classroom Quizzes
+              {isExam ? 'Assigned Classroom Exams' : 'Assigned Classroom Quizzes'}
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-              Quizzes assigned to this classroom with automated/manual schedule windows and proctoring.
+              {isExam
+                ? 'Exams assigned to this classroom with automated/manual schedule windows and proctoring.'
+                : 'Quizzes assigned to this classroom with automated/manual schedule windows and proctoring.'}
             </p>
           </div>
 
@@ -196,7 +202,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
             style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <FiPlus size={16} />
-            <span>+ Assign Quiz</span>
+            <span>{isExam ? '+ Assign Exam' : '+ Assign Quiz'}</span>
           </button>
         </div>
       )}
@@ -224,7 +230,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
           <FiSearch size={16} style={{ position: 'absolute', left: '12px', color: 'var(--light-text-secondary, #6b7280)' }} />
           <input
             type="text"
-            placeholder="Search quizzes by title or description..."
+            placeholder={isExam ? 'Search exams by title or description...' : 'Search quizzes by title or description...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -278,7 +284,9 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
       {loading ? (
         <div style={{ padding: '60px', textAlign: 'center' }}>
           <span className="spinner" style={{ borderColor: 'rgba(79, 70, 229, 0.2)', borderTopColor: 'var(--light-primary)', width: '32px', height: '32px' }}></span>
-          <p style={{ marginTop: '12px', color: 'var(--light-text-secondary)', fontSize: '13px' }}>Loading classroom quizzes...</p>
+          <p style={{ marginTop: '12px', color: 'var(--light-text-secondary)', fontSize: '13px' }}>
+            {isExam ? 'Loading classroom exams...' : 'Loading classroom quizzes...'}
+          </p>
         </div>
       ) : assignedQuizzes.length === 0 ? (
         <div style={{
@@ -291,9 +299,11 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
           <FiAward size={48} style={{ color: 'var(--light-text-muted)', marginBottom: '16px' }} />
           {activeSearch ? (
             <>
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700' }}>No Quizzes Found</h4>
+              <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700' }}>
+                {isExam ? 'No Exams Found' : 'No Quizzes Found'}
+              </h4>
               <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                No classroom quizzes match your search criteria "<strong>{activeSearch}</strong>".
+                No classroom {isExam ? 'exams' : 'quizzes'} match your search criteria "<strong>{activeSearch}</strong>".
               </p>
               <button
                 className="btn-ld btn-ld-secondary"
@@ -306,9 +316,11 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
             </>
           ) : (
             <>
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700' }}>No Quizzes Assigned to Classroom</h4>
+              <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700' }}>
+                {isExam ? 'No Exams Assigned to Classroom' : 'No Quizzes Assigned to Classroom'}
+              </h4>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                Use the <strong>+ Assign Quiz</strong> button above to pick a Quiz Builder template and publish it to students.
+                Use the <strong>{isExam ? '+ Assign Exam' : '+ Assign Quiz'}</strong> button above to pick a Quiz Builder template and publish it to students.
               </p>
             </>
           )}
@@ -319,7 +331,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
             <table className="ld-table">
               <thead>
                 <tr>
-                  <th>Quiz Name</th>
+                  <th>{isExam ? 'Exam Name' : 'Quiz Name'}</th>
                   <th>Opening Window & Duration</th>
                   <th>Status</th>
                   <th>Score Release</th>
@@ -395,10 +407,11 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                             <button
                               className="btn-ld btn-ld-primary btn-ld-small"
                               onClick={() => onStartAttempt(quiz)}
-                              title="Start Attempt"
-                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+                              title={isExam ? 'Start Exam' : 'Start Attempt'}
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 12px', gap: '6px' }}
                             >
                               <FiPlay size={14} />
+                              <span style={{ fontSize: '12px', fontWeight: '600' }}>{isExam ? 'Start Exam' : 'Start'}</span>
                             </button>
                           )}
 
@@ -422,7 +435,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                                 <button
                                   className="btn-ld btn-ld-primary btn-ld-small"
                                   onClick={() => onPreviewTest(quiz)}
-                                  title="Preview Quiz"
+                                  title={isExam ? 'Preview Exam' : 'Preview Quiz'}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                                 >
                                   <FiEye size={14} />
@@ -445,7 +458,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                               <button
                                 className="btn-ld btn-ld-secondary btn-ld-small"
                                 onClick={() => handleOpenEditSettings(quiz)}
-                                title="Edit Quiz Settings & Schedule"
+                                title={isExam ? 'Edit Exam Settings & Schedule' : 'Edit Quiz Settings & Schedule'}
                                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                               >
                                 <FiEdit2 size={14} />
@@ -456,7 +469,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                                 <button
                                   className="btn-ld btn-ld-primary btn-ld-small"
                                   onClick={() => handleManualStart(quiz.id)}
-                                  title="Start Quiz Now"
+                                  title={isExam ? 'Start Exam Now' : 'Start Quiz Now'}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                                 >
                                   <FiPlay size={14} />
@@ -468,7 +481,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                                 <button
                                   className="btn-ld btn-ld-warning btn-ld-small"
                                   onClick={() => handleManualEnd(quiz.id)}
-                                  title="End Quiz Session"
+                                  title={isExam ? 'End Exam Session' : 'End Quiz Session'}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                                 >
                                   <FiSquare size={14} />
@@ -480,7 +493,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                                 <button
                                   className="btn-ld btn-ld-success btn-ld-small"
                                   onClick={() => handleReleaseScores(quiz.id)}
-                                  title="Publish Scores to Students"
+                                  title={isExam ? 'Publish Exam Scores to Students' : 'Publish Scores to Students'}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                                 >
                                   <FiCheckCircle size={14} />
@@ -491,7 +504,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
                               <button
                                 className="btn-ld btn-ld-danger btn-ld-small"
                                 onClick={() => handleDeleteAssignment(quiz.id)}
-                                title="Delete Assignment"
+                                title={isExam ? 'Delete Exam Assignment' : 'Delete Assignment'}
                                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
                               >
                                 <FiTrash2 size={14} />
@@ -522,7 +535,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
               gap: '12px'
             }}>
               <span style={{ fontSize: '13px', color: 'var(--light-text-secondary)' }}>
-                Showing {totalQuizzes > 0 ? (page - 1) * limit + 1 : 0} to {Math.min(page * limit, totalQuizzes)} of {totalQuizzes} quizzes
+                Showing {totalQuizzes > 0 ? (page - 1) * limit + 1 : 0} to {Math.min(page * limit, totalQuizzes)} of {totalQuizzes} {isExam ? 'exams' : 'quizzes'}
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -582,6 +595,7 @@ export const AssignQuizTab: React.FC<AssignQuizTabProps> = ({
       {/* Assign / Edit Quiz Settings Modal */}
       <AssignQuizModal
         isOpen={showAssignModal}
+        mode={mode}
         classroomId={classroomId}
         classroomStudents={classroomStudents}
         quizToEdit={quizToEditSettings}

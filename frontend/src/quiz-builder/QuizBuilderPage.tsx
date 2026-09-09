@@ -124,14 +124,12 @@ export const QuizBuilderPage: React.FC = () => {
     <DashboardLayout>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {/* Top Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div>
-            <h2 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '800', color: 'var(--light-text-primary)' }}>
-              Quiz Builder
-            </h2>
-            <p style={{ margin: 0, fontSize: '14px', color: 'var(--light-text-secondary)' }}>
+        <div className="ld-header">
+          <div className="ld-header-left">
+            <h2 className="ld-title">Quiz Builder</h2>
+            <span className="ld-subtitle">
               Create, manage, and clone organization quiz templates (MCQ & Subjective) to assign across classrooms.
-            </p>
+            </span>
           </div>
 
           <button

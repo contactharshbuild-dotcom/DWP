@@ -522,6 +522,75 @@ export const deleteFolder = async (req, res) => {
   }
 };
 
+export const renameResource = async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'File name is required.' });
+    }
+
+    const resource = await ClassroomResource.findByPk(resourceId, {
+      include: [
+        {
+          model: Classroom,
+          as: 'classroom'
+        },
+        {
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
+    });
+
+    if (!resource) {
+      return res.status(404).json({ message: 'Resource not found.' });
+    }
+
+    // Verify organization matches
+    if (resource.classroom && resource.classroom.organization_id !== req.user.organizationId) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Authorization: Admin can rename, uploader can rename, or approved teacher in this classroom can rename
+    const isAdmin = req.user.role === 'admin';
+    const isUploader = resource.uploaded_by === req.user.id;
+
+    if (!isAdmin && !isUploader) {
+      if (req.user.role === 'teacher') {
+        const isMember = await ClassroomTeacher.findOne({
+          where: {
+            classroom_id: resource.classroom_id,
+            user_id: req.user.id,
+            status: 'approved'
+          }
+        });
+        if (!isMember) {
+          return res.status(403).json({ message: 'Access denied. You do not have permission to rename this file.' });
+        }
+      } else {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    }
+
+    resource.name = name.trim();
+    await resource.save();
+
+    return res.json({
+      message: 'File renamed successfully.',
+      resource
+    });
+  } catch (error) {
+    console.error('Error in renameResource:', error);
+    return res.status(500).json({
+      message: 'Internal server error while renaming file.',
+      error: error.message
+    });
+  }
+};
+
 export const deleteResource = async (req, res) => {
   try {
     const { resourceId } = req.params;

@@ -214,7 +214,8 @@ export class QuizBuilderService {
       description,
       timeLimit,
       classroomId,
-      testType,
+      testType: rawTestType,
+      test_type: snakeTestType,
       shuffleQuestions,
       shuffleOptions,
       showResultImmediately,
@@ -229,6 +230,8 @@ export class QuizBuilderService {
       assignedStudentIds,
       questions
     } = quizData;
+
+    const testType = rawTestType || snakeTestType;
 
     // Verify classroom belongs to organization if provided
     let validClassroomId = quiz.classroom_id;
@@ -334,7 +337,8 @@ export class QuizBuilderService {
       proctorExtensionRequired,
       shuffleQuestions,
       shuffleOptions,
-      assignedStudentIds = []
+      assignedStudentIds = [],
+      testType
     } = payload;
 
     if (!classroomId) {
@@ -380,15 +384,17 @@ export class QuizBuilderService {
       initialStatus = 'active';
     }
 
+    const assignedTestType = (testType || payload.test_type) === 'exam' ? 'exam' : 'session';
+
     // Create assigned McqTest record for classroom
     const assignedQuiz = await McqTest.create({
       organization_id: organizationId,
       classroom_id: classroom.id,
-      title: baseTitle || 'Assigned Quiz',
+      title: baseTitle || (assignedTestType === 'exam' ? 'Assigned Exam' : 'Assigned Quiz'),
       description: baseDescription || null,
       total_questions: questionsToClone.length,
       time_limit: parseInt(timeLimit) || 30,
-      test_type: 'session',
+      test_type: assignedTestType,
       start_window: start,
       end_window: end,
       activation_mode: activationMode || 'auto',
@@ -445,11 +451,23 @@ export class QuizBuilderService {
     const limit = Math.max(1, parseInt(options.limit, 10) || 5);
     const offset = (page - 1) * limit;
     const search = options.search ? options.search.trim() : '';
+    const testType = options.testType || options.test_type;
 
     const where = {
       classroom_id: classroomId,
       organization_id: organizationId
     };
+
+    if (testType === 'exam') {
+      where.test_type = 'exam';
+    } else if (testType === 'quiz') {
+      where.test_type = {
+        [Op.or]: [
+          { [Op.ne]: 'exam' },
+          null
+        ]
+      };
+    }
 
     if (search) {
       const searchTerm = `%${search}%`;
