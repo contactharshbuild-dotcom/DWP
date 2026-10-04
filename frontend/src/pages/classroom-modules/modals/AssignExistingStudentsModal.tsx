@@ -12,6 +12,7 @@ import {
   FiTag
 } from 'react-icons/fi';
 import api from '../../../services/api';
+import { useBatches } from '../../../context/BatchContext';
 
 export interface AvailableStudentClassroom {
   id: number;
@@ -54,6 +55,7 @@ export const AssignExistingStudentsModal: React.FC<AssignExistingStudentsModalPr
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { batches } = useBatches();
 
   const [availableStudents, setAvailableStudents] = useState<AvailableStudent[]>([]);
   const [otherClassrooms, setOtherClassrooms] = useState<OtherClassroom[]>([]);
@@ -277,14 +279,20 @@ export const AssignExistingStudentsModal: React.FC<AssignExistingStudentsModalPr
             <FiTag size={13} style={{ color: 'var(--light-primary)' }} />
             <span>Classroom Batch for Assigned Students (Optional)</span>
           </label>
-          <input
-            type="text"
+          <select
             className="form-input-ld"
-            placeholder="e.g. Batch A, Morning 2026 (Leave blank to keep existing batch)"
             value={assignBatch}
             onChange={(e) => setAssignBatch(e.target.value)}
             style={{ height: '34px', fontSize: '13px' }}
-          />
+          >
+            <option value="">Keep existing batch / No batch</option>
+            {batches.map(b => (
+              <option key={b.id} value={b.name}>{b.name}</option>
+            ))}
+            {assignBatch && !batches.some(b => b.name === assignBatch) && (
+              <option value={assignBatch}>{assignBatch}</option>
+            )}
+          </select>
         </div>
 
         {/* Selection Stats Bar */}

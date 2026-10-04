@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from './store';
 import { ClassroomProvider } from './components/ClassroomContext';
+import { BatchProvider } from './context/BatchContext';
 import { ThemeProvider } from './context/ThemeContext';
 
 // Lazy loading route components for code splitting & initial bundle optimization
@@ -20,6 +21,7 @@ const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
 const SelectPlan = lazy(() => import('./pages/SelectPlan'));
 const QuizBuilderPage = lazy(() => import('./quiz-builder/QuizBuilderPage').then(module => ({ default: module.QuizBuilderPage })));
 const MaterialBankPage = lazy(() => import('./material-bank/MaterialBankPage').then(module => ({ default: module.MaterialBankPage })));
+const Batches = lazy(() => import('./pages/Batches'));
 
 // Protected Route wrapper component
 interface ProtectedRouteProps {
@@ -113,7 +115,8 @@ function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ClassroomProvider>
-          <Suspense fallback={PageFallback}>
+          <BatchProvider>
+            <Suspense fallback={PageFallback}>
             <Routes>
               {/* Master Admin Routes */}
               <Route
@@ -191,6 +194,14 @@ function App() {
                 }
               />
               <Route
+                path="/batches"
+                element={
+                  <ProtectedRoute>
+                    <Batches />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/classrooms/:id"
                 element={
                   <ProtectedRoute>
@@ -229,9 +240,10 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
-        </ClassroomProvider>
-      </ThemeProvider>
-    </BrowserRouter>
+        </BatchProvider>
+      </ClassroomProvider>
+    </ThemeProvider>
+  </BrowserRouter>
   );
 }
 

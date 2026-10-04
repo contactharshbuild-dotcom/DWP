@@ -18,10 +18,12 @@ import type { RootState } from '../store';
 import { updateUserProfile } from '../store/authSlice';
 import api from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
+import { useBatches } from '../context/BatchContext';
 
 const UserProfile: React.FC = () => {
   const dispatch = useDispatch();
   const { user, organization } = useSelector((state: RootState) => state.auth);
+  const { batches } = useBatches();
 
   const [name, setName] = useState(user?.name || '');
   const [batch, setBatch] = useState(user?.batch || '');
@@ -253,14 +255,20 @@ const UserProfile: React.FC = () => {
 
               <div className="form-group-ld">
                 <label className="form-label-ld" htmlFor="userBatch">Batch / Academic Group</label>
-                <input
+                <select
                   id="userBatch"
-                  type="text"
                   className="form-input-ld"
                   value={batch}
                   onChange={(e) => setBatch(e.target.value)}
-                  placeholder="e.g. 2026 Batch / Class A"
-                />
+                >
+                  <option value="">Select Batch (Optional)</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.name}>{b.name}</option>
+                  ))}
+                  {batch && !batches.some(b => b.name === batch) && (
+                    <option value={batch}>{batch}</option>
+                  )}
+                </select>
               </div>
             </div>
 

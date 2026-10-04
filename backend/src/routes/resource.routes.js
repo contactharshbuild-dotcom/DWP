@@ -12,7 +12,9 @@ import {
   deleteFolder,
   assignResource,
   assignFolder,
-  importFromMaterialBank
+  importFromMaterialBank,
+  reorderResources,
+  reorderClassroomFolders
 } from '../controllers/resource.controller.js';
 
 const router = express.Router();
@@ -41,6 +43,9 @@ router.post('/link', addLinkResource);
 // Get all resources for a classroom
 router.get('/classroom/:classroomId', getClassroomResources);
 
+// Reorder resources
+router.put('/reorder', reorderResources);
+
 // Delete a resource
 router.delete('/:resourceId', deleteResource);
 
@@ -52,6 +57,7 @@ router.put('/:resourceId/rename', renameResource);
 
 // Folders endpoints
 router.post('/folders', createFolder);
+router.put('/folders/reorder', reorderClassroomFolders);
 router.put('/folders/:folderId', renameFolder);
 router.delete('/folders/:folderId', deleteFolder);
 router.put('/folders/:folderId/assign', assignFolder);

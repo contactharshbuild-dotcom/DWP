@@ -7,6 +7,13 @@ interface Teacher {
   id: number;
   name: string;
   email: string;
+  role?: string;
+  batch?: string | null;
+  status?: string;
+  ClassroomTeacher?: {
+    role?: string;
+    status?: string;
+  };
 }
 
 interface Classroom {

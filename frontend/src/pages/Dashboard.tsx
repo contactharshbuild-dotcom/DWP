@@ -186,28 +186,34 @@ const Dashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {classrooms.map((cls) => (
-                  <tr key={cls.id}>
-                    <td style={{ fontWeight: '600', color: 'var(--light-primary)' }}>
-                      {cls.classroom_id}
-                    </td>
-                    <td style={{ fontWeight: '500' }}>{cls.name}</td>
-                    <td>{cls.subject}</td>
-                    <td>
-                      {cls.teachers && cls.teachers.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {cls.teachers.map((t) => (
-                            <span key={t.id} className="badge-ld badge-ld-primary">
-                              {t.name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--light-text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
-                          No teacher assigned
-                        </span>
-                      )}
-                    </td>
+                {classrooms.map((cls) => {
+                  const assignedTeachers = (cls.teachers || []).filter(
+                    (t) => t.role !== 'student' && t.ClassroomTeacher?.role !== 'student' &&
+                           (!t.ClassroomTeacher?.status || t.ClassroomTeacher?.status === 'approved')
+                  );
+
+                  return (
+                    <tr key={cls.id}>
+                      <td style={{ fontWeight: '600', color: 'var(--light-primary)' }}>
+                        {cls.classroom_id}
+                      </td>
+                      <td style={{ fontWeight: '500' }}>{cls.name}</td>
+                      <td>{cls.subject}</td>
+                      <td>
+                        {assignedTeachers.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {assignedTeachers.map((t) => (
+                              <span key={t.id} className="badge-ld badge-ld-primary">
+                                {t.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--light-text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
+                            No teacher assigned
+                          </span>
+                        )}
+                      </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                         <Link 
@@ -250,7 +256,8 @@ const Dashboard: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+              })}
               </tbody>
             </table>
           </div>

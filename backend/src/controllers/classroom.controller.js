@@ -157,27 +157,44 @@ export const deleteClassroom = async (req, res) => {
   }
 };
 
-// Get all classrooms for organization (accessible by admin and teacher)
+// Get all classrooms for organization (accessible by admin, teacher, and student)
 export const getClassrooms = async (req, res) => {
   try {
-    const queryOptions = {
-      where: { organization_id: req.user.organizationId },
+    const classroomWhere = { organization_id: req.user.organizationId };
+
+    // If teacher or student, filter to only return classrooms where they are approved members
+    if (req.user.role === 'teacher' || req.user.role === 'student') {
+      const approvedMemberships = await ClassroomTeacher.findAll({
+        where: {
+          user_id: req.user.id,
+          status: 'approved'
+        },
+        attributes: ['classroom_id']
+      });
+      const classroomIds = approvedMemberships.map(m => m.classroom_id);
+      classroomWhere.id = { [Op.in]: classroomIds };
+    }
+
+    const classrooms = await Classroom.findAll({
+      where: classroomWhere,
       include: [{
         model: User,
         as: 'teachers',
+        where: {
+          role: { [Op.ne]: 'student' }
+        },
         attributes: ['id', 'name', 'email', 'status', 'role', 'batch'],
-        through: { attributes: ['status', 'role'] }
+        through: {
+          where: {
+            role: { [Op.ne]: 'student' },
+            status: 'approved'
+          },
+          attributes: ['status', 'role']
+        },
+        required: false
       }],
       order: [['created_at', 'DESC']]
-    };
-
-    // If teacher or student, filter to only return classrooms where they are approved
-    if (req.user.role === 'teacher' || req.user.role === 'student') {
-      queryOptions.include[0].where = { id: req.user.id };
-      queryOptions.include[0].through = { where: { status: 'approved' } };
-    }
-
-    const classrooms = await Classroom.findAll(queryOptions);
+    });
 
     return res.json({ classrooms });
   } catch (error) {

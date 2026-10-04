@@ -1,4 +1,4 @@
-import { MaterialBankFolder, MaterialBankItem, User } from '../models/index.js';
+import { MaterialBankFolder, MaterialBankItem, User, ClassroomResource, ClassroomFolder } from '../models/index.js';
 import { uploadFile, deleteFile } from '../services/storage.service.js';
 import sequelize from '../config/database.js';
 import { Op } from 'sequelize';
@@ -18,6 +18,10 @@ const ensureOrderIndexColumn = async () => {
   try {
     await sequelize.query('ALTER TABLE material_bank_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
     await sequelize.query('ALTER TABLE material_bank_folders ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE classroom_resources ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE classroom_folders ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE classroom_resources ADD COLUMN IF NOT EXISTS material_bank_item_id INTEGER REFERENCES material_bank_items(id) ON DELETE SET NULL;');
+    await sequelize.query('ALTER TABLE classroom_folders ADD COLUMN IF NOT EXISTS material_bank_folder_id INTEGER REFERENCES material_bank_folders(id) ON DELETE SET NULL;');
     isTableMigrated = true;
   } catch (err) {
     // Silently ignore if already exists or dialect mismatch
@@ -569,23 +573,53 @@ export const reorderItems = async (req, res) => {
     const organizationId = req.user.organizationId;
     const startIndex = typeof req.body.startIndex === 'number' ? req.body.startIndex : 0;
 
-    // Update each item's order_index according to its array position
-    const updatePromises = itemIds.map((id, index) =>
-      MaterialBankItem.update(
-        { order_index: startIndex + index },
+    // Update each item's order_index according to its array position and sync with assigned classrooms
+    const updatePromises = itemIds.map(async (id, index) => {
+      const newOrder = startIndex + index;
+      await MaterialBankItem.update(
+        { order_index: newOrder },
         {
           where: {
             id,
             organization_id: organizationId
           }
         }
-      )
-    );
+      );
+
+      // Find item details to synchronize assigned classroom resources
+      const item = await MaterialBankItem.findOne({
+        where: { id, organization_id: organizationId }
+      });
+
+      if (item) {
+        const matchConditions = [
+          { material_bank_item_id: id }
+        ];
+        if (item.drive_file_id) {
+          matchConditions.push({ drive_file_id: item.drive_file_id });
+        }
+        if (item.file_url) {
+          matchConditions.push({ drive_link: item.file_url });
+        }
+
+        await ClassroomResource.update(
+          {
+            order_index: newOrder,
+            material_bank_item_id: id
+          },
+          {
+            where: {
+              [Op.or]: matchConditions
+            }
+          }
+        );
+      }
+    });
 
     await Promise.all(updatePromises);
 
     return res.json({
-      message: 'Items reordered successfully.',
+      message: 'Items reordered successfully and synced with classrooms.',
       success: true
     });
 
@@ -612,22 +646,44 @@ export const reorderFolders = async (req, res) => {
     const organizationId = req.user.organizationId;
     const startIndex = typeof req.body.startIndex === 'number' ? req.body.startIndex : 0;
 
-    const updatePromises = folderIds.map((id, index) =>
-      MaterialBankFolder.update(
-        { order_index: startIndex + index },
+    const updatePromises = folderIds.map(async (id, index) => {
+      const newOrder = startIndex + index;
+      await MaterialBankFolder.update(
+        { order_index: newOrder },
         {
           where: {
             id,
             organization_id: organizationId
           }
         }
-      )
-    );
+      );
+
+      const folder = await MaterialBankFolder.findOne({
+        where: { id, organization_id: organizationId }
+      });
+
+      if (folder) {
+        await ClassroomFolder.update(
+          {
+            order_index: newOrder,
+            material_bank_folder_id: id
+          },
+          {
+            where: {
+              [Op.or]: [
+                { material_bank_folder_id: id },
+                { name: folder.name }
+              ]
+            }
+          }
+        );
+      }
+    });
 
     await Promise.all(updatePromises);
 
     return res.json({
-      message: 'Folders reordered successfully.',
+      message: 'Folders reordered successfully and synced with classrooms.',
       success: true
     });
 

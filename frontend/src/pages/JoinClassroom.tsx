@@ -17,13 +17,27 @@ import {
 import type { RootState } from '../store';
 import { setCredentials } from '../store/authSlice';
 import api from '../services/api';
+import { useBatches } from '../context/BatchContext';
 
 const JoinClassroom: React.FC = () => {
   const { classroomId } = useParams<{ classroomId: string }>();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { token, user } = useSelector((state: RootState) => state.auth);
- 
+  const { batches: contextBatches } = useBatches();
+  const [publicBatches, setPublicBatches] = useState<{ id: number; name: string }[]>([]);
+  const batches = contextBatches.length > 0 ? contextBatches : publicBatches;
+
+  useEffect(() => {
+    if (classroomId && contextBatches.length === 0) {
+      api.get(`/batches/public?classroomId=${classroomId}`)
+        .then(res => {
+          if (res.data?.batches) setPublicBatches(res.data.batches);
+        })
+        .catch(err => console.error('Failed to load public batches:', err));
+    }
+  }, [classroomId, contextBatches.length]);
+
   // Read search params for role override
   const [searchParams] = useSearchParams();
   const queryRole = searchParams.get('role');
@@ -670,17 +684,24 @@ const JoinClassroom: React.FC = () => {
 
                 {selectedRole === 'student' && (
                   <div className="form-group" style={{ marginBottom: '28px' }}>
-                    <label className="form-label" htmlFor="profBatch">Batch / Section (e.g. Batch A) *</label>
+                    <label className="form-label" htmlFor="profBatch">Batch / Section *</label>
                     <div className="input-wrapper">
-                      <input
+                      <select
                         className="form-input"
-                        type="text"
                         id="profBatch"
-                        placeholder="e.g. Batch A"
                         value={profileBatch}
                         onChange={(e) => setProfileBatch(e.target.value)}
                         required={selectedRole === 'student'}
-                      />
+                        style={{ appearance: 'auto', paddingLeft: '40px' }}
+                      >
+                        <option value="">Select your batch...</option>
+                        {batches.map(b => (
+                          <option key={b.id} value={b.name}>{b.name}</option>
+                        ))}
+                        {profileBatch && !batches.some(b => b.name === profileBatch) && (
+                          <option value={profileBatch}>{profileBatch}</option>
+                        )}
+                      </select>
                       <FiUsers className="input-icon" />
                     </div>
                   </div>
@@ -752,17 +773,21 @@ const JoinClassroom: React.FC = () => {
 
                 {selectedRole === 'student' && !profileBatch && (
                   <div className="form-group" style={{ marginBottom: '28px' }}>
-                    <label className="form-label" htmlFor="roleBatch">Batch / Section (e.g. Batch A) *</label>
+                    <label className="form-label" htmlFor="roleBatch">Batch / Section *</label>
                     <div className="input-wrapper">
-                      <input
+                      <select
                         className="form-input"
-                        type="text"
                         id="roleBatch"
-                        placeholder="e.g. Batch A"
                         value={profileBatch}
                         onChange={(e) => setProfileBatch(e.target.value)}
                         required
-                      />
+                        style={{ appearance: 'auto', paddingLeft: '40px' }}
+                      >
+                        <option value="">Select your batch...</option>
+                        {batches.map(b => (
+                          <option key={b.id} value={b.name}>{b.name}</option>
+                        ))}
+                      </select>
                       <FiUsers className="input-icon" />
                     </div>
                   </div>

@@ -10,6 +10,34 @@ const ensureResourceOrderIndexColumn = async () => {
   try {
     await sequelize.query('ALTER TABLE classroom_resources ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
     await sequelize.query('ALTER TABLE classroom_folders ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;');
+    await sequelize.query('ALTER TABLE classroom_resources ADD COLUMN IF NOT EXISTS material_bank_item_id INTEGER REFERENCES material_bank_items(id) ON DELETE SET NULL;');
+    await sequelize.query('ALTER TABLE classroom_folders ADD COLUMN IF NOT EXISTS material_bank_folder_id INTEGER REFERENCES material_bank_folders(id) ON DELETE SET NULL;');
+
+    // Sync any existing unlinked classroom_resources with material_bank_items by drive_file_id or drive_link
+    await sequelize.query(`
+      UPDATE classroom_resources cr
+      SET material_bank_item_id = mbi.id,
+          order_index = mbi.order_index
+      FROM material_bank_items mbi
+      WHERE cr.material_bank_item_id = mbi.id
+         OR (
+           cr.material_bank_item_id IS NULL AND (
+             (cr.drive_file_id IS NOT NULL AND cr.drive_file_id = mbi.drive_file_id)
+             OR (cr.drive_link IS NOT NULL AND cr.drive_link = mbi.file_url)
+           )
+         );
+    `).catch(() => {});
+
+    // Sync any existing unlinked classroom_folders with material_bank_folders
+    await sequelize.query(`
+      UPDATE classroom_folders cf
+      SET material_bank_folder_id = mbf.id,
+          order_index = mbf.order_index
+      FROM material_bank_folders mbf
+      WHERE cf.material_bank_folder_id = mbf.id
+         OR (cf.material_bank_folder_id IS NULL AND cf.name = mbf.name);
+    `).catch(() => {});
+
     isResourceTableMigrated = true;
   } catch (err) {
     // Ignore error
@@ -143,7 +171,7 @@ export const addLinkResource = async (req, res) => {
 
     let targetFolderId = folderId ? parseInt(folderId, 10) : null;
 
-    const { assignedStudentIds } = req.body;
+    const { assignedStudentIds, materialBankItemId, orderIndex } = req.body;
     const resource = await ClassroomResource.create({
       classroom_id: classroomId,
       name,
@@ -155,7 +183,9 @@ export const addLinkResource = async (req, res) => {
       module_session: moduleSession || null,
       visibility: visibility || 'hidden',
       batch: batch || null,
-      assigned_student_ids: assignedStudentIds || null
+      assigned_student_ids: assignedStudentIds || null,
+      material_bank_item_id: materialBankItemId || null,
+      order_index: orderIndex !== undefined && orderIndex !== null ? orderIndex : 0
     });
 
     const completeResource = await ClassroomResource.findByPk(resource.id, {
@@ -251,6 +281,14 @@ export const getClassroomResources = async (req, res) => {
 
     await ensureResourceOrderIndexColumn();
 
+    // Helper to sort resources/folders by order_index
+    const sortEntities = (items) => [...items].sort((a, b) => {
+      const oA = a.order_index ?? 0;
+      const oB = b.order_index ?? 0;
+      if (oA !== oB) return oA - oB;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+
     // CASE 1: Fetching resources inside a specific folder (folderId query parameter provided)
     if (folderId) {
       const targetFolderId = parseInt(folderId, 10);
@@ -263,11 +301,18 @@ export const getClassroomResources = async (req, res) => {
       const [allResources, allFolders] = await Promise.all([
         ClassroomResource.findAll({
           where: whereCondition,
-          include: [{
-            model: User,
-            as: 'uploader',
-            attributes: ['id', 'name', 'email']
-          }],
+          include: [
+            {
+              model: User,
+              as: 'uploader',
+              attributes: ['id', 'name', 'email']
+            },
+            {
+              model: MaterialBankItem,
+              as: 'materialBankItem',
+              attributes: ['id', 'order_index']
+            }
+          ],
           order: [
             ['order_index', 'ASC'],
             ['created_at', 'ASC'],
@@ -276,6 +321,13 @@ export const getClassroomResources = async (req, res) => {
         }),
         ClassroomFolder.findAll({
           where: { classroom_id: classroomId },
+          include: [
+            {
+              model: MaterialBankFolder,
+              as: 'materialBankFolder',
+              attributes: ['id', 'order_index']
+            }
+          ],
           order: [
             ['order_index', 'ASC'],
             ['created_at', 'ASC'],
@@ -284,11 +336,30 @@ export const getClassroomResources = async (req, res) => {
         })
       ]);
 
+      // Sync latest order_index from linked Material Bank items/folders if available
+      allResources.forEach(resrc => {
+        if (resrc.materialBankItem && resrc.materialBankItem.order_index !== undefined && resrc.materialBankItem.order_index !== null) {
+          if (resrc.order_index !== resrc.materialBankItem.order_index) {
+            resrc.order_index = resrc.materialBankItem.order_index;
+            resrc.save().catch(() => {});
+          }
+        }
+      });
+
+      allFolders.forEach(f => {
+        if (f.materialBankFolder && f.materialBankFolder.order_index !== undefined && f.materialBankFolder.order_index !== null) {
+          if (f.order_index !== f.materialBankFolder.order_index) {
+            f.order_index = f.materialBankFolder.order_index;
+            f.save().catch(() => {});
+          }
+        }
+      });
+
       const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
       const studentBatch = student ? student.batch : null;
 
-      const resources = allResources.filter(resrc => isAccessible(resrc, req.user, studentBatch));
-      const folders = allFolders.filter(f => isAccessible(f, req.user, studentBatch));
+      const resources = sortEntities(allResources.filter(resrc => isAccessible(resrc, req.user, studentBatch)));
+      const folders = sortEntities(allFolders.filter(f => isAccessible(f, req.user, studentBatch)));
 
       return res.json({ resources, folders });
     }
@@ -296,6 +367,13 @@ export const getClassroomResources = async (req, res) => {
     // CASE 2: Fetching root Study Materials view (no folderId query parameter)
     const allFolders = await ClassroomFolder.findAll({
       where: { classroom_id: classroomId },
+      include: [
+        {
+          model: MaterialBankFolder,
+          as: 'materialBankFolder',
+          attributes: ['id', 'order_index']
+        }
+      ],
       order: [
         ['order_index', 'ASC'],
         ['created_at', 'ASC'],
@@ -310,11 +388,18 @@ export const getClassroomResources = async (req, res) => {
 
     const allRootResources = await ClassroomResource.findAll({
       where: whereCondition,
-      include: [{
-        model: User,
-        as: 'uploader',
-        attributes: ['id', 'name', 'email']
-      }],
+      include: [
+        {
+          model: User,
+          as: 'uploader',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: MaterialBankItem,
+          as: 'materialBankItem',
+          attributes: ['id', 'order_index']
+        }
+      ],
       order: [
         ['order_index', 'ASC'],
         ['created_at', 'ASC'],
@@ -322,11 +407,29 @@ export const getClassroomResources = async (req, res) => {
       ]
     });
 
+    allRootResources.forEach(resrc => {
+      if (resrc.materialBankItem && resrc.materialBankItem.order_index !== undefined && resrc.materialBankItem.order_index !== null) {
+        if (resrc.order_index !== resrc.materialBankItem.order_index) {
+          resrc.order_index = resrc.materialBankItem.order_index;
+          resrc.save().catch(() => {});
+        }
+      }
+    });
+
+    allFolders.forEach(f => {
+      if (f.materialBankFolder && f.materialBankFolder.order_index !== undefined && f.materialBankFolder.order_index !== null) {
+        if (f.order_index !== f.materialBankFolder.order_index) {
+          f.order_index = f.materialBankFolder.order_index;
+          f.save().catch(() => {});
+        }
+      }
+    });
+
     const student = req.user.role === 'student' ? await User.findByPk(req.user.id) : null;
     const studentBatch = student ? student.batch : null;
 
-    const folders = allFolders.filter(f => isAccessible(f, req.user, studentBatch));
-    const rootResources = allRootResources.filter(resrc => isAccessible(resrc, req.user, studentBatch));
+    const folders = sortEntities(allFolders.filter(f => isAccessible(f, req.user, studentBatch)));
+    const rootResources = sortEntities(allRootResources.filter(resrc => isAccessible(resrc, req.user, studentBatch)));
 
     return res.json({ folders, resources: rootResources });
 
@@ -700,6 +803,24 @@ export const assignFolder = async (req, res) => {
     folder.expiry_at = expiryAt ? new Date(expiryAt) : null;
     await folder.save();
 
+    // Sync order of all resources inside this folder that originated from Material Bank
+    await sequelize.query(`
+      UPDATE classroom_resources cr
+      SET order_index = mbi.order_index,
+          material_bank_item_id = mbi.id
+      FROM material_bank_items mbi
+      WHERE cr.folder_id = :folderId
+        AND (
+          cr.material_bank_item_id = mbi.id
+          OR (
+            cr.material_bank_item_id IS NULL AND (
+              (cr.drive_file_id IS NOT NULL AND cr.drive_file_id = mbi.drive_file_id)
+              OR (cr.drive_link IS NOT NULL AND cr.drive_link = mbi.file_url)
+            )
+          )
+        );
+    `, { replacements: { folderId } }).catch(() => {});
+
     return res.json({ message: 'Folder assignments updated successfully.', folder });
   } catch (error) {
     console.error('Error in assignFolder:', error);
@@ -771,6 +892,7 @@ export const importFromMaterialBank = async (req, res) => {
           uploaded_by: req.user.id,
           folder_id: destFolderId,
           order_index: item.order_index !== undefined && item.order_index !== null ? item.order_index : i,
+          material_bank_item_id: item.id,
           visibility: req.body.visibility || 'hidden'
         });
         createdResources.push(resource);
@@ -788,6 +910,7 @@ export const importFromMaterialBank = async (req, res) => {
           classroom_id: classroomId,
           name: bankFolder.name,
           order_index: bankFolder.order_index !== undefined && bankFolder.order_index !== null ? bankFolder.order_index : 0,
+          material_bank_folder_id: bankFolder.id,
           visibility: req.body.visibility || 'hidden'
         });
 
@@ -812,6 +935,7 @@ export const importFromMaterialBank = async (req, res) => {
             uploaded_by: req.user.id,
             folder_id: newClassroomFolder.id,
             order_index: item.order_index !== undefined && item.order_index !== null ? item.order_index : i,
+            material_bank_item_id: item.id,
             visibility: req.body.visibility || 'hidden'
           });
           createdResources.push(resource);
@@ -848,6 +972,159 @@ export const importFromMaterialBank = async (req, res) => {
       message: 'Failed to import materials from Material Bank.',
       error: error.message
     });
+  }
+};
+
+// PUT /api/resources/reorder
+export const reorderResources = async (req, res) => {
+  try {
+    const { resourceIds, startIndex = 0 } = req.body;
+    if (!Array.isArray(resourceIds)) {
+      return res.status(400).json({ message: 'resourceIds array is required.' });
+    }
+
+    await ensureResourceOrderIndexColumn();
+
+    const organizationId = req.user.organizationId;
+
+    const updatePromises = resourceIds.map(async (id, index) => {
+      const newOrder = startIndex + index;
+      await ClassroomResource.update(
+        { order_index: newOrder },
+        { where: { id } }
+      );
+
+      // Find the resource to reverse sync with Material Bank
+      const resource = await ClassroomResource.findByPk(id);
+      if (resource) {
+        let bankItemId = resource.material_bank_item_id;
+
+        // If not directly linked yet, attempt to find matching MaterialBankItem
+        if (!bankItemId) {
+          const matchConditions = [];
+          if (resource.drive_file_id) matchConditions.push({ drive_file_id: resource.drive_file_id });
+          if (resource.drive_link) matchConditions.push({ file_url: resource.drive_link });
+
+          if (matchConditions.length > 0) {
+            const foundItem = await MaterialBankItem.findOne({
+              where: {
+                [Op.or]: matchConditions,
+                organization_id: organizationId
+              }
+            });
+            if (foundItem) {
+              bankItemId = foundItem.id;
+              await resource.update({ material_bank_item_id: bankItemId });
+            }
+          }
+        }
+
+        // If linked to Material Bank item, reverse update MaterialBankItem order_index
+        if (bankItemId) {
+          await MaterialBankItem.update(
+            { order_index: newOrder },
+            {
+              where: {
+                id: bankItemId,
+                organization_id: organizationId
+              }
+            }
+          );
+
+          // And keep other classrooms' copies of this material bank item in sync
+          await ClassroomResource.update(
+            { order_index: newOrder },
+            {
+              where: {
+                material_bank_item_id: bankItemId,
+                id: { [Op.ne]: id }
+              }
+            }
+          );
+        }
+      }
+    });
+
+    await Promise.all(updatePromises);
+
+    return res.json({
+      message: 'Resources reordered successfully and synced with Material Bank.',
+      success: true
+    });
+  } catch (error) {
+    console.error('Error in reorderResources:', error);
+    return res.status(500).json({ message: 'Failed to reorder resources.', error: error.message });
+  }
+};
+
+// PUT /api/resources/folders/reorder
+export const reorderClassroomFolders = async (req, res) => {
+  try {
+    const { folderIds, startIndex = 0 } = req.body;
+    if (!Array.isArray(folderIds)) {
+      return res.status(400).json({ message: 'folderIds array is required.' });
+    }
+
+    await ensureResourceOrderIndexColumn();
+
+    const organizationId = req.user.organizationId;
+
+    const updatePromises = folderIds.map(async (id, index) => {
+      const newOrder = startIndex + index;
+      await ClassroomFolder.update(
+        { order_index: newOrder },
+        { where: { id } }
+      );
+
+      const folder = await ClassroomFolder.findByPk(id);
+      if (folder) {
+        let bankFolderId = folder.material_bank_folder_id;
+        if (!bankFolderId) {
+          const foundFolder = await MaterialBankFolder.findOne({
+            where: {
+              name: folder.name,
+              organization_id: organizationId
+            }
+          });
+          if (foundFolder) {
+            bankFolderId = foundFolder.id;
+            await folder.update({ material_bank_folder_id: bankFolderId });
+          }
+        }
+
+        if (bankFolderId) {
+          await MaterialBankFolder.update(
+            { order_index: newOrder },
+            {
+              where: {
+                id: bankFolderId,
+                organization_id: organizationId
+              }
+            }
+          );
+
+          await ClassroomFolder.update(
+            { order_index: newOrder },
+            {
+              where: {
+                material_bank_folder_id: bankFolderId,
+                id: { [Op.ne]: id }
+              }
+            }
+          );
+        }
+      }
+    });
+
+    await Promise.all(updatePromises);
+
+    return res.json({
+      message: 'Folders reordered successfully and synced with Material Bank.',
+      success: true
+    });
+  } catch (error) {
+    console.error('Error in reorderClassroomFolders:', error);
+    return res.status(500).json({ message: 'Failed to reorder folders.', error: error.message });
   }
 };
 

@@ -25,6 +25,7 @@ import {
 import api, { getServerUrl } from '../services/api';
 import DashboardLayout from '../components/DashboardLayout';
 import { useClassrooms } from '../components/ClassroomContext';
+import { useBatches } from '../context/BatchContext';
 import { TeachersTab } from './classroom-modules/TeachersTab';
 import { JoinRequestsTab } from './classroom-modules/JoinRequestsTab';
 import { StudentsTab } from './classroom-modules/StudentsTab';
@@ -272,6 +273,7 @@ const ClassroomDetails: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
   const { fetchClassrooms } = useClassrooms();
+  const { batches } = useBatches();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -1075,6 +1077,8 @@ const ClassroomDetails: React.FC = () => {
           driveFileId: selectedBankItem.drive_file_id,
           mimeType: selectedBankItem.mime_type || (selectedBankItem.type === 'youtube' ? 'youtube' : 'application/octet-stream'),
           folderId: folderVal,
+          materialBankItemId: selectedBankItem.id,
+          orderIndex: selectedBankItem.order_index,
           moduleSession: materialModuleSession,
           visibility: materialVisibility,
           batch: materialBatch,
@@ -1284,6 +1288,34 @@ const ClassroomDetails: React.FC = () => {
       return response.data.resource;
     } catch (err: any) {
       console.error('Failed to rename file:', err);
+      throw err;
+    }
+  };
+
+  // Reorder Resources
+  const handleReorderResources = async (orderedIds: number[]) => {
+    try {
+      await api.put('/resources/reorder', { resourceIds: orderedIds });
+      setResources(prev => {
+        const idToOrder = new Map(orderedIds.map((id, idx) => [id, idx]));
+        return prev.map(r => idToOrder.has(r.id) ? { ...r, order_index: idToOrder.get(r.id)! } : r);
+      });
+    } catch (err: any) {
+      console.error('Failed to reorder resources:', err);
+      throw err;
+    }
+  };
+
+  // Reorder Folders
+  const handleReorderFolders = async (orderedIds: number[]) => {
+    try {
+      await api.put('/resources/folders/reorder', { folderIds: orderedIds });
+      setFolders(prev => {
+        const idToOrder = new Map(orderedIds.map((id, idx) => [id, idx]));
+        return prev.map(f => idToOrder.has(f.id) ? { ...f, order_index: idToOrder.get(f.id)! } : f);
+      });
+    } catch (err: any) {
+      console.error('Failed to reorder folders:', err);
       throw err;
     }
   };
@@ -2917,6 +2949,8 @@ const ClassroomDetails: React.FC = () => {
               openAssignModal={openAssignModal}
               isPreviewable={isPreviewable}
               setPreviewResource={setPreviewResource}
+              onReorderResources={handleReorderResources}
+              onReorderFolders={handleReorderFolders}
               onOpenAddModal={(type) => {
                 if (type === 'file') {
                   setAddType('file');
@@ -3140,14 +3174,20 @@ const ClassroomDetails: React.FC = () => {
 
                 <div className="form-group-ld" style={{ marginBottom: '24px' }}>
                   <label className="form-label-ld">Classroom Batch (Optional)</label>
-                  <input 
-                    type="text" 
+                  <select 
                     className="form-input-ld" 
-                    placeholder="e.g. Batch A, Morning, 2026"
                     value={inviteStudentBatch}
                     onChange={(e) => setInviteStudentBatch(e.target.value)}
                     disabled={inviteStudentLoading}
-                  />
+                  >
+                    <option value="">Select Batch (Optional)</option>
+                    {batches.map(b => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
+                    {inviteStudentBatch && !batches.some(b => b.name === inviteStudentBatch) && (
+                      <option value={inviteStudentBatch}>{inviteStudentBatch}</option>
+                    )}
+                  </select>
                   <small style={{ display: 'block', color: 'var(--light-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
                     Student will only see tests and resources assigned to this batch.
                   </small>
@@ -3808,15 +3848,21 @@ const ClassroomDetails: React.FC = () => {
 
               {materialVisibility === 'specific_batch' && (
                 <div className="form-group-ld">
-                  <label className="form-label-ld">Student Batch Name *</label>
-                  <input 
-                    type="text" 
+                  <label className="form-label-ld">Student Batch *</label>
+                  <select 
                     className="form-input-ld" 
-                    placeholder="e.g. Batch A"
                     value={materialBatch}
                     onChange={(e) => setMaterialBatch(e.target.value)}
                     required
-                  />
+                  >
+                    <option value="">Select Batch *</option>
+                    {batches.map(b => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
+                    {materialBatch && !batches.some(b => b.name === materialBatch) && (
+                      <option value={materialBatch}>{materialBatch}</option>
+                    )}
+                  </select>
                 </div>
               )}
 
@@ -3949,15 +3995,21 @@ const ClassroomDetails: React.FC = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div className="form-group-ld">
-                  <label className="form-label-ld">Assigned Batches (comma-separated, leave blank for all)</label>
-                  <input 
-                    type="text" 
+                  <label className="form-label-ld">Assigned Batch</label>
+                  <select 
                     className="form-input-ld" 
-                    placeholder="e.g. Batch A, Batch B"
                     value={testBatches} 
                     onChange={(e) => setTestBatches(e.target.value)} 
                     disabled={testAssignToSpecificStudents}
-                  />
+                  >
+                    <option value="">All Batches (No restriction)</option>
+                    {batches.map(b => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
+                    {testBatches && !batches.some(b => b.name === testBatches) && (
+                      <option value={testBatches}>{testBatches}</option>
+                    )}
+                  </select>
                 </div>
                 <div className="form-group-ld">
                   <label className="form-label-ld">Tab Switch Behavior</label>
@@ -5014,15 +5066,21 @@ const ClassroomDetails: React.FC = () => {
               </div>
 
               <div className="form-group-ld">
-                <label className="form-label-ld">Assigned Batches (comma-separated, leave blank for all)</label>
-                <input 
-                  type="text" 
+                <label className="form-label-ld">Assigned Batch</label>
+                <select 
                   className="form-input-ld" 
-                  placeholder="e.g. Batch A, Batch B"
                   value={pracBatches} 
                   onChange={(e) => setPracBatches(e.target.value)} 
                   disabled={pracAssignToSpecificStudents}
-                />
+                >
+                  <option value="">All Batches (No restriction)</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.name}>{b.name}</option>
+                  ))}
+                  {pracBatches && !batches.some(b => b.name === pracBatches) && (
+                    <option value={pracBatches}>{pracBatches}</option>
+                  )}
+                </select>
               </div>
 
               <div className="form-group-ld">

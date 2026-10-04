@@ -16,6 +16,7 @@ import quizBuilderRoutes from "./quiz-builder/quiz-builder.routes.js";
 import organizationRoutes from "./routes/organization.routes.js";
 import materialBankRoutes from "./routes/material-bank.routes.js";
 import subscriptionPlanRoutes from "./routes/subscription-plan.routes.js";
+import batchRoutes from "./routes/batch.routes.js";
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use("/api/sessions", sessionRoutes);
 app.use("/api/quiz-builder", quizBuilderRoutes);
 app.use("/api/organization", organizationRoutes);
 app.use("/api/material-bank", materialBankRoutes);
+app.use("/api/batches", batchRoutes);
 
 app.get("/", (req, res) => {
     res.send("LMS Backend is running");

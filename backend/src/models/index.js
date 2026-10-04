@@ -16,6 +16,7 @@ import SessionAttendance from './session-attendance.model.js';
 import MaterialBankFolder from './material-bank-folder.model.js';
 import MaterialBankItem from './material-bank-item.model.js';
 import SubscriptionPlan from './subscription-plan.model.js';
+import Batch from './batch.model.js';
 
 const db = {
   sequelize,
@@ -35,12 +36,17 @@ const db = {
   SessionAttendance,
   MaterialBankFolder,
   MaterialBankItem,
-  SubscriptionPlan
+  SubscriptionPlan,
+  Batch
 };
 
 // Establish relationships
 Organization.hasMany(User, { foreignKey: 'organization_id', as: 'users' });
 User.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
+
+// Batch relationships
+Organization.hasMany(Batch, { foreignKey: 'organization_id', as: 'batches', onDelete: 'CASCADE' });
+Batch.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' });
 
 // SubscriptionPlan relationships
 Organization.belongsTo(SubscriptionPlan, { foreignKey: 'subscription_plan_id', as: 'subscriptionPlan' });
@@ -137,6 +143,13 @@ MaterialBankItem.belongsTo(MaterialBankFolder, { foreignKey: 'folder_id', as: 'f
 User.hasMany(MaterialBankItem, { foreignKey: 'uploaded_by', as: 'materialBankItems', onDelete: 'CASCADE' });
 MaterialBankItem.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
 
+// Classroom linkages to Material Bank
+MaterialBankItem.hasMany(ClassroomResource, { foreignKey: 'material_bank_item_id', as: 'classroomResources', onDelete: 'SET NULL' });
+ClassroomResource.belongsTo(MaterialBankItem, { foreignKey: 'material_bank_item_id', as: 'materialBankItem' });
+
+MaterialBankFolder.hasMany(ClassroomFolder, { foreignKey: 'material_bank_folder_id', as: 'classroomFolders', onDelete: 'SET NULL' });
+ClassroomFolder.belongsTo(MaterialBankFolder, { foreignKey: 'material_bank_folder_id', as: 'materialBankFolder' });
+
 // Run model associations if defined
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {
@@ -162,7 +175,8 @@ export {
   SessionAttendance,
   MaterialBankFolder,
   MaterialBankItem,
-  SubscriptionPlan
+  SubscriptionPlan,
+  Batch
 };
 export default db;
 

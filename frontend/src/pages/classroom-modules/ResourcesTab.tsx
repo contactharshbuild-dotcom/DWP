@@ -5,6 +5,7 @@ import {
   FiFolder, FiTrash2, FiFileText, FiImage, FiVideo, FiLink, FiPaperclip, FiExternalLink, FiDownloadCloud,
   FiChevronDown, FiEdit2, FiX, FiMoreVertical, FiShare2
 } from 'react-icons/fi';
+import { MdDragIndicator } from 'react-icons/md';
 import { getServerUrl } from '../../services/api';
 
 
@@ -58,6 +59,8 @@ interface ResourcesTabProps {
   onOpenAddModal: (type: 'file' | 'link') => void;
   onOpenFolderModal: () => void;
   onOpenImportBankModal?: () => void;
+  onReorderResources?: (orderedIds: number[]) => Promise<void>;
+  onReorderFolders?: (orderedIds: number[]) => Promise<void>;
 }
 
 export const ResourcesTab: React.FC<ResourcesTabProps> = ({
@@ -82,7 +85,9 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
   setPreviewResource,
   onOpenAddModal,
   onOpenFolderModal,
-  onOpenImportBankModal
+  onOpenImportBankModal,
+  onReorderResources,
+  onReorderFolders
 }) => {
   // Rename Folder modal state
   const [renameTargetFolder, setRenameTargetFolder] = useState<Folder | null>(null);
@@ -235,6 +240,21 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
     };
   }, [activeActionMenu]);
 
+  // Drag & Drop reordering state
+  const [draggedResId, setDraggedResId] = useState<number | null>(null);
+  const [dragOverResId, setDragOverResId] = useState<number | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+
+  const [draggedFolderId, setDraggedFolderId] = useState<number | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<number | null>(null);
+  const [folderDropPosition, setFolderDropPosition] = useState<'before' | 'after' | null>(null);
+
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  const canDrag = user?.role !== 'student' && Boolean(onReorderResources);
+  const canDragFolders = user?.role !== 'student' && Boolean(onReorderFolders);
+
   // Sort resources & folders by order_index to match exact Material Bank display order
   const sortedResources = [...currentResources].sort((a, b) => {
     const orderA = a.order_index ?? 0;
@@ -242,7 +262,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
     if (orderA !== orderB) {
       return orderA - orderB;
     }
-    return 0;
+    return (a.id ?? 0) - (b.id ?? 0);
   });
 
   const sortedFolders = [...currentFolders].sort((a, b) => {
@@ -251,27 +271,222 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
     if (orderA !== orderB) {
       return orderA - orderB;
     }
-    return 0;
+    return (a.id ?? 0) - (b.id ?? 0);
   });
+
+  const handleResDragStart = (e: React.DragEvent, id: number) => {
+    if (!canDrag) return;
+    setDraggedResId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id.toString());
+  };
+
+  const handleResDragOver = (e: React.DragEvent, id: number) => {
+    if (!canDrag || !draggedResId || draggedResId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isAfter = e.clientY > rect.top + rect.height / 2;
+    const newPosition = isAfter ? 'after' : 'before';
+    if (dragOverResId !== id || dropPosition !== newPosition) {
+      setDragOverResId(id);
+      setDropPosition(newPosition);
+    }
+  };
+
+  const handleResDragLeave = (e: React.DragEvent, id: number) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    if (dragOverResId === id) {
+      setDragOverResId(null);
+      setDropPosition(null);
+    }
+  };
+
+  const handleResDrop = async (e: React.DragEvent, targetId: number) => {
+    e.preventDefault();
+    if (!canDrag || !draggedResId || draggedResId === targetId) {
+      setDraggedResId(null);
+      setDragOverResId(null);
+      setDropPosition(null);
+      return;
+    }
+
+    const currentList = [...sortedResources];
+    const fromIndex = currentList.findIndex(i => i.id === draggedResId);
+    const toIndex = currentList.findIndex(i => i.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedResId(null);
+      setDragOverResId(null);
+      setDropPosition(null);
+      return;
+    }
+
+    const [movedItem] = currentList.splice(fromIndex, 1);
+    let insertIndex = currentList.findIndex(i => i.id === targetId);
+    if (dropPosition === 'after') {
+      insertIndex += 1;
+    }
+    currentList.splice(insertIndex, 0, movedItem);
+
+    setDraggedResId(null);
+    setDragOverResId(null);
+    setDropPosition(null);
+
+    if (onReorderResources) {
+      setIsSavingOrder(true);
+      setSaveMessage('Saving order...');
+      try {
+        const itemIds = currentList.map(i => i.id);
+        await onReorderResources(itemIds);
+        setSaveMessage('Order saved ✓');
+        setTimeout(() => setSaveMessage(null), 2000);
+      } catch (err) {
+        setSaveMessage('Failed to save order');
+        setTimeout(() => setSaveMessage(null), 3000);
+      } finally {
+        setIsSavingOrder(false);
+      }
+    }
+  };
+
+  const handleResDragEnd = () => {
+    setDraggedResId(null);
+    setDragOverResId(null);
+    setDropPosition(null);
+  };
+
+  const handleFolderDragStart = (e: React.DragEvent, id: number) => {
+    if (!canDragFolders) return;
+    setDraggedFolderId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id.toString());
+  };
+
+  const handleFolderDragOver = (e: React.DragEvent, id: number) => {
+    if (!canDragFolders || !draggedFolderId || draggedFolderId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isAfter = e.clientY > rect.top + rect.height / 2;
+    const newPosition = isAfter ? 'after' : 'before';
+    if (dragOverFolderId !== id || folderDropPosition !== newPosition) {
+      setDragOverFolderId(id);
+      setFolderDropPosition(newPosition);
+    }
+  };
+
+  const handleFolderDragLeave = (e: React.DragEvent, id: number) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    if (dragOverFolderId === id) {
+      setDragOverFolderId(null);
+      setFolderDropPosition(null);
+    }
+  };
+
+  const handleFolderDrop = async (e: React.DragEvent, targetId: number) => {
+    e.preventDefault();
+    if (!canDragFolders || !draggedFolderId || draggedFolderId === targetId) {
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      setFolderDropPosition(null);
+      return;
+    }
+
+    const currentList = [...sortedFolders];
+    const fromIndex = currentList.findIndex(i => i.id === draggedFolderId);
+    const toIndex = currentList.findIndex(i => i.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      setFolderDropPosition(null);
+      return;
+    }
+
+    const [movedItem] = currentList.splice(fromIndex, 1);
+    let insertIndex = currentList.findIndex(i => i.id === targetId);
+    if (folderDropPosition === 'after') {
+      insertIndex += 1;
+    }
+    currentList.splice(insertIndex, 0, movedItem);
+
+    setDraggedFolderId(null);
+    setDragOverFolderId(null);
+    setFolderDropPosition(null);
+
+    if (onReorderFolders) {
+      setIsSavingOrder(true);
+      setSaveMessage('Saving order...');
+      try {
+        const folderIds = currentList.map(i => i.id);
+        await onReorderFolders(folderIds);
+        setSaveMessage('Order saved ✓');
+        setTimeout(() => setSaveMessage(null), 2000);
+      } catch (err) {
+        setSaveMessage('Failed to save order');
+        setTimeout(() => setSaveMessage(null), 3000);
+      } finally {
+        setIsSavingOrder(false);
+      }
+    }
+  };
+
+  const handleFolderDragEnd = () => {
+    setDraggedFolderId(null);
+    setDragOverFolderId(null);
+    setFolderDropPosition(null);
+  };
 
   return (
     <div>
-      {/* Breadcrumb path navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '14px', fontWeight: '600' }}>
-        <span 
-          style={{ color: currentFolderId === null ? 'var(--light-text)' : 'var(--light-primary)', cursor: currentFolderId === null ? 'default' : 'pointer' }}
-          onClick={() => setCurrentFolderId(null)}
-        >
-          Materials
-        </span>
-        {currentFolderId !== null && (
-          <>
-            <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
-            <span style={{ color: 'var(--light-text)' }}>
-              {folders.find(f => Number(f.id) === Number(currentFolderId))?.name || 'Folder'}
+      {/* Breadcrumb path navigation & Order Status */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: '600' }}>
+          <span 
+            style={{ color: currentFolderId === null ? 'var(--light-text)' : 'var(--light-primary)', cursor: currentFolderId === null ? 'default' : 'pointer' }}
+            onClick={() => setCurrentFolderId(null)}
+          >
+            Materials
+          </span>
+          {currentFolderId !== null && (
+            <>
+              <FiChevronRight size={14} style={{ color: 'var(--light-text-muted)' }} />
+              <span style={{ color: 'var(--light-text)' }}>
+                {folders.find(f => Number(f.id) === Number(currentFolderId))?.name || 'Folder'}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {((canDrag && sortedResources.length > 1) || (canDragFolders && sortedFolders.length > 1)) && (
+            <span style={{ 
+              fontSize: '11px', 
+              fontWeight: '600', 
+              color: 'var(--light-primary)', 
+              backgroundColor: 'rgba(79, 70, 229, 0.08)', 
+              padding: '2px 8px', 
+              borderRadius: '12px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <MdDragIndicator size={13} /> Drag to reorder
             </span>
-          </>
-        )}
+          )}
+          {saveMessage && (
+            <span style={{
+              fontSize: '12px',
+              fontWeight: '600',
+              color: saveMessage.includes('✓') ? '#059669' : 'var(--light-primary)'
+            }}>
+              {saveMessage}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Management Actions - Teachers/Admin only */}
@@ -500,6 +715,7 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
           <table className="ld-table">
             <thead>
               <tr>
+                {(canDrag || canDragFolders) && <th style={{ width: '40px', textAlign: 'center' }}></th>}
                 <th>Name</th>
                 <th>Type</th>
                 <th>Module / Session</th>
@@ -511,18 +727,69 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
             </thead>
             <tbody>
               {/* Folders */}
-              {sortedFolders.map((folder) => (
-                <tr 
-                  key={`folder-${folder.id}`} 
-                  onClick={() => setCurrentFolderId(folder.id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td style={{ fontWeight: '600' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <FiFolder style={{ color: '#d97706', flexShrink: 0 }} size={20} />
-                      <span>{folder.name}</span>
-                    </div>
-                  </td>
+              {sortedFolders.map((folder) => {
+                const isDraggingThis = draggedFolderId === folder.id;
+                const isOverThis = dragOverFolderId === folder.id;
+
+                let borderTop = 'none';
+                let borderBottom = '1px solid var(--light-border)';
+                if (isOverThis && folderDropPosition === 'before') {
+                  borderTop = '2px solid var(--light-primary)';
+                } else if (isOverThis && folderDropPosition === 'after') {
+                  borderBottom = '2px solid var(--light-primary)';
+                }
+
+                return (
+                  <tr 
+                    key={`folder-${folder.id}`} 
+                    draggable={canDragFolders}
+                    onDragStart={(e) => handleFolderDragStart(e, folder.id)}
+                    onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                    onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
+                    onDrop={(e) => handleFolderDrop(e, folder.id)}
+                    onDragEnd={handleFolderDragEnd}
+                    onClick={() => setCurrentFolderId(folder.id)}
+                    style={{ 
+                      cursor: 'pointer',
+                      borderTop,
+                      borderBottom,
+                      opacity: isDraggingThis ? 0.35 : 1,
+                      backgroundColor: isDraggingThis
+                        ? 'var(--light-table-hover-bg)'
+                        : isOverThis
+                          ? 'rgba(79, 70, 229, 0.06)'
+                          : undefined,
+                      transition: 'background-color 0.15s ease, opacity 0.15s ease'
+                    }}
+                  >
+                    {(canDrag || canDragFolders) && (
+                      <td 
+                        style={{ width: '40px', textAlign: 'center', verticalAlign: 'middle', padding: '8px 4px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {canDragFolders && (
+                          <span
+                            title="Drag to reorder folder"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'grab',
+                              color: 'var(--light-text-muted)',
+                              padding: '4px'
+                            }}
+                          >
+                            <MdDragIndicator size={18} />
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    <td style={{ fontWeight: '600' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <FiFolder style={{ color: '#d97706', flexShrink: 0 }} size={20} />
+                        <span>{folder.name}</span>
+                      </div>
+                    </td>
                   <td>
                     <span style={{ fontSize: '12px', color: 'var(--light-text-secondary)', fontWeight: '500' }}>FOLDER</span>
                   </td>
@@ -667,7 +934,8 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                     )}
                   </td>
                 </tr>
-              ))}
+              );
+            })}
 
               {/* Files/Links */}
               {sortedResources.map((res) => {
@@ -675,6 +943,17 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 const isImage = res.mime_type.startsWith('image/');
                 const isVideo = res.mime_type.startsWith('video/') || res.name.toLowerCase().endsWith('.mp4') || res.name.toLowerCase().endsWith('.webm');
                 const isYouTube = res.mime_type === 'youtube';
+
+                const isDraggingThis = draggedResId === res.id;
+                const isOverThis = dragOverResId === res.id;
+
+                let borderTop = 'none';
+                let borderBottom = '1px solid var(--light-border)';
+                if (isOverThis && dropPosition === 'before') {
+                  borderTop = '2px solid var(--light-primary)';
+                } else if (isOverThis && dropPosition === 'after') {
+                  borderBottom = '2px solid var(--light-primary)';
+                }
 
                 const uploadDate = new Date(res.created_at).toLocaleDateString('en-US', {
                   year: 'numeric',
@@ -692,9 +971,47 @@ export const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 return (
                   <tr 
                     key={`resource-${res.id}`}
+                    draggable={canDrag}
+                    onDragStart={(e) => handleResDragStart(e, res.id)}
+                    onDragOver={(e) => handleResDragOver(e, res.id)}
+                    onDragLeave={(e) => handleResDragLeave(e, res.id)}
+                    onDrop={(e) => handleResDrop(e, res.id)}
+                    onDragEnd={handleResDragEnd}
                     onClick={() => setPreviewResource(res)}
-                    style={{ cursor: 'pointer' }}
+                    style={{
+                      cursor: 'pointer',
+                      borderTop,
+                      borderBottom,
+                      opacity: isDraggingThis ? 0.35 : 1,
+                      backgroundColor: isDraggingThis
+                        ? 'var(--light-table-hover-bg)'
+                        : isOverThis
+                          ? 'rgba(79, 70, 229, 0.06)'
+                          : undefined,
+                      transition: 'background-color 0.15s ease, opacity 0.15s ease'
+                    }}
                   >
+                    {(canDrag || canDragFolders) && (
+                      <td
+                        style={{ width: '40px', textAlign: 'center', verticalAlign: 'middle', padding: '8px 4px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {canDrag && (
+                          <span
+                            title="Drag to reorder"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'grab',
+                              color: 'var(--light-text-muted)'
+                            }}
+                          >
+                            <MdDragIndicator size={18} />
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td style={{ fontWeight: '600' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {isYouTube ? (

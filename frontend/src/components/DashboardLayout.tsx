@@ -17,7 +17,8 @@ import {
   FiX, 
   FiInfo, 
   FiTrash2,
-  FiMenu
+  FiMenu,
+  FiLayers
 } from 'react-icons/fi';
 import type { RootState } from '../store';
 import { logout, updateOrganization, updateUserProfile } from '../store/authSlice';
@@ -469,6 +470,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                   >
                     <FiFolder size={18} />
                     <span>Material Bank</span>
+                  </Link>
+
+                  <Link 
+                    to="/batches" 
+                    className={`ld-nav-item ${location.pathname === '/batches' ? 'active' : ''}`}
+                  >
+                    <FiLayers size={18} />
+                    <span>Batches</span>
                   </Link>
                 </>
               )}

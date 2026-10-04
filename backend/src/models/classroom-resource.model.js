@@ -81,6 +81,14 @@ const ClassroomResource = sequelize.define('ClassroomResource', {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 0
+  },
+  material_bank_item_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'material_bank_items',
+      key: 'id'
+    }
   }
 }, {
   tableName: 'classroom_resources',

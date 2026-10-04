@@ -49,6 +49,14 @@ const ClassroomFolder = sequelize.define('ClassroomFolder', {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 0
+  },
+  material_bank_folder_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'material_bank_folders',
+      key: 'id'
+    }
   }
 }, {
   tableName: 'classroom_folders',

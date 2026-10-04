@@ -24,6 +24,7 @@ import {
   FiChevronDown
 } from 'react-icons/fi';
 import api from '../../services/api';
+import { useBatches } from '../../context/BatchContext';
 
 interface StudentUser {
   id: number;
@@ -259,6 +260,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   teachers = [],
   activeStudents = []
 }) => {
+  const { batches } = useBatches();
   const [modules, setModules] = useState<ClassroomModule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2382,21 +2384,27 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                   </select>
                 </div>
 
-                {/* Batches text input */}
+                {/* Batches select dropdown */}
                 {assignType === 'batches' && (
                   <div className="form-group-ld">
-                    <label className="form-label-ld" htmlFor="batchesInput">Batches (Comma-separated) *</label>
-                    <input
+                    <label className="form-label-ld" htmlFor="batchesInput">Select Student Batch *</label>
+                    <select
                       className="form-input-ld"
-                      type="text"
                       id="batchesInput"
-                      placeholder="e.g. CSE-2026, IT-A"
                       value={assignBatches}
                       onChange={(e) => setAssignBatches(e.target.value)}
                       required
-                    />
+                    >
+                      <option value="">Select a batch...</option>
+                      {batches.map(b => (
+                        <option key={b.id} value={b.name}>{b.name}</option>
+                      ))}
+                      {assignBatches && !batches.some(b => b.name === assignBatches) && (
+                        <option value={assignBatches}>{assignBatches}</option>
+                      )}
+                    </select>
                     <span style={{ fontSize: '11.5px', color: 'var(--light-text-secondary)', display: 'block', marginTop: '4px' }}>
-                      Enter batch tags exactly as configured on student profiles.
+                      Select the student batch for this session.
                     </span>
                   </div>
                 )}
